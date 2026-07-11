@@ -1,4 +1,4 @@
 interface:
-  display_name: "Mac Storage Manager"
+  display_name: "MacCleaner"
   short_description: "Audit macOS storage, list exact targets, then clean safely"
   default_prompt: "Audit macOS storage, list exact cleanup targets and blocked items first, then clean only within the explicitly approved target list."

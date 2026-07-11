@@ -1,6 +1,6 @@
-# Mac Storage Manager
+# MacCleaner
 
-![Mac Storage Manager](assets/readme-header.svg)
+![MacCleaner](assets/readme-header.svg)
 
 > **先看清单，再决定删什么。**
 >
@@ -8,9 +8,9 @@
 
 `macOS` · `Python 标准库` · `generic 默认` · `先审计后执行`
 
-Mac Storage Manager 是一个开源 macOS 磁盘空间审计与清理 CLI。它先告诉你哪里占空间、哪些目标可以处理、哪些目标需要明确批准；只有你运行 apply 并通过对应门禁后，才会执行清理。
+MacCleaner 是一个开源 macOS 磁盘空间审计与清理 CLI。它先告诉你哪里占空间、哪些目标可以处理、哪些目标需要明确批准；只有你运行 apply 并通过对应门禁后，才会执行清理。
 
-Mac Storage Manager is an open-source macOS storage audit and cleanup CLI. It shows what is taking space and which targets need approval before it removes anything.
+MacCleaner is an open-source macOS storage audit and cleanup CLI. It shows what is taking space and which targets need approval before it removes anything.
 
 ## 近期更新
 ## Recent Notes
@@ -133,8 +133,8 @@ Not for:
 ### Get and Check Out
 
 ```bash
-git clone https://github.com/Matoya-Amadeus/AISkill-MacStorageManager.git
-cd AISkill-MacStorageManager
+git clone https://github.com/Matoya-Amadeus/MacCleaner.git
+cd MacCleaner
 python3 scripts/mac_storage_manager.py --help
 ```
 

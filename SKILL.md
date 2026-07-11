@@ -1,9 +1,9 @@
 ---
-name: "mac-storage-manager"
+name: "mac-cleaner"
 description: "Audit and manage macOS disk usage safely with staged cleanup, explicit target approval, and generic-by-default open-source behavior. Use when the request clearly belongs to disk cleanup, cache cleanup, large-file triage, or reappearing storage artifacts."
 ---
 
-# Mac Storage Manager
+# MacCleaner
 
 ## Trigger
 

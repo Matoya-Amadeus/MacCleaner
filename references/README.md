@@ -1,4 +1,4 @@
-# mac-storage-manager references
+# MacCleaner references
 
 This folder stores scoped reference notes for this skill.
 Use them by trigger, not as optional background reading.
