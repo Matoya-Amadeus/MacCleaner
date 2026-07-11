@@ -65,6 +65,9 @@ def _manager(home: Path, *, runner: FakeRunner | None = None, **kwargs) -> Stora
         receipt_dir=kwargs.pop("receipt_dir", None),
         backup_dir=kwargs.pop("backup_dir", None),
         require_zero_hit=tuple(kwargs.pop("require_zero_hit", ())),
+        profile=kwargs.pop("profile", "generic"),
+        state_root=kwargs.pop("state_root", None),
+        require_explicit_plan=kwargs.pop("require_explicit_plan", False),
         system_roots=kwargs.pop("system_roots", msm.DEFAULT_SYSTEM_ROOTS),
     )
     return StorageManager(ctx, runner=runner or FakeRunner())
@@ -96,14 +99,14 @@ class MacStorageManagerTests(unittest.TestCase):
         self.assertIn("--receipt-dir", clean_help)
         self.assertIn("--backup-dir", clean_help)
 
-    def test_hidden_home_scan_does_not_special_case_codex(self) -> None:
+    def test_hidden_home_scan_does_not_special_case_agent_runtime(self) -> None:
         tmp = Path(tempfile.mkdtemp(prefix="mac-storage-open-source-"))
         home = tmp / "home"
-        _write(home / ".codex" / ".tmp" / "a.txt")
+        _write(home / ".agenttool" / ".tmp" / "a.txt")
         manager = _manager(home, include_hidden_home=True)
         target_ids = {target.target_id for target in manager.discover_targets()}
-        self.assertNotIn("home-codex-temp", target_ids)
-        self.assertIn("hidden-home:codex", target_ids)
+        self.assertNotIn("home-agenttool-temp", target_ids)
+        self.assertIn("hidden-home:agenttool", target_ids)
 
     def test_public_display_path_redacts_private_absolute_paths(self) -> None:
         tmp = Path(tempfile.mkdtemp(prefix="mac-storage-paths-"))
@@ -258,7 +261,7 @@ class MacStorageManagerTests(unittest.TestCase):
             stdout="sample-workspace\tdemo\t/run\n",
         )
 
-        report = _manager(home, root=root, runner=runner).trace(target, "Sample-Workspace")
+        report = _manager(home, root=root, runner=runner, profile="repo-evidence").trace(target, "Sample-Workspace")
         data = report.to_dict()
         payload = json.dumps(data, ensure_ascii=False)
         layers = {finding["source_layer"] for finding in data["findings"]}

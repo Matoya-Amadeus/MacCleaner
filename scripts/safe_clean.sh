@@ -1,5 +1,6 @@
-#!/usr/bin/env zsh
+#!/bin/zsh
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
-exec python3 "$script_dir/mac_storage_manager.py" clean --apply --yes --markdown "$@"
+echo "DEPRECATED: safe_clean.sh is a compatibility shim. Prefer apply_storage_plan.sh with exact --approved-targets." >&2
+exec "$script_dir/apply_storage_plan.sh" "$@"

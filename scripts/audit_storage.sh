@@ -1,4 +1,4 @@
-#!/usr/bin/env zsh
+#!/bin/zsh
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
