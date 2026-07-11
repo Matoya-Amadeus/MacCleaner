@@ -1,29 +1,37 @@
 # Mac Storage Manager
 
-<p align="center">
-  <img src="assets/readme-header.svg" alt="Mac Storage Manager hero banner" width="100%">
-</p>
+![Mac Storage Manager](assets/readme-header.svg)
 
-<p align="center">
-  <strong>先审计，再列清单；先批准 exact target ID，再执行清理。</strong><br>
-  <strong>Audit first, build an exact plan, approve target IDs, then clean.</strong>
-</p>
+> **先看清单，再决定删什么。**
+>
+> **Inspect first. Approve exact targets. Clean only what you selected.**
 
-<p align="center">
-  <code>macOS only</code> · <code>Python stdlib</code> · <code>generic by default</code> · <code>audit-first</code> · <code>redacted receipts</code>
-</p>
+`macOS` · `Python 标准库` · `generic 默认` · `先审计后执行`
 
-<p align="center">
-  <a href="#解决什么问题">解决什么问题</a> ·
-  <a href="#三分钟上手">三分钟上手</a> ·
-  <a href="#安全模型">安全模型</a> ·
-  <a href="#配置与参数">配置与参数</a> ·
-  <a href="#开发者说明">开发者说明</a>
-</p>
+Mac Storage Manager 是一个开源 macOS 磁盘空间审计与清理 CLI。它先告诉你哪里占空间、哪些目标可以处理、哪些目标需要明确批准；只有你运行 apply 并通过对应门禁后，才会执行清理。
 
-Mac Storage Manager 是一个开源 macOS 磁盘空间审计与清理 skill/CLI。它不是“闭眼一键清理器”：默认只读，先产出可复查的目标清单，再只执行你明确批准的目标。
+Mac Storage Manager is an open-source macOS storage audit and cleanup CLI. It shows what is taking space and which targets need approval before it removes anything.
 
-Mac Storage Manager is an open-source macOS storage audit and cleanup skill/CLI. It is not a blind one-click cleaner: it defaults to read-only inspection, produces reviewable target lists, and applies only explicitly approved targets.
+## 近期更新
+## Recent Notes
+
+更新时间：2026-07-11 15:51
+
+Update time: 2026-07-11 15:51
+
+更新内容：重写开源 README 的首次使用路径，明确 audit、plan、apply 的真实行为，并补充风险边界、输出示例和常见失败处理。
+
+Update content: Reworked the open-source README around the real audit, plan, and apply behavior, with clearer safety boundaries, output examples, and troubleshooting.
+
+### 2026-05-19 21:20
+
+更新时间：2026-05-19 21:20
+
+Update time: 2026-05-19 21:20
+
+更新内容：新增 generic 默认 profile、repo-evidence opt-in、受保护会话阻断、receipt、backup 和清理后残留验证。
+
+Update content: Added the generic default profile, opt-in repo-evidence profile, protected-session blocking, receipts, backups, and post-cleanup residual validation.
 
 ## 目录
 ## Table of Contents
@@ -31,88 +39,76 @@ Mac Storage Manager is an open-source macOS storage audit and cleanup skill/CLI.
 - [解决什么问题 / What It Solves](#解决什么问题)
 - [一眼看懂 / At a Glance](#一眼看懂)
 - [近期更新 / Recent Notes](#近期更新)
+- [三分钟上手 / Quick Start](#三分钟上手)
 - [安装 / Installation](#安装)
-- [三分钟上手 / Three-Minute Start](#三分钟上手)
 - [常用场景 / Common Scenarios](#常用场景)
-- [安全模型 / Safety Model](#安全模型)
+- [安全边界 / Safety Boundaries](#安全边界)
 - [配置与参数 / Configuration & CLI Reference](#配置与参数)
-- [报告怎么看 / How to Read Reports](#报告怎么看)
+- [报告怎么看 / Reading Reports](#报告怎么看)
 - [结构总览 / Structure Map](#结构总览)
+- [工作链路 / How It Works](#工作链路)
 - [开发者说明 / Developer Notes](#开发者说明)
 - [常见问题 / FAQ](#常见问题)
+- [许可证 / License](#许可证)
 
 ## 解决什么问题
 ## What It Solves
 
-你的 Mac 空间满了，但真正危险的不是“空间不够”，而是为了腾空间误删个人文件、会话数据、凭据、系统目录或还在使用的开发环境。
+Mac 空间不足时，最容易出错的不是找不到大文件，而是把缓存、个人文件、浏览器登录状态和系统数据混在一起处理。
 
-The hard problem is not just low disk space; it is freeing space without deleting personal files, session data, credentials, system paths, or active development state.
+When storage is full, the hard part is separating rebuildable caches from personal files, browser sessions, and system data.
 
-这个仓库把清理拆成一条可验证链路：
+这个工具把操作分成四步：
 
-This repository turns cleanup into a verifiable chain:
+The workflow has four steps:
 
 ```text
-audit -> plan -> approve exact target IDs -> apply -> receipt + residual validation
+audit -> plan -> approve exact target IDs -> apply -> verify
 ```
 
 适合：
 
 Best for:
 
-- 想先知道空间去哪了的普通 macOS 用户。
-  macOS users who want to see where space went before deleting anything.
-- 被 Xcode、包管理器、IDE、Flutter、Playwright、日志和缓存占用空间的开发者。
-  Developers dealing with Xcode, package managers, IDEs, Flutter, Playwright, logs, and caches.
-- 需要“先列清单，再确认执行”边界的 agent / automation 工作流。
-  Agent and automation workflows that require an explicit list-before-apply boundary.
+- 想先知道空间去哪了，再决定是否清理的人。
+
+  People who want to see where space went before deleting anything.
+- 需要处理 Xcode、包管理器、IDE、Flutter、Playwright、日志和缓存的开发者。
+
+  Developers managing Xcode, package-manager, IDE, Flutter, Playwright, log, and cache data.
+- 需要让 agent 或自动化流程“先列清单、再执行”的团队。
+
+  Teams that need an explicit list-before-apply workflow.
 
 不适合：
 
 Not for:
 
-- 替你判断个人文件是否该删。
-  Deciding whether your personal files should be deleted.
-- 绕过确认清理 Downloads、Trash、Docker、hidden-home、浏览器会话或系统范围。
-  Bypassing approval for Downloads, Trash, Docker, hidden-home, browser sessions, or system scope.
-- 把 `/` 或整台机器当作默认清理目标。
-  Treating `/` or the entire machine as a default cleanup target.
+- 让工具替你判断个人文件是否有价值。
+
+  Deciding whether personal files are valuable.
+- 把整个磁盘 `/` 当成默认清理范围。
+
+  Treating `/` or the whole machine as a default cleanup scope.
 
 ## 一眼看懂
 ## At a Glance
 
-| 能力 | 默认行为 | 人需要做什么 |
+| 你要做什么 | 运行什么 | 会发生什么 |
 | --- | --- | --- |
-| 审计空间 | 只读扫描，输出 Markdown/JSON | 看 `Top Consumers` 和 target ID |
-| 生成计划 | 只读 `plan`，列出可执行、被阻断和需批准目标 | 复制真实 target ID，不要猜 |
-| 执行清理 | 只通过 approved plan 执行 | 低风险可 `--yes`；中高风险传 `--approved-targets` |
-| 保护会话 | 浏览器登录、cookie、token、key material 永久阻断 | 不把它们当普通缓存清理 |
-| 留痕复盘 | 写 receipt、backup manifest、sha256 manifest、residual validation | 用报告确认结果 |
+| 只看空间占用 | `bash scripts/audit_storage.sh` | 只读扫描，不删除文件 |
+| 生成可执行清单 | `bash scripts/plan_storage.sh` | 列出计划中、需要批准和被阻断的目标 |
+| 清理低风险目标 | `bash scripts/apply_storage_plan.sh` | 实际执行可重新生成的低风险目标 |
+| 清理高风险目标 | 在 apply 后加 `--approved-targets ID` | 只执行你明确批准的目标 |
+| 追查反复出现的目录 | `python3 scripts/mac_storage_manager.py trace ...` | 查找触发源，不删除文件 |
 
-| Capability | Default behavior | Human action |
+| Goal | Command | Result |
 | --- | --- | --- |
-| Audit storage | Read-only scan with Markdown/JSON output | Review `Top Consumers` and target IDs |
-| Build plan | Read-only `plan` with executable, blocked, and approval-needed targets | Copy real target IDs; do not guess |
-| Apply cleanup | Executes only through an approved plan | Low risk can use `--yes`; medium/high risk needs `--approved-targets` |
-| Protect sessions | Browser login, cookies, tokens, and key material stay blocked | Do not treat them as normal cache |
-| Keep evidence | Writes receipts, backup manifests, sha256 manifests, and residual validation | Use the report to verify results |
-
-## 近期更新
-## Recent Notes
-
-**最新更新 / Latest note**
-
-- 更新时间：2026-07-10 23:18
-  Update time: 2026-07-10 23:18
-- 更新内容：按开源 README 规则重写首页：把首屏改成“问题 -> 安全链路 -> 三分钟上手”，突出 `generic` 默认 profile、`repo-evidence` opt-in、audit/plan/apply 分离、风险门禁、状态目录和脱敏输出。
-  Update content: Rewrote the homepage for open-source use: the first screen now follows problem -> safety chain -> three-minute start, with clear coverage for the default `generic` profile, opt-in `repo-evidence`, audit/plan/apply separation, risk gates, state root, and redacted output.
-
-**最近一条 / One recent note**
-
-- 更新时间：2026-05-19 21:20
-  Update time: 2026-05-19 21:20
-- 更新内容：新增 trace-first 触发源分析、source_layer / protection / rollback_strategy / validation_patterns、protected_session 默认阻断、receipt / backup / sha256 / residual validation，以及 README / SKILL / tests 的脱敏同步。
-  Update content: Added trace-first source analysis, source_layer / protection / rollback_strategy / validation_patterns, default blocking for protected_session, receipt / backup / sha256 / residual validation, and redacted sync across README / SKILL / tests.
+| Inspect storage | `bash scripts/audit_storage.sh` | Read-only scan |
+| Build a plan | `bash scripts/plan_storage.sh` | Lists planned, approval-needed, and blocked targets |
+| Apply low-risk cleanup | `bash scripts/apply_storage_plan.sh` | Removes eligible regenerable targets |
+| Apply high-risk cleanup | Add `--approved-targets ID` | Applies only the exact IDs you approved |
+| Trace a reappearing folder | `python3 scripts/mac_storage_manager.py trace ...` | Finds likely triggers without deleting |
 
 ## 安装
 ## Installation
@@ -120,103 +116,113 @@ Not for:
 ### 环境要求
 ### Requirements
 
-| 项目 | 要求 |
-| --- | --- |
-| 系统 | macOS |
-| Python | Python 3.10+ recommended；当前测试在 Python 3.12 通过 |
-| Python 依赖 | 无第三方依赖，只使用标准库 |
-| Shell | `zsh` 或能运行 `bash` wrapper 的终端 |
-| 可选工具 | `brew`、`docker`、`flutter`、`xcrun`；缺失时相关目标跳过 |
+- macOS。
 
-| Item | Requirement |
-| --- | --- |
-| OS | macOS |
-| Python | Python 3.10+ recommended; currently tested with Python 3.12 |
-| Python packages | No third-party dependencies; standard library only |
-| Shell | `zsh` or a terminal that can run the `bash` wrappers |
-| Optional tools | `brew`, `docker`, `flutter`, `xcrun`; related targets are skipped when missing |
+  macOS.
+- Python 3.10+；不需要第三方 Python 包。
 
-### 获取仓库
-### Get the Repository
+  Python 3.10+; no third-party Python packages are required.
+- 使用 wrapper 需要 `zsh`；直接运行 CLI 只需要 Python。
+
+  Wrappers use `zsh`; direct CLI use only requires Python.
+- `brew`、`docker`、`flutter`、`xcrun` 是可选工具，只有相关目标才会用到。
+
+  `brew`, `docker`, `flutter`, and `xcrun` are optional and used only by related targets.
+
+### 获取并检查
+### Get and Check Out
 
 ```bash
-git clone https://github.com/<OWNER>/AISkill-MacStorageManager.git
+git clone https://github.com/Matoya-Amadeus/AISkill-MacStorageManager.git
 cd AISkill-MacStorageManager
 python3 scripts/mac_storage_manager.py --help
 ```
 
-如果你通过 ZIP 下载，进入解压目录后直接运行同样的 `python3 ... --help` 检查即可。
+如果你是通过 ZIP 下载，进入解压目录后运行最后一条命令即可。
 
-If you downloaded a ZIP, enter the extracted directory and run the same `python3 ... --help` check.
+If you downloaded a ZIP, enter the extracted directory and run the last command.
 
-Wrapper 已在仓库中提供。如果 ZIP 下载丢失可执行位，可修复一次：
+如果 ZIP 下载丢失了 wrapper 的可执行权限，只需修复一次：
 
-Wrappers are included in the repository. If a ZIP download drops executable bits, fix them once:
+If a ZIP download drops executable bits, fix them once:
 
 ```bash
 chmod +x scripts/audit_storage.sh scripts/plan_storage.sh scripts/apply_storage_plan.sh scripts/safe_clean.sh
 ```
 
 ## 三分钟上手
-## Three-Minute Start
+## Quick Start
 
-### 1) 只读审计：先看空间热点
-### 1) Read-only audit: inspect storage hotspots
+### 第一步：先做只读审计
+### Step 1: Run a read-only audit
 
 ```bash
 bash scripts/audit_storage.sh
 ```
 
-成功时你会看到 Markdown 报告，包括 `Top Consumers`、`Cleanup Boundary`、`Cleaned / Planned`、`Backup / Receipt` 和 `Next Step Options`。这一步不会删除文件。
+这一步只扫描，不删除。你会看到 `Top Consumers`、`Cleaned / Planned` 和安全边界。
 
-On success, you will see a Markdown report with `Top Consumers`, `Cleanup Boundary`, `Cleaned / Planned`, `Backup / Receipt`, and `Next Step Options`. This step does not delete files.
+This step only scans. Look for `Top Consumers`, `Cleaned / Planned`, and the cleanup boundary.
 
-### 2) 只读计划：拿到 exact target list
-### 2) Read-only plan: get the exact target list
+### 第二步：生成精确清单
+### Step 2: Build the exact plan
 
 ```bash
 bash scripts/plan_storage.sh
 ```
 
-`plan` 不是 `audit` 的别名。它会把候选目标分成 ready、blocked、outside approved plan、explicit approval needed，并告诉你 apply 前需要哪些 `--approved-targets` / `--confirm-targets`。
+重点看每一行的 `target_id`、`status`、`risk`、`protection` 和 `reason`。
 
-`plan` is not an alias for `audit`. It separates ready, blocked, outside-approved-plan, and explicit-approval-needed targets, then tells you which `--approved-targets` / `--confirm-targets` are required before apply.
+Review `target_id`, `status`, `risk`, `protection`, and `reason` for each item.
 
-### 3) 低风险清理：确认计划后再 apply
-### 3) Low-risk cleanup: apply only after reviewing the plan
+常见状态：
+
+Common statuses:
+
+- `planned`：已列入计划，但还没有执行。
+
+  Listed in the plan but not applied.
+- `ready`：在当前 apply 条件下可以执行。
+
+  Eligible under the current apply conditions.
+- `blocked`：需要批准、二次确认或受保护，当前不会执行。
+
+  Needs approval, extra confirmation, or protection keeps it blocked.
+- `skipped`：路径不存在、工具缺失或条件不满足。
+
+  Skipped because a path, tool, or condition is unavailable.
+
+### 第三步：只执行你确认过的目标
+### Step 3: Apply only after reviewing the plan
+
+低风险目标可以用推荐 wrapper：
+
+For low-risk targets, use the recommended wrapper:
 
 ```bash
 bash scripts/apply_storage_plan.sh
 ```
 
-这个 wrapper 会运行 `clean --apply --yes --require-explicit-plan --markdown`。`--yes` 只放行低风险、可重建目标；不会解锁 Downloads、Trash、Docker、hidden-home、app leftovers、system 或 protected session。
+**这条命令会实际清理文件。**它会执行 `clean --apply --yes --require-explicit-plan --markdown`，只放行低风险、可重新生成的目标。运行前请先完成上一步 `plan`。
 
-This wrapper runs `clean --apply --yes --require-explicit-plan --markdown`. `--yes` only approves low-risk, regenerable targets; it does not unlock Downloads, Trash, Docker, hidden-home, app leftovers, system scope, or protected sessions.
+**This command changes files.** It runs `clean --apply --yes --require-explicit-plan --markdown` and only allows low-risk, regenerable targets. Run `plan` first.
 
-### 4) 中高风险目标：必须传 exact target ID
-### 4) Medium/high-risk targets: pass exact target IDs
+对于 Downloads、Trash、Docker、hidden-home、App 残留和系统范围等目标，先从 `plan` 输出复制真实的 `target_id`，不要猜占位符：
 
-先从报告复制真实 target ID：
-
-Copy the real target ID from the report first:
+For Downloads, Trash, Docker, hidden-home, app leftovers, and system targets, copy the real `target_id` from `plan`; do not type the placeholder literally:
 
 ```bash
 bash scripts/plan_storage.sh --include-hidden-home
-```
 
-再执行精确批准：
-
-Then apply exact approval:
-
-```bash
+# Replace TARGET_ID with the exact ID printed above.
 bash scripts/apply_storage_plan.sh \
   --include-hidden-home \
   --approved-targets TARGET_ID
 ```
 
-如果该目标的 protection 是 `exact_confirm`，还必须加 `--confirm-targets TARGET_ID`：
+如果报告显示 `exact_confirm`，还要同时传 `--confirm-targets TARGET_ID`：
 
-If the target protection is `exact_confirm`, also pass `--confirm-targets TARGET_ID`:
+If the report shows `exact_confirm`, also pass `--confirm-targets TARGET_ID`:
 
 ```bash
 bash scripts/apply_storage_plan.sh \
@@ -225,12 +231,53 @@ bash scripts/apply_storage_plan.sh \
   --confirm-targets TARGET_ID
 ```
 
-不要猜 ID；先看报告，再复制。
+### 你应该看到什么
+### What Success Looks Like
 
-Do not guess IDs; read the report, then copy the exact value.
+审计和计划不会删除文件。下面只是格式示例，不是你机器上的真实目标：
 
-### 5) 反复生成目录：先 trace 触发源
-### 5) Reappearing folders: trace the source first
+Audit and plan do not delete files. The following is only a format example, not output from your Mac:
+
+```text
+Cleaned / Planned:
+- `home-caches` [planned] [in_scope] ...
+- `downloads` [blocked] [outside_approved_plan] ...
+- `<target-id>` [blocked] [protected_session] ...
+```
+
+真实的 target ID、路径和字节数会随你的 Mac 改变。不要复制上面示例中的 ID。
+
+Real target IDs, paths, and byte counts depend on your Mac. Do not copy the example IDs.
+
+## 常用场景
+## Common Scenarios
+
+### 只看空间，不做清理
+### Inspect only
+
+```bash
+python3 scripts/mac_storage_manager.py audit --markdown
+python3 scripts/mac_storage_manager.py audit --json
+```
+
+wrapper 默认输出 Markdown；CLI 不加格式参数时输出简短 text。
+
+Wrappers default to Markdown; the CLI prints concise text unless you pass a format flag.
+
+### 清理普通缓存和日志
+### Clean ordinary caches and logs
+
+```bash
+bash scripts/plan_storage.sh
+bash scripts/apply_storage_plan.sh
+```
+
+先看计划，再运行 apply。低风险目标通常可以执行；其他目标会保留为 `blocked` 或 `skipped`。
+
+Review the plan before apply. Low-risk targets may run; other targets remain `blocked` or `skipped`.
+
+### 追查反复出现的目录
+### Trace a reappearing folder
 
 ```bash
 python3 scripts/mac_storage_manager.py trace \
@@ -239,364 +286,223 @@ python3 scripts/mac_storage_manager.py trace \
   --markdown
 ```
 
-`trace` 是只读命令。默认 `generic` profile 会查通用 active trigger、runtime artifact 和目标路径邻近证据；只有显式 `--profile repo-evidence` 才会加入 repo reference / historical index 证据层。
+把 `<TARGET_PATH>` 和 `<KEYWORD>` 换成真实值。`trace` 只读，不会删除。
 
-`trace` is read-only. The default `generic` profile checks general active triggers, runtime artifacts, and nearby target evidence; repo reference / historical index layers are included only with explicit `--profile repo-evidence`.
+Replace `<TARGET_PATH>` and `<KEYWORD>` with real values. `trace` is read-only.
 
-## 常用场景
-## Common Scenarios
+默认 `generic` 只查通用触发源和邻近证据；只有明确需要项目证据时才使用 `--profile repo-evidence`。
 
-### 只想知道空间去哪了
-### Inspect storage usage only
+The default `generic` profile checks general triggers and nearby evidence. Use `--profile repo-evidence` only when you explicitly need project evidence.
 
-```bash
-python3 scripts/mac_storage_manager.py audit --markdown
-python3 scripts/mac_storage_manager.py audit --json
-```
-
-### 只清普通缓存和日志
-### Clean ordinary caches and logs
-
-```bash
-bash scripts/plan_storage.sh
-bash scripts/apply_storage_plan.sh
-```
-
-先读 `plan` 输出。低风险目标可以通过 apply wrapper 执行；被标记为 medium/high/exact_confirm/protected_session 的目标不会被 `--yes` 自动清理。
-
-Read the `plan` output first. Low-risk targets can be handled by the apply wrapper; targets marked medium/high/exact_confirm/protected_session are not auto-cleaned by `--yes`.
-
-### 检查 hidden-home，例如 `~/.git`
-### Inspect hidden-home items such as `~/.git`
-
-```bash
-python3 scripts/mac_storage_manager.py audit --include-hidden-home --markdown
-```
-
-hidden-home 默认属于敏感范围。清理前必须先列清单，再传 exact `--approved-targets`，必要时再传 `--confirm-targets`。
-
-hidden-home is sensitive by default. List it first, then pass exact `--approved-targets`; add `--confirm-targets` when required.
-
-### 排查某个 App 的残留
-### Inspect leftovers for one app
+### 聚焦某个 App 或 Flutter 工程
+### Focus on an app or Flutter project
 
 ```bash
 python3 scripts/mac_storage_manager.py audit \
   --app-path "/Applications/Example.app" \
   --markdown
-```
 
-App leftovers 属于高风险匹配结果，必须人工确认 target ID 后才能执行。
-
-App leftovers are high-risk matches and require human confirmation of target IDs before apply.
-
-### 限制 Flutter 工程扫描范围
-### Limit Flutter project scanning
-
-```bash
 python3 scripts/mac_storage_manager.py audit \
   --flutter-search-root "$HOME/Projects" \
   --markdown
 ```
 
-### 需要系统范围审计
-### Audit system scope when needed
+这些参数只收窄扫描范围，不会自动扩大清理范围。
 
-```bash
-python3 scripts/mac_storage_manager.py audit \
-  --include-system \
-  --system-roots /Library,/private/var/db/receipts,/private/var/tmp,/tmp \
-  --markdown
-```
+These options narrow the scan scope; they do not broaden cleanup automatically.
 
-系统范围默认关闭，且 `--system-roots` 至少需要四个路径。不要把 `/` 当作清理目标。
+## 安全边界
+## Safety Boundaries
 
-System scope is disabled by default, and `--system-roots` requires at least four paths. Do not use `/` as a cleanup target.
+### 用一句话理解
+### The short version
 
-## 安全模型
-## Safety Model
+默认规则很简单：**先列清单；apply 会重新检查目标，并且只执行通过门禁、且与批准 ID 匹配的目标。**
 
-<p align="center">
-  <img src="assets/readme-workflow.svg" alt="Workflow from audit to plan to approve to apply to verify" width="100%">
-</p>
+The rule is simple: **plan first; apply rechecks the targets and runs only items that pass the gates and match approved IDs.**
 
-### 命令阶段
-### Command Stages
-
-| 阶段 | 是否删除 | 作用 |
+| 目标类型 | 默认行为 | 需要什么 |
 | --- | --- | --- |
-| `audit` | 否 | 扫描并报告空间热点、目标、边界 |
-| `plan` | 否 | 生成 exact cleanup candidates、blocked、out-of-scope、approval requirements |
-| `clean --dry-run` | 否 | 走 clean 路径预演 |
-| `clean --apply --yes --require-explicit-plan` | 是，只限低风险 | 执行低风险、可重建目标 |
-| `clean --apply --approved-targets ID` | 是，限批准目标 | 执行中高风险 approved-plan 目标 |
-| `clean --apply --approved-targets ID --confirm-targets ID` | 是，限双确认目标 | 执行 exact-confirm 目标 |
-| `trace` | 否 | 追踪反复生成目录的触发源 |
+| 普通缓存、日志、临时文件 | 可以进入计划 | apply 时 `--yes` |
+| Downloads、Trash、Docker、hidden-home、App 残留、系统范围 | 默认不自动清理 | 精确 `--approved-targets ID`；部分目标还需 `--confirm-targets ID` |
+| 浏览器登录、Cookie、Session、Token、Keychain、凭据 | 永久阻断 | 不提供普通确认绕过 |
+| 不在当前计划中的目标 | 不执行 | 先重新生成计划 |
 
-| Stage | Deletes files | Purpose |
+| Target type | Default behavior | Required |
 | --- | --- | --- |
-| `audit` | No | Scans and reports storage hotspots, targets, and boundaries |
-| `plan` | No | Builds exact cleanup candidates, blocked items, out-of-scope items, and approval requirements |
-| `clean --dry-run` | No | Previews through the clean path |
-| `clean --apply --yes --require-explicit-plan` | Yes, low-risk only | Applies low-risk, regenerable targets |
-| `clean --apply --approved-targets ID` | Yes, approved targets only | Applies medium/high approved-plan targets |
-| `clean --apply --approved-targets ID --confirm-targets ID` | Yes, double-confirmed targets only | Applies exact-confirm targets |
-| `trace` | No | Traces sources for reappearing folders |
+| Ordinary caches, logs, and temp files | Can enter the plan | `--yes` during apply |
+| Downloads, Trash, Docker, hidden-home, app leftovers, and system scope | Not auto-cleaned | Exact `--approved-targets ID`; some also need `--confirm-targets ID` |
+| Browser login, cookies, sessions, tokens, keychain, and credentials | Always blocked | No normal confirmation bypass |
+| Targets outside the current plan | Not executed | Generate a new plan |
 
-### 风险门禁
-### Risk Gates
+### 重要提醒
+### Important Notes
 
-| 风险/保护 | 默认行为 | apply 条件 |
-| --- | --- | --- |
-| `low` / `normal` | 可计划 | `--yes` 足够 |
-| `medium` / `high` / `approved_plan` | 阻断 | exact `--approved-targets TARGET_ID` |
-| `exact_confirm` | 阻断 | exact `--approved-targets TARGET_ID` + `--confirm-targets TARGET_ID` |
-| `protected_session` | 永久阻断 | 不提供普通确认绕过 |
+- `audit`、`plan`、`trace` 只读，不删除文件。
 
-| Risk/protection | Default behavior | Apply condition |
-| --- | --- | --- |
-| `low` / `normal` | Can be planned | `--yes` is enough |
-| `medium` / `high` / `approved_plan` | Blocked | exact `--approved-targets TARGET_ID` |
-| `exact_confirm` | Blocked | exact `--approved-targets TARGET_ID` + `--confirm-targets TARGET_ID` |
-| `protected_session` | Always blocked | No normal confirmation bypass |
+  `audit`, `plan`, and `trace` are read-only.
+- `apply_storage_plan.sh` 会修改文件；不要把它当成预览命令。
 
-### 默认阻断范围
-### Default Blocked Scope
+  `apply_storage_plan.sh` changes files; it is not a preview command.
+- `safe_clean.sh` 只是旧入口的兼容 shim，会提示弃用并转到 apply wrapper。
 
-- Downloads、Trash、Docker prune、hidden-home、app leftovers、system scope。
-  Downloads, Trash, Docker prune, hidden-home, app leftovers, and system scope.
-- 浏览器登录、cookie、session、token、keychain、credential material。
-  Browser login, cookies, sessions, tokens, keychain, and credential material.
-- 任何未进入 explicit plan 或不在 exact approved target list 中的目标。
-  Any target not in the explicit plan or exact approved target list.
+  `safe_clean.sh` is a deprecated compatibility shim.
+- 报告、receipt 和 backup manifest 会尽量隐藏绝对路径，但不要把它们当作秘密存储。
+
+  Reports, receipts, and backup manifests redact paths where possible, but are not secret storage.
 
 ## 配置与参数
 ## Configuration & CLI Reference
 
-### 主入口
-### Main Entrypoints
+### 四个命令
+### Four Commands
 
-```bash
-python3 scripts/mac_storage_manager.py audit [options]
-python3 scripts/mac_storage_manager.py plan [options]
-python3 scripts/mac_storage_manager.py clean [options]
-python3 scripts/mac_storage_manager.py trace --path <TARGET_PATH> --keyword <KEYWORD> [options]
-```
-
-### Wrapper 入口
-### Wrapper Entrypoints
-
-| Wrapper | 行为 |
-| --- | --- |
-| `scripts/audit_storage.sh` | 只运行 `audit --markdown` |
-| `scripts/plan_storage.sh` | 只运行 `plan --markdown` |
-| `scripts/apply_storage_plan.sh` | 推荐 apply 入口：`clean --apply --yes --require-explicit-plan --markdown` |
-| `scripts/safe_clean.sh` | 兼容 shim；打印 deprecation 提示后转到 `apply_storage_plan.sh` |
-
-| Wrapper | Behavior |
-| --- | --- |
-| `scripts/audit_storage.sh` | Runs only `audit --markdown` |
-| `scripts/plan_storage.sh` | Runs only `plan --markdown` |
-| `scripts/apply_storage_plan.sh` | Recommended apply entrypoint: `clean --apply --yes --require-explicit-plan --markdown` |
-| `scripts/safe_clean.sh` | Compatibility shim; prints a deprecation warning and delegates to `apply_storage_plan.sh` |
-
-Wrapper 不会自动切 profile、不会自动推断 target、不会扩大清理范围。
-
-Wrappers do not switch profiles automatically, infer targets automatically, or broaden cleanup scope.
-
-### Profile
-### Profiles
-
-| Profile | 默认 | 用途 |
+| 命令 | 作用 | 是否修改文件 |
 | --- | --- | --- |
-| `generic` | 是 | 开源通用 macOS 清理；不假定任何私有 repo 结构 |
-| `repo-evidence` | 否 | opt-in repo 证据层；用于 repo references、generated evidence、historical indexes、route maps、manifests 等 |
+| `audit` | 扫描并报告空间热点 | 否 |
+| `plan` | 生成清理计划 | 否 |
+| `clean` | 不加 `--apply` 时报告；加上后执行 | 只有 `--apply` 时会修改 |
+| `trace` | 追踪反复出现的目录来源 | 否 |
 
-| Profile | Default | Use |
+| Command | Purpose | Changes files |
 | --- | --- | --- |
-| `generic` | Yes | Open-source generic macOS cleanup; assumes no private repo structure |
-| `repo-evidence` | No | Opt-in repo evidence layer for repo references, generated evidence, historical indexes, route maps, manifests, and similar material |
-
-```bash
-python3 scripts/mac_storage_manager.py audit --profile generic --markdown
-python3 scripts/mac_storage_manager.py trace --profile repo-evidence --path "<TARGET_PATH>" --keyword "<KEYWORD>" --markdown
-```
-
-### 状态目录
-### State Root
-
-默认状态目录是：
-
-The default state directory is:
-
-```text
-~/.mac-storage-manager/
-```
-
-当未显式传 `--receipt-dir` / `--backup-dir` 时，`--state-root PATH` 会作为 receipt 和 backup 的默认根目录：
-
-When `--receipt-dir` / `--backup-dir` are not passed, `--state-root PATH` becomes the default root for receipts and backups:
-
-```bash
-python3 scripts/mac_storage_manager.py clean \
-  --apply --yes --require-explicit-plan \
-  --state-root "$HOME/.mac-storage-manager-demo" \
-  --markdown
-```
-
-优先级：`--receipt-dir` / `--backup-dir` 高于 `--state-root`。
-
-Precedence: `--receipt-dir` / `--backup-dir` override `--state-root`.
+| `audit` | Scan and report storage hotspots | No |
+| `plan` | Build a cleanup plan | No |
+| `clean` | Reports by default; applies with `--apply` | Only with `--apply` |
+| `trace` | Trace sources for reappearing folders | No |
 
 ### 常用参数
 ### Common Options
 
 | 参数 | 作用 |
 | --- | --- |
-| `--home PATH` | 指定 home，默认当前用户 home |
-| `--root PATH` | 指定扫描根目录，默认等于 home |
-| `--profile MODE` | 选择 `generic` 或 `repo-evidence` |
-| `--state-root PATH` | 设置 receipt / backup 默认根目录 |
-| `--days-to-keep N` | 全局保留天数，默认 7；target 级 `min_age_days` 可覆盖 |
-| `--topk N` | 报告显示前 N 个空间热点，默认 5 |
-| `--json` / `--markdown` | 输出格式 |
-| `--include-hidden-home` | 纳入 hidden-home 目标 |
-| `--include-system` | 纳入 system 目标 |
-| `--system-roots A,B,C,D` | 覆盖 system roots，至少四个路径 |
+| `--profile generic` | 默认通用模式；不假定私有 repo 结构 |
+| `--profile repo-evidence` | 显式开启项目证据和历史索引追踪 |
+| `--state-root PATH` | 设置 receipt 和 backup 的默认根目录 |
+| `--receipt-dir PATH` | 单独指定 receipt 目录，优先于 `--state-root` |
+| `--backup-dir PATH` | 单独指定 backup 目录，优先于 `--state-root` |
+| `--approved-targets ID1,ID2` | 精确批准目标；ID 必须来自当前 plan |
+| `--confirm-targets ID1,ID2` | 为 `exact_confirm` 目标提供二次确认 |
+| `--require-zero-hit WORD` | apply 后检查指定关键词是否还残留 |
+| `--include-hidden-home` | 把 hidden-home 目标加入扫描 |
+| `--include-system` | 把系统目标加入扫描；默认关闭 |
+| `--app-path PATH` | 聚焦某个 `.app` 的残留 |
 | `--flutter-search-root PATH` | 限制 Flutter 工程搜索范围 |
-| `--app-path PATH` | 扫描某个 `.app` 的残留 |
-| `--approved-targets ID1,ID2` | exact approved target list |
-| `--confirm-targets ID1,ID2` | exact-confirm target list |
-| `--require-zero-hit WORD` | apply 后做 scoped residual validation |
-| `--receipt-dir PATH` | 指定 cleanup receipt 输出目录 |
-| `--backup-dir PATH` | 指定 backup manifest 输出目录 |
-| `--apply` / `--dry-run` | clean 模式实际执行或预演 |
-| `--yes` | 只放行 low-risk 目标 |
-| `--require-explicit-plan` | apply 前强制执行 explicit plan gate |
+| `--json` / `--markdown` | 选择输出格式 |
+| `--apply` | `clean` 模式实际修改文件 |
+| `--dry-run` | `clean` 模式不修改文件；需要清单时优先用 `plan` |
+| `--yes` | 只批准 low-risk 目标 |
+| `--require-explicit-plan` | apply 前要求高风险目标有显式批准 |
 
 | Option | Purpose |
 | --- | --- |
-| `--home PATH` | Set home; defaults to the current user home |
-| `--root PATH` | Set scan root; defaults to home |
-| `--profile MODE` | Choose `generic` or `repo-evidence` |
-| `--state-root PATH` | Set the default receipt / backup root |
-| `--days-to-keep N` | Global retention days, default 7; target-level `min_age_days` can override it |
-| `--topk N` | Show top N consumers, default 5 |
-| `--json` / `--markdown` | Output format |
-| `--include-hidden-home` | Include hidden-home targets |
-| `--include-system` | Include system targets |
-| `--system-roots A,B,C,D` | Override system roots; at least four paths |
+| `--profile generic` | Default portable profile; assumes no private repo layout |
+| `--profile repo-evidence` | Explicitly include project evidence and historical-index tracing |
+| `--state-root PATH` | Default root for receipts and backups |
+| `--receipt-dir PATH` | Receipt directory; overrides `--state-root` |
+| `--backup-dir PATH` | Backup directory; overrides `--state-root` |
+| `--approved-targets ID1,ID2` | Exact targets from the current plan |
+| `--confirm-targets ID1,ID2` | Extra confirmation for `exact_confirm` targets |
+| `--require-zero-hit WORD` | Check for a residual keyword after apply |
+| `--include-hidden-home` | Include hidden-home targets in the scan |
+| `--include-system` | Include system targets; off by default |
+| `--app-path PATH` | Focus on one `.app` leftovers |
 | `--flutter-search-root PATH` | Limit Flutter project search scope |
-| `--app-path PATH` | Scan leftovers for one `.app` |
-| `--approved-targets ID1,ID2` | Exact approved target list |
-| `--confirm-targets ID1,ID2` | Exact-confirm target list |
-| `--require-zero-hit WORD` | Run scoped residual validation after apply |
-| `--receipt-dir PATH` | Set cleanup receipt output directory |
-| `--backup-dir PATH` | Set backup manifest output directory |
-| `--apply` / `--dry-run` | Execute or preview clean mode |
-| `--yes` | Approve only low-risk targets |
-| `--require-explicit-plan` | Enforce the explicit-plan gate before apply |
+| `--json` / `--markdown` | Choose the output format |
+| `--apply` | Actually modify files in `clean` mode |
+| `--dry-run` | Run `clean` without modifying files; use `plan` for the exact list |
+| `--yes` | Approve low-risk targets only |
+| `--require-explicit-plan` | Require explicit approval for high-risk apply |
 
-### 环境变量
-### Environment Variables
+默认状态目录是 `~/.mac-storage-manager/`。未传 `--receipt-dir` 或 `--backup-dir` 时，`--state-root PATH` 会提供默认目录；单独传入的 receipt/backup 目录优先。
 
-| 变量 | 作用 |
-| --- | --- |
-| `MAC_STORAGE_SYSTEM_ROOTS` | 不传 `--system-roots` 时覆盖默认 system roots；逗号分隔 |
-
-| Variable | Purpose |
-| --- | --- |
-| `MAC_STORAGE_SYSTEM_ROOTS` | Overrides default system roots when `--system-roots` is not passed; comma-separated |
+The default state directory is `~/.mac-storage-manager/`. `--state-root PATH` supplies defaults when receipt/backup directories are omitted; explicit directories take precedence.
 
 ## 报告怎么看
-## How to Read Reports
+## Reading Reports
 
-核心输出字段保持稳定，方便人和自动化消费：
+### 先看这五个字段
+### Start with these five fields
 
-Core output fields stay stable for both humans and automation:
+- `target_id`：目标编号。高风险 apply 必须从当前 plan 复制它。
 
-- `approved_targets`：本次 apply 明确批准的 target ID。
-  `approved_targets`: exact target IDs approved for this apply run.
-- `backup_manifest`：backup dir、touched-files manifest、sha256 manifest、复制数量和路径清单。
-  `backup_manifest`: backup dir, touched-files manifest, sha256 manifest, copied count, and path list.
-- `receipt`：cleanup receipt 的 Markdown/JSON 路径。
-  `receipt`: Markdown/JSON cleanup receipt paths.
-- `residual_validation`：`--require-zero-hit` 的 scoped 验证结果。
-  `residual_validation`: scoped validation result for `--require-zero-hit`.
-- `Cleaned / Planned`：每个 target 的 status、risk、source layer、protection、rollback、blocked reason。
-  `Cleaned / Planned`: status, risk, source layer, protection, rollback, and blocked reason per target.
+  `target_id`: the target identifier; high-risk apply must copy it from the current plan.
+- `status`：`planned`、`ready`、`blocked`、`skipped` 等当前状态。
 
-常见状态：
+  `status`: the current state, such as `planned`, `ready`, `blocked`, or `skipped`.
+- `protection`：为什么需要批准、二次确认或保持阻断。
 
-Common statuses:
+  `protection`: why approval, extra confirmation, or blocking applies.
+- `backup_manifest`：apply 时的备份清单和 SHA-256 清单（如果该目标需要备份）。
 
-| 状态 | 含义 |
-| --- | --- |
-| `planned` | 只读计划中，尚未删除 |
-| `ready` | apply 模式下可执行 |
-| `cleaned` | 已执行清理 |
-| `blocked` | 被安全规则阻断 |
-| `skipped` | 缺路径、缺工具或条件不满足 |
-| `empty` | 没有可清理内容 |
+  `backup_manifest`: backup and SHA-256 manifests when backup is needed.
+- `receipt`：本次 apply 的 Markdown/JSON 清理记录路径。
 
-| Status | Meaning |
-| --- | --- |
-| `planned` | Read-only plan, not deleted |
-| `ready` | Eligible during apply mode |
-| `cleaned` | Cleanup executed |
-| `blocked` | Blocked by safety policy |
-| `skipped` | Missing path, missing tool, or unmet condition |
-| `empty` | Nothing eligible to clean |
+  `receipt`: Markdown/JSON receipt paths for the apply run.
 
-## 隐私与可移植性
-## Privacy & Portability
+### 运行完成后怎么判断
+### How to Tell What Happened
 
-- `generic` 是默认 profile，适合开源使用；默认不会查找私有 repo 结构。
-  `generic` is the default profile and is suitable for open-source use; it does not look for private repo structures by default.
-- 报告、trace、receipt 和 JSON 会对 home/root/private absolute paths 做脱敏显示。
-  Reports, trace output, receipts, and JSON redact home/root/private absolute paths in public display.
-- `repo-evidence` 是显式 opt-in；只有你传 `--profile repo-evidence` 时才加入 repo/evidence/history 语义。
-  `repo-evidence` is explicit opt-in; repo/evidence/history semantics are included only when you pass `--profile repo-evidence`.
-- 不要把 receipt、backup manifest 或 trace 输出当作秘密存储；它们是复盘证据，不是保险箱。
-  Do not treat receipts, backup manifests, or trace output as secret storage; they are review evidence, not a vault.
+- 审计或计划：看 `Top Consumers` 和 `Cleaned / Planned`，不会删除文件。
+
+  Audit and plan: review `Top Consumers` and `Cleaned / Planned`; no files are deleted.
+- apply：看 `cleaned`、`blocked`、`skipped` 的数量，再看 `receipt` 和 `Residual Validation`。
+
+  Apply: review the `cleaned`, `blocked`, and `skipped` counts, then inspect the receipt and residual validation.
+- 没有可清理内容：看到 `empty` 很正常，不代表命令失败。
+
+  `empty` is normal when nothing is eligible; it does not mean the command failed.
 
 ## 结构总览
 ## Structure Map
 
 ```text
-scripts/mac_storage_manager.py     compatibility facade + CLI entry
-scripts/_mac_storage_cli.py        argument parser + context builder
-scripts/_mac_storage_core.py       data model, scanning, plan/apply engine, receipt/backup
-scripts/_mac_storage_policy.py     single source of truth for risk, approval, retention policy
-scripts/_mac_storage_render.py     Markdown/text/JSON report rendering
+scripts/mac_storage_manager.py     compatibility facade and CLI entry
+scripts/_mac_storage_cli.py        argument parser and context builder
+scripts/_mac_storage_core.py       scanning, planning, execution, receipt, and backup
+scripts/_mac_storage_policy.py     risk, approval, retention, and profile policy
+scripts/_mac_storage_render.py     Markdown, text, and JSON rendering
 scripts/audit_storage.sh           read-only audit wrapper
 scripts/plan_storage.sh            read-only plan wrapper
-scripts/apply_storage_plan.sh      recommended apply wrapper
+scripts/apply_storage_plan.sh      apply wrapper for low-risk cleanup
 scripts/safe_clean.sh              deprecated compatibility shim
 tests/                             regression and open-source contract tests
-references/                        required cleanup routing references
+references/                        routing notes for sensitive cleanup cases
 ```
 
-工作链路：
+- `scripts/mac_storage_manager.py`: compatibility facade and CLI entry.
+- `scripts/_mac_storage_core.py`: scanning, planning, execution, receipts, and backups.
+- `scripts/_mac_storage_policy.py`: risk, approval, retention, and profile policy.
+- `scripts/_mac_storage_render.py`: Markdown, text, and JSON rendering.
+- `scripts/`: shell wrappers for audit, plan, and apply.
+- `tests/` and `references/`: regression coverage and sensitive-case routing notes.
 
-How it works:
+## 工作链路
+## How It Works
 
 ```text
-CLI/wrapper -> StorageContext -> profile target discovery -> scan facts -> plan gate -> optional apply -> renderer + receipt
+CLI or wrapper
+  -> StorageContext
+  -> profile-aware target discovery
+  -> scan facts
+  -> plan and safety gate
+  -> optional apply
+  -> renderer, receipt, and residual validation
 ```
 
-设计原则：
+这里的 `SKILL.md` 是 agent 使用说明；`scripts/` 下的 Python 和 shell 文件才是实际执行入口。
 
-Design principles:
+`SKILL.md` is the agent-facing contract; the Python and shell files under `scripts/` are the executable entrypoints.
 
-- 通用核心默认安全，repo/evidence 能力通过 profile 插拔。
-  The generic core is safe by default; repo/evidence behavior is pluggable through profiles.
-- 风险判定、retention、目标执行只保留一条 authoritative path。
-  Risk decisions, retention, and target execution each have one authoritative path.
-- Wrapper 只缩窄权限，不放大权限。
-  Wrappers narrow permissions; they do not expand scope.
-- `plan()` 是真实阶段；`clean()` 只消费已批准计划项。
-  `plan()` is a real stage; `clean()` consumes only approved plan items.
+- CLI 或 wrapper 接收参数，构建 `StorageContext`。
+
+  The CLI or wrapper builds a `StorageContext` from the arguments.
+- profile 负责发现目标，核心模块收集扫描事实并执行安全门禁。
+
+  The selected profile discovers targets, and the core collects scan facts and applies safety gates.
+- 通过门禁后才会执行可选的 apply，并输出报告、receipt 和残留验证结果。
+
+  Only gated items reach apply, followed by reports, receipts, and residual validation.
 
 ## 开发者说明
 ## Developer Notes
@@ -612,7 +518,14 @@ python3 -m unittest -v tests.test_mac_storage_manager tests.test_mac_storage_ope
 ### Syntax Checks
 
 ```bash
-python3 -m py_compile   scripts/mac_storage_manager.py   scripts/_mac_storage_cli.py   scripts/_mac_storage_core.py   scripts/_mac_storage_policy.py   scripts/_mac_storage_render.py   tests/test_mac_storage_manager.py   tests/test_mac_storage_open_source_contract.py
+python3 -m py_compile \
+  scripts/mac_storage_manager.py \
+  scripts/_mac_storage_cli.py \
+  scripts/_mac_storage_core.py \
+  scripts/_mac_storage_policy.py \
+  scripts/_mac_storage_render.py \
+  tests/test_mac_storage_manager.py \
+  tests/test_mac_storage_open_source_contract.py
 
 zsh -n scripts/audit_storage.sh
 zsh -n scripts/plan_storage.sh
@@ -620,52 +533,54 @@ zsh -n scripts/apply_storage_plan.sh
 zsh -n scripts/safe_clean.sh
 ```
 
-### 贡献前检查
-### Before Contributing
+提交文档或代码前，确认 CLI flag、wrapper、README、SKILL.md、renderer 和测试仍然一致。
 
-- 如果改 CLI flag，也同步更新 wrappers、README、SKILL.md 和 tests。
-  If you change CLI flags, update wrappers, README, SKILL.md, and tests together.
-- 如果改风险规则，只改 `_mac_storage_policy.py` 的 authoritative path，并补 gate matrix 测试。
-  If you change risk rules, update the authoritative path in `_mac_storage_policy.py` and add gate matrix tests.
-- 如果改输出字段，保持 Markdown/text/JSON renderer 语义一致。
-  If you change output fields, keep Markdown/text/JSON renderer semantics aligned.
-- 如果加入 repo-specific discovery，不要放进默认 `generic` profile。
-  If you add repo-specific discovery, do not put it in the default `generic` profile.
+Before contributing, keep CLI flags, wrappers, README, SKILL.md, renderers, and tests aligned.
 
 ## 常见问题
 ## FAQ
 
-### 如果我没说“先列清单”，这个 skill 会不会直接清理？
-### If I do not say “list first,” will this skill clean directly?
+### 我没有说“先列清单”，它会直接清理吗？
+### Will it clean directly if I do not say “list first”?
 
-不会。skill 合同和 wrapper 入口都要求默认先 `audit` 或 `plan`。真正删除必须进入 `clean --apply`，并通过 `--yes` / `--approved-targets` / `--confirm-targets` 的门禁。
+推荐流程不会直接跳过清单：先运行 `plan`，看完结果，再决定是否运行 apply wrapper。CLI 不会保存一个必须提交的计划文件；apply 时会重新扫描，并再次执行风险和批准检查。真正修改文件必须进入 `clean --apply`。
 
-No. The skill contract and wrappers default to `audit` or `plan`. Deletion requires `clean --apply` plus the relevant `--yes` / `--approved-targets` / `--confirm-targets` gates.
+The recommended workflow does not skip the list: run `plan`, review it, then choose the apply wrapper. The CLI does not save a plan file that must be submitted; apply rescans and rechecks the approval gates. File changes require `clean --apply`.
+
+### `--yes` 会删除 Downloads 或 Trash 吗？
+### Does `--yes` delete Downloads or Trash?
+
+不会。`--yes` 只放行 low-risk 目标。Downloads、Trash、Docker、hidden-home、App 残留和系统范围需要精确批准；浏览器登录、Cookie、Session、Token、Keychain 和凭据保持阻断。
+
+No. `--yes` only allows low-risk targets. Sensitive scopes need exact approval, while browser identity and credential material stay blocked.
 
 ### `safe_clean.sh` 还能用吗？
 ### Can I still use `safe_clean.sh`?
 
-能，但它只是兼容 shim，会打印 deprecation 提示并转到 `apply_storage_plan.sh`。新用法请直接使用 `audit_storage.sh`、`plan_storage.sh` 和 `apply_storage_plan.sh`。
+可以，但它只是旧入口的兼容 shim，会打印弃用提示并转到 `apply_storage_plan.sh`。新流程直接使用 audit、plan、apply 三个入口。
 
-Yes, but it is only a compatibility shim. It prints a deprecation warning and delegates to `apply_storage_plan.sh`. New usage should call `audit_storage.sh`, `plan_storage.sh`, and `apply_storage_plan.sh` directly.
+Yes, but it is a deprecated compatibility shim. Prefer the audit, plan, and apply entrypoints.
 
-### `--yes` 是否会删除 Downloads 或 Trash？
-### Does `--yes` delete Downloads or Trash?
-
-不会。`--yes` 只对 low-risk 目标生效。Downloads、Trash、Docker、hidden-home、app leftovers、system scope 等需要 exact target approval，protected session 永久阻断。
-
-No. `--yes` only applies to low-risk targets. Downloads, Trash, Docker, hidden-home, app leftovers, and system scope require exact target approval, while protected sessions stay blocked.
-
-### 什么时候用 `repo-evidence`？
+### `repo-evidence` 什么时候用？
 ### When should I use `repo-evidence`?
 
-只有当你明确要追踪 repo references、generated evidence、historical indexes、route maps、manifests 等项目证据层时才使用。普通 macOS 清理保持默认 `generic`。
+只有在你明确需要追踪项目引用、生成证据或历史索引时才使用。普通 Mac 清理保持默认 `generic`。
 
-Use it only when you explicitly need repo references, generated evidence, historical indexes, route maps, manifests, or similar project evidence layers. For ordinary macOS cleanup, keep the default `generic` profile.
+Use it only when you explicitly need project references, generated evidence, or historical indexes. Keep ordinary cleanup on `generic`.
 
-### License
-### License
+### apply 失败或没有释放空间怎么办？
+### What if apply fails or frees little space?
+
+先看报告里的 `blocked`、`skipped`、`failed` 和 `reason`。如果目标反复出现，用 `trace` 查触发源；如果只是没有可清理内容，`empty` 是正常结果。
+
+Check `blocked`, `skipped`, `failed`, and `reason` in the report. If a target reappears, use `trace`; `empty` is normal when nothing is eligible.
+
+## 许可证
+## License
+
+MIT License，详见 `LICENSE`。
 
 MIT License. See `LICENSE`.
 
-MIT License. See `LICENSE`.
+由 **AI·Maho** 和 **人类·Matoya** 共同维护
+Maintained jointly by **AI·Maho** and **Human·Matoya**
