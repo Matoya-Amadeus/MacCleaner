@@ -11,9 +11,9 @@
 <details>
 <summary><strong>Recent notes</strong></summary>
 
-Update time: 2026-07-11 19:08
+Update time: 2026-07-12 00:28
 
-Update content: Long sections are now collapsible on GitHub, and the English guide has its own language entry point.
+Update content: Added an installable CLI, optional stdio MCP server, and one-time plan-token safety chain.
 
 ### 2026-05-19 21:20
 
@@ -39,9 +39,9 @@ Update content: Added the generic default profile, opt-in repo-evidence profile,
 
 | Goal | Command | Result |
 | --- | --- | --- |
-| Inspect storage | `bash scripts/audit_storage.sh` | Read-only scan |
-| Build an exact plan | `bash scripts/plan_storage.sh` | Lists planned, approval-needed, and blocked targets |
-| Apply low-risk cleanup | `bash scripts/apply_storage_plan.sh` | Applies only regenerable low-risk targets |
+| Inspect storage | `maccleaner audit --markdown` | Read-only scan |
+| Build an exact plan | `maccleaner plan --markdown` | Lists planned, approval-needed, and blocked targets |
+| Apply low-risk cleanup | `maccleaner clean --apply --yes --require-explicit-plan` | Applies only regenerable low-risk targets |
 | Apply sensitive targets | Add `--approved-targets ID` | Applies only exact IDs you approved |
 
 <details id="what-it-solves">
@@ -60,13 +60,39 @@ audit -> plan -> approve exact target IDs -> apply -> verify
 <details id="installation">
 <summary><strong>Installation</strong></summary>
 
-Requirements: macOS and Python 3.10+. No third-party Python packages are required. Wrappers use `zsh`.
+Requirements: macOS and Python 3.10+. The base CLI has no third-party runtime dependency; MCP is an optional extra.
+
+### CLI
 
 ```bash
-git clone https://github.com/Matoya-Amadeus/MacCleaner.git
-cd MacCleaner
-python3 scripts/mac_storage_manager.py --help
+pipx install maccleaner
+maccleaner --help
 ```
+
+Before the first PyPI release, install directly from GitHub:
+
+```bash
+pipx install "git+https://github.com/Matoya-Amadeus/MacCleaner.git"
+```
+
+### MCP
+
+```bash
+pipx install "maccleaner[mcp]"
+maccleaner-mcp
+```
+
+Before the first PyPI release, use the GitHub version:
+
+```bash
+pipx install "git+https://github.com/Matoya-Amadeus/MacCleaner.git#egg=maccleaner[mcp]"
+```
+
+`maccleaner-mcp` uses stdio only. See the [MCP guide](docs/mcp.md) for client configuration and the plan-token apply flow.
+
+### Codex Skill
+
+The root `SKILL.md` remains the single skill source. In the Codex GitHub Skill installer, use repo `Matoya-Amadeus/MacCleaner`, path `.`, and install name `maccleaner`.
 
 </details>
 
@@ -76,13 +102,13 @@ python3 scripts/mac_storage_manager.py --help
 ### 1. Audit without changing files
 
 ```bash
-bash scripts/audit_storage.sh
+maccleaner audit --markdown
 ```
 
 ### 2. Build the exact plan
 
 ```bash
-bash scripts/plan_storage.sh
+maccleaner plan --markdown
 ```
 
 Review `target_id`, `status`, `risk`, `protection`, and `reason`.
@@ -90,7 +116,7 @@ Review `target_id`, `status`, `risk`, `protection`, and `reason`.
 ### 3. Apply low-risk cleanup
 
 ```bash
-bash scripts/apply_storage_plan.sh
+maccleaner clean --apply --yes --require-explicit-plan --markdown
 ```
 
 This command changes files. Run `plan` first; the wrapper allows only low-risk, regenerable targets by default.
@@ -98,8 +124,8 @@ This command changes files. Run `plan` first; the wrapper allows only low-risk, 
 Sensitive targets require exact IDs from the current plan:
 
 ```bash
-bash scripts/plan_storage.sh --include-hidden-home
-bash scripts/apply_storage_plan.sh \
+maccleaner plan --include-hidden-home --markdown
+maccleaner clean --apply --yes --require-explicit-plan --markdown \
   --include-hidden-home \
   --approved-targets TARGET_ID
 ```
@@ -114,14 +140,14 @@ If the target is marked `exact_confirm`, also pass `--confirm-targets TARGET_ID`
 Read-only output:
 
 ```bash
-python3 scripts/mac_storage_manager.py audit --markdown
-python3 scripts/mac_storage_manager.py audit --json
+maccleaner audit --markdown
+maccleaner audit --json
 ```
 
 Trace a reappearing folder:
 
 ```bash
-python3 scripts/mac_storage_manager.py trace \
+maccleaner trace \
   --path "<TARGET_PATH>" \
   --keyword "<KEYWORD>" \
   --markdown
@@ -130,13 +156,15 @@ python3 scripts/mac_storage_manager.py trace \
 Focus on an app or Flutter project:
 
 ```bash
-python3 scripts/mac_storage_manager.py audit \
+maccleaner audit \
   --app-path "/Applications/Example.app" --markdown
-python3 scripts/mac_storage_manager.py audit \
+maccleaner audit \
   --flutter-search-root "$HOME/Projects" --markdown
 ```
 
 `trace` is read-only. Replace the example path and keyword with real values.
+
+Source checkouts can still use `scripts/audit_storage.sh`, `scripts/plan_storage.sh`, and `scripts/apply_storage_plan.sh`; they are compatibility entry points.
 
 </details>
 
@@ -151,6 +179,8 @@ python3 scripts/mac_storage_manager.py audit \
 | Targets outside the current plan | Never executed |
 
 `audit`, `plan`, and `trace` are read-only. `apply_storage_plan.sh` changes files. `safe_clean.sh` is only a deprecated compatibility shim.
+
+MCP `apply_storage_plan` accepts no new scan-scope arguments. It requires the live `plan_id` from `plan_storage`, non-empty `approved_targets`, and any required `confirm_targets`. Each plan token is single-use.
 
 </details>
 
@@ -193,11 +223,10 @@ CLI/wrapper -> StorageContext -> profile discovery -> scan -> plan/gates
             -> optional apply -> renderer/receipt/residual validation
 ```
 
-- `scripts/mac_storage_manager.py`: compatibility facade and CLI entry.
-- `scripts/_mac_storage_core.py`: scanning, planning, execution, receipts, and backups.
-- `scripts/_mac_storage_policy.py`: risk, approval, retention, and profile policy.
-- `scripts/_mac_storage_render.py`: Markdown, text, and JSON rendering.
-- `scripts/*_storage.sh`: audit, plan, and apply wrappers.
+- `src/maccleaner/`: one canonical core plus CLI and MCP adapters.
+- `scripts/mac_storage_manager.py`: legacy CLI compatibility facade.
+- `scripts/_mac_storage_*.py`: legacy Python import-path shims.
+- `scripts/*_storage.sh`: audit, plan, and apply wrappers for source checkouts.
 - `tests/` and `references/`: regression tests and sensitive-case routing notes.
 
 </details>
@@ -206,12 +235,12 @@ CLI/wrapper -> StorageContext -> profile discovery -> scan -> plan/gates
 <summary><strong>Developer notes</strong></summary>
 
 ```bash
-python3 -m unittest -v \
-  tests.test_mac_storage_manager \
-  tests.test_mac_storage_open_source_contract
+python3 -m pip install ".[mcp]" build
+python3 -m unittest discover -s tests -v
+python3 -m build
 ```
 
-Keep CLI flags, wrappers, README files, `SKILL.md`, renderers, and tests aligned when contributing.
+Before the first PyPI release, configure `Matoya-Amadeus/MacCleaner` as a PyPI Trusted Publisher. Pushing tag `v0.1.0` verifies that the tag and package version match before publishing.
 
 </details>
 
@@ -229,6 +258,10 @@ No. `--yes` allows only low-risk targets. Sensitive scopes require exact approva
 ### What if apply fails or frees little space?
 
 Check `blocked`, `skipped`, `failed`, and `reason` in the report. `empty` is normal when nothing is eligible.
+
+### Does MCP clean immediately?
+
+No. MCP first returns a read-only `plan_storage` result and a short-lived `plan_id`. Apply requires that same token, exact target IDs, and any required confirmation; even unapproved low-risk targets stay blocked.
 
 </details>
 

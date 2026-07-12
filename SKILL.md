@@ -31,9 +31,11 @@ Use this skill when the user asks to clean disk space, free storage, find large 
 CLI flags:
 
 ```bash
-scripts/mac_storage_manager.py audit --profile generic --markdown
-scripts/mac_storage_manager.py trace --profile repo-evidence --path <target-path> --keyword <word>
+maccleaner audit --profile generic --markdown
+maccleaner trace --profile repo-evidence --path <target-path> --keyword <word>
 ```
+
+For a source checkout, `python3 scripts/mac_storage_manager.py ...` and the shell wrappers remain compatible. Install the optional local stdio MCP adapter with `pipx install "maccleaner[mcp]"`; it starts as `maccleaner-mcp`.
 
 ## Required reference routing
 
@@ -45,11 +47,11 @@ scripts/mac_storage_manager.py trace --profile repo-evidence --path <target-path
 ## Workflow
 
 1. Clarify the target path, keyword, and whether generic or `repo-evidence` profile is intended.
-2. If a folder reappears, run `scripts/mac_storage_manager.py trace --profile <profile> --path <target-path> --keyword <word>` and remove `active_trigger` causes first.
-3. Run `scripts/audit_storage.sh` for read-only audit or `scripts/plan_storage.sh` for an exact cleanup plan.
+2. If a folder reappears, run `maccleaner trace --profile <profile> --path <target-path> --keyword <word>` and remove `active_trigger` causes first.
+3. Run `maccleaner audit --markdown` for read-only audit or `maccleaner plan --markdown` for an exact cleanup plan.
 4. List each cleanup candidate with `target_id`, `source_layer`, protection level, rollback strategy, blocked items, and explicit out-of-scope items.
 5. Build and echo the exact approved target list before apply.
-6. Apply only through `scripts/apply_storage_plan.sh --approved-targets <ids> ...`; `scripts/safe_clean.sh` is a deprecated compatibility shim.
+6. Apply only through `maccleaner clean --apply --yes --require-explicit-plan --approved-targets <ids> ...`; `scripts/safe_clean.sh` is a deprecated compatibility shim.
 7. Re-audit after apply and use `--require-zero-hit <pattern>` when the task was keyword/path based.
 
 ## Confirmation semantics
@@ -60,6 +62,8 @@ scripts/mac_storage_manager.py trace --profile repo-evidence --path <target-path
 - Protected session targets stay blocked; do not offer a normal confirmation bypass.
 - Category-level confirmation is allowed only for low-risk targets.
 - Apply wrappers must not add targets, change profile, or broaden scope.
+- MCP `apply_storage_plan` requires the live `plan_id` returned by MCP `plan_storage`, non-empty exact `approved_targets`, and required `confirm_targets`; it cannot accept new scan-scope parameters.
+- A MCP plan token expires after 15 minutes and is consumed before execution. Unapproved low-risk targets are blocked as strictly as high-risk targets.
 
 ## Source layers and protections
 

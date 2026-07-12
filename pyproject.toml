@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "maccleaner"
+version = "0.1.0"
+description = "Safe, staged macOS storage audit and cleanup CLI"
+readme = { file = "README.en.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "MacCleaner contributors" }]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: System :: Systems Administration",
+]
+dependencies = []
+
+[project.optional-dependencies]
+mcp = ["mcp>=1,<2"]
+
+[project.scripts]
+maccleaner = "maccleaner.cli:main"
+maccleaner-mcp = "maccleaner.mcp_server:main"
+
+[project.urls]
+Homepage = "https://github.com/Matoya-Amadeus/MacCleaner"
+Repository = "https://github.com/Matoya-Amadeus/MacCleaner"
+Issues = "https://github.com/Matoya-Amadeus/MacCleaner/issues"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]

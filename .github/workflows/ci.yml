@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install ".[mcp]" build
+      - run: python -m unittest discover -s tests -v
+      - run: python -m build
+      - name: Verify base wheel entry points
+        run: |
+          WHEEL="$(find dist -name '*.whl' -print -quit)"
+          python -m venv /tmp/maccleaner-wheel
+          /tmp/maccleaner-wheel/bin/python -m pip install "$WHEEL"
+          /tmp/maccleaner-wheel/bin/maccleaner --help
+          if /tmp/maccleaner-wheel/bin/maccleaner-mcp >/tmp/maccleaner-mcp.stderr 2>&1; then
+            echo "maccleaner-mcp unexpectedly started without the MCP extra" >&2
+            exit 1
+          else
+            exit_code=$?
+          fi
+          test "$exit_code" -eq 2
+          test "$(cat /tmp/maccleaner-mcp.stderr)" = 'MCP support requires the optional dependency. Install it with pipx install "maccleaner[mcp]".'

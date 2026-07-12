@@ -11,9 +11,9 @@
 <details>
 <summary><strong>近期更新</strong></summary>
 
-更新时间：2026-07-11 19:08
+更新时间：2026-07-12 00:28
 
-更新内容：将长内容改为 GitHub 可折叠章节，并用独立英文 README 实现语言切换。
+更新内容：新增可安装 CLI、可选 MCP stdio 服务和一次性 plan token 安全链。
 
 ### 2026-05-19 21:20
 
@@ -39,9 +39,9 @@
 
 | 你要做什么 | 运行什么 | 会发生什么 |
 | --- | --- | --- |
-| 只看空间占用 | `bash scripts/audit_storage.sh` | 只读扫描，不删除文件 |
-| 生成精确清单 | `bash scripts/plan_storage.sh` | 列出计划中、需批准和被阻断的目标 |
-| 清理低风险目标 | `bash scripts/apply_storage_plan.sh` | 只执行可重新生成的低风险目标 |
+| 只看空间占用 | `maccleaner audit --markdown` | 只读扫描，不删除文件 |
+| 生成精确清单 | `maccleaner plan --markdown` | 列出计划中、需批准和被阻断的目标 |
+| 清理低风险目标 | `maccleaner clean --apply --yes --require-explicit-plan` | 只执行可重新生成的低风险目标 |
 | 清理高风险目标 | apply 时加 `--approved-targets ID` | 只执行你明确批准的目标 |
 
 <details id="解决什么问题">
@@ -60,13 +60,39 @@ audit -> plan -> approve exact target IDs -> apply -> verify
 <details id="安装">
 <summary><strong>安装</strong></summary>
 
-要求：macOS、Python 3.10+；不需要第三方 Python 包。wrapper 需要 `zsh`。
+要求：macOS、Python 3.10+。基础 CLI 没有第三方运行依赖；MCP 是可选 extra。
+
+### CLI
 
 ```bash
-git clone https://github.com/Matoya-Amadeus/MacCleaner.git
-cd MacCleaner
-python3 scripts/mac_storage_manager.py --help
+pipx install maccleaner
+maccleaner --help
 ```
+
+PyPI 首发前，直接从 GitHub 安装：
+
+```bash
+pipx install "git+https://github.com/Matoya-Amadeus/MacCleaner.git"
+```
+
+### MCP
+
+```bash
+pipx install "maccleaner[mcp]"
+maccleaner-mcp
+```
+
+PyPI 首发前使用 GitHub 版本：
+
+```bash
+pipx install "git+https://github.com/Matoya-Amadeus/MacCleaner.git#egg=maccleaner[mcp]"
+```
+
+`maccleaner-mcp` 只使用 stdio。客户端配置和 plan token apply 示例见 [MCP 使用说明](docs/mcp.md)。
+
+### Codex Skill
+
+根目录 `SKILL.md` 保留为唯一 Skill 真相源。使用 Codex 的 GitHub Skill installer 时，指定 repo `Matoya-Amadeus/MacCleaner`、path `.`、安装名 `maccleaner`。
 
 </details>
 
@@ -76,13 +102,13 @@ python3 scripts/mac_storage_manager.py --help
 ### 1. 审计：只读查看空间
 
 ```bash
-bash scripts/audit_storage.sh
+maccleaner audit --markdown
 ```
 
 ### 2. 计划：生成精确清单
 
 ```bash
-bash scripts/plan_storage.sh
+maccleaner plan --markdown
 ```
 
 重点看 `target_id`、`status`、`risk`、`protection` 和 `reason`。
@@ -90,7 +116,7 @@ bash scripts/plan_storage.sh
 ### 3. 执行：只清理低风险目标
 
 ```bash
-bash scripts/apply_storage_plan.sh
+maccleaner clean --apply --yes --require-explicit-plan --markdown
 ```
 
 这条命令会实际修改文件。运行前先完成 `plan`；它默认只放行低风险、可重新生成的目标。
@@ -98,8 +124,8 @@ bash scripts/apply_storage_plan.sh
 高风险目标必须从当前计划复制真实 ID：
 
 ```bash
-bash scripts/plan_storage.sh --include-hidden-home
-bash scripts/apply_storage_plan.sh \
+maccleaner plan --include-hidden-home --markdown
+maccleaner clean --apply --yes --require-explicit-plan --markdown \
   --include-hidden-home \
   --approved-targets TARGET_ID
 ```
@@ -114,14 +140,14 @@ bash scripts/apply_storage_plan.sh \
 只读输出：
 
 ```bash
-python3 scripts/mac_storage_manager.py audit --markdown
-python3 scripts/mac_storage_manager.py audit --json
+maccleaner audit --markdown
+maccleaner audit --json
 ```
 
 追查反复出现的目录：
 
 ```bash
-python3 scripts/mac_storage_manager.py trace \
+maccleaner trace \
   --path "<TARGET_PATH>" \
   --keyword "<KEYWORD>" \
   --markdown
@@ -130,13 +156,15 @@ python3 scripts/mac_storage_manager.py trace \
 聚焦某个 App 或 Flutter 工程：
 
 ```bash
-python3 scripts/mac_storage_manager.py audit \
+maccleaner audit \
   --app-path "/Applications/Example.app" --markdown
-python3 scripts/mac_storage_manager.py audit \
+maccleaner audit \
   --flutter-search-root "$HOME/Projects" --markdown
 ```
 
 `trace` 只读，不会删除文件。把示例路径和关键词替换成真实值。
+
+源码 checkout 仍可使用 `scripts/audit_storage.sh`、`scripts/plan_storage.sh`、`scripts/apply_storage_plan.sh`；它们是兼容入口。
 
 </details>
 
@@ -151,6 +179,8 @@ python3 scripts/mac_storage_manager.py audit \
 | 不在当前计划中的目标 | 不执行 |
 
 `audit`、`plan`、`trace` 都是只读命令。`apply_storage_plan.sh` 会修改文件；`safe_clean.sh` 只是旧入口的兼容 shim。
+
+MCP 的 `apply_storage_plan` 不接受新的扫描参数：它必须使用 `plan_storage` 返回的未过期 `plan_id`、非空 `approved_targets`，以及必要的 `confirm_targets`。每个 plan token 只能执行一次。
 
 </details>
 
@@ -193,11 +223,10 @@ CLI/wrapper -> StorageContext -> profile discovery -> scan -> plan/gates
             -> optional apply -> renderer/receipt/residual validation
 ```
 
-- `scripts/mac_storage_manager.py`：CLI 兼容 facade。
-- `scripts/_mac_storage_core.py`：扫描、计划、执行、receipt、backup。
-- `scripts/_mac_storage_policy.py`：风险、批准、retention、profile 策略。
-- `scripts/_mac_storage_render.py`：Markdown、text、JSON 输出。
-- `scripts/*_storage.sh`：audit、plan、apply wrapper。
+- `src/maccleaner/`：唯一核心实现，以及 CLI 与 MCP adapter。
+- `scripts/mac_storage_manager.py`：旧 CLI 兼容 facade。
+- `scripts/_mac_storage_*.py`：旧 Python 导入路径兼容 shim。
+- `scripts/*_storage.sh`：源码 checkout 的 audit、plan、apply wrapper。
 - `tests/`、`references/`：测试和敏感场景路由说明。
 
 </details>
@@ -206,12 +235,12 @@ CLI/wrapper -> StorageContext -> profile discovery -> scan -> plan/gates
 <summary><strong>开发者说明</strong></summary>
 
 ```bash
-python3 -m unittest -v \
-  tests.test_mac_storage_manager \
-  tests.test_mac_storage_open_source_contract
+python3 -m pip install ".[mcp]" build
+python3 -m unittest discover -s tests -v
+python3 -m build
 ```
 
-提交前保持 CLI flag、wrapper、README、SKILL.md、renderer 和测试一致。
+PyPI 首发前，在 PyPI 为 `Matoya-Amadeus/MacCleaner` 配置 Trusted Publisher；push `v0.1.0` tag 后发布工作流会验证 tag 与包版本一致。
 
 </details>
 
@@ -229,6 +258,10 @@ python3 -m unittest -v \
 ### apply 失败或没有释放空间怎么办？
 
 查看报告里的 `blocked`、`skipped`、`failed` 和 `reason`。`empty` 表示没有可清理内容，属于正常结果。
+
+### MCP 会直接清理吗？
+
+不会。MCP 先返回只读 `plan_storage` 结果和短期 `plan_id`。apply 必须带同一个 token、精确 target IDs 和需要时的二次确认；未批准的 low-risk target 也会保持阻断。
 
 </details>
 
