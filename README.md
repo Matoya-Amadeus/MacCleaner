@@ -24,9 +24,12 @@
 ## 目录
 
 - [一眼看懂](#一眼看懂)
+- [给小白：连接 AI 后这样说](#ai-prompt-quick-start)
 - [解决什么问题](#解决什么问题)
 - [安装](#安装)
 - [三分钟上手](#三分钟上手)
+- [CLI 怎么用](#cli-怎么用)
+- [MCP 怎么用](#mcp-怎么用)
 - [常用场景](#常用场景)
 - [安全边界](#安全边界)
 - [配置与参数](#配置与参数)
@@ -37,12 +40,51 @@
 
 ## 一眼看懂
 
-| 你要做什么 | 运行什么 | 会发生什么 |
+| 你是谁 | 从哪里开始 | 会发生什么 |
 | --- | --- | --- |
-| 只看空间占用 | `maccleaner audit --markdown` | 只读扫描，不删除文件 |
-| 生成精确清单 | `maccleaner plan --markdown` | 列出计划中、需批准和被阻断的目标 |
-| 清理低风险目标 | `maccleaner clean --apply --yes --require-explicit-plan` | 只执行可重新生成的低风险目标 |
-| 清理高风险目标 | apply 时加 `--approved-targets ID` | 只执行你明确批准的目标 |
+| 已把 MCP 连到 AI 的小白 | 复制下面第一段提示词 | AI 先只给清单，不会清理 |
+| 想自己在终端操作 | [三分钟上手](#三分钟上手) | `audit → plan → apply` 三步走 |
+| 需要精细控制的人 | [CLI 怎么用](#cli-怎么用) / [MCP 怎么用](#mcp-怎么用) | 只执行你明确批准的精确目标 |
+
+> **只想安全开始？** 连接好 MCP 后，只复制下面的「第一步」给 AI。它会先列清单；不确认，不清理。
+
+<details id="ai-prompt-quick-start" open>
+<summary><strong>给小白：连接 AI 后这样说</strong></summary>
+
+不需要懂命令或 `target_id`。如果还没有把 MacCleaner 连到 AI，先看 [安装 → MCP](#安装)；连好后，按顺序把下面的话发给 AI。
+
+### 第一步：只看，不删（建议先只发这一段）
+
+```text
+请使用 MacCleaner 帮我检查 Mac 存储。先只做审计和清单，不要删除、不要修改任何文件。
+请用简单的话告诉我：哪些可以安全清理、哪些需要我确认、哪些绝不会动，并按预计可释放空间排序。
+```
+
+你会先得到一份清单。浏览器登录、Cookie、会话、密码和 Keychain 不会被列成可执行清理项。
+
+### 第二步：让 AI 解释计划，仍然不执行
+
+```text
+根据刚才的检查，生成一个清理计划，但先不要执行。
+请把每一项分成「可安全清理」「需要我确认」「不会清理」三类；说明预计释放多少空间，并告诉我需要我选择哪些 target_id。
+```
+
+只选择你看得懂、愿意删除的项目。看不懂就让 AI 解释，不要确认。
+
+### 第三步：只执行你选中的项目
+
+从 AI 给出的**当前计划**里复制你要清理的真实 `target_id`，再发送：
+
+```text
+我确认只执行当前计划中我明确批准的这些 target_id：TARGET_ID_1、TARGET_ID_2。
+其他内容均不要动；如果其中任何项目需要二次确认，请先告诉我，不要执行。
+```
+
+把示例中的 `TARGET_ID_1`、`TARGET_ID_2` 换成当前计划里真实显示的编号。没有选编号时，不要进入这一步。
+
+**记住这一条就够了：** 先让 AI 列清单；只用第三步批准你亲自选出的编号。
+
+</details>
 
 <details id="解决什么问题">
 <summary><strong>解决什么问题</strong></summary>
@@ -131,6 +173,83 @@ maccleaner clean --apply --yes --require-explicit-plan --markdown \
 ```
 
 如果目标显示 `exact_confirm`，还要同时加上 `--confirm-targets TARGET_ID`。
+
+</details>
+
+<details id="cli-怎么用">
+<summary><strong>CLI 怎么用</strong></summary>
+
+CLI 适合终端、shell 脚本和 CI；始终按“审计 → 计划 → 执行”走，不要跳过 `plan`。
+
+```bash
+# 1. 只读：先看空间和候选目标。
+maccleaner audit --markdown
+maccleaner plan --json > maccleaner-plan.json
+
+# 2. 只清理当前可执行的低风险目标。
+# 若当前存在 medium/high-risk 候选但未精确批准，命令会拒绝执行，不会部分清理。
+maccleaner clean --apply --yes --require-explicit-plan --markdown
+
+# 3. 只在 plan 中确认真实 ID 后，才清理敏感范围。
+maccleaner clean --apply --yes --require-explicit-plan --markdown \
+  --include-hidden-home \
+  --approved-targets TARGET_ID \
+  --confirm-targets TARGET_ID
+
+# 4. 反复出现的目录：先找触发源，不删除文件。
+maccleaner trace --path "<TARGET_PATH>" --keyword "<KEYWORD>" --markdown
+```
+
+- `audit`、`plan`、`trace` 永远只读。
+- `--json` 适合脚本读取；`--markdown` 适合人审阅。
+- 只有报告显示 `exact_confirm` 时才需要 `--confirm-targets`；不要把示例 `TARGET_ID` 当作真实 ID。
+
+</details>
+
+<details id="mcp-怎么用">
+<summary><strong>MCP 怎么用</strong></summary>
+
+先在 MCP 客户端配置本地 stdio 服务，然后**重启或重新加载客户端**：
+
+```json
+{
+  "mcpServers": {
+    "maccleaner": {
+      "command": "maccleaner-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+客户端显示的 UI 不同；下面 JSON 表示应调用的工具名与参数，不是要求手写 JSON-RPC：
+
+```json
+{ "name": "audit_storage", "arguments": { "profile": "generic" } }
+
+{ "name": "plan_storage", "arguments": { "profile": "generic" } }
+```
+
+从 `plan_storage` 返回结果复制 `plan_id`，并只从 `applicable_target_ids` 选择真实 ID：
+
+```json
+{
+  "name": "apply_storage_plan",
+  "arguments": {
+    "plan_id": "PLAN_ID_FROM_PLAN",
+    "approved_targets": ["TARGET_ID_FROM_PLAN"],
+    "confirm_targets": ["TARGET_ID_FROM_PLAN"]
+  }
+}
+```
+
+四个工具分别是：`audit_storage`（只读审计）、`plan_storage`（只读计划与 token）、`trace_storage`（只读追查）和 `apply_storage_plan`（唯一会修改文件的工具）。
+
+- plan token 只在当前 MCP 服务进程内保存，15 分钟过期且只能使用一次；**plan 和 apply 之间不要重启 `maccleaner-mcp`**。
+- `apply_storage_plan` 不能传入新的扫描范围；它只执行同一 plan 中、你精确批准的 IDs。未批准的 low-risk 目标也不会执行。
+- 某个 ID 需要二次确认时才传入 `confirm_targets`；浏览器会话、Cookie、Token、Keychain 和凭据不会成为可执行候选。
+
+完整参数表和发布说明见 [MCP 使用说明](docs/mcp.md)。
 
 </details>
 

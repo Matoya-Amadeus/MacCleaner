@@ -24,9 +24,12 @@ Update content: Added the generic default profile, opt-in repo-evidence profile,
 ## Contents
 
 - [At a glance](#at-a-glance)
+- [Beginner: tell your AI this](#ai-prompt-quick-start)
 - [What it solves](#what-it-solves)
 - [Installation](#installation)
 - [Quick start](#quick-start)
+- [Using the CLI](#using-the-cli)
+- [Using MCP](#using-mcp)
 - [Common scenarios](#common-scenarios)
 - [Safety boundaries](#safety-boundaries)
 - [Configuration and options](#configuration-and-options)
@@ -37,12 +40,51 @@ Update content: Added the generic default profile, opt-in repo-evidence profile,
 
 ## At a glance
 
-| Goal | Command | Result |
+| Who are you? | Start here | Result |
 | --- | --- | --- |
-| Inspect storage | `maccleaner audit --markdown` | Read-only scan |
-| Build an exact plan | `maccleaner plan --markdown` | Lists planned, approval-needed, and blocked targets |
-| Apply low-risk cleanup | `maccleaner clean --apply --yes --require-explicit-plan` | Applies only regenerable low-risk targets |
-| Apply sensitive targets | Add `--approved-targets ID` | Applies only exact IDs you approved |
+| Beginner with MCP connected to AI | Copy the first prompt below | Your AI shows a list first and does not clean |
+| Prefer a terminal | [Quick start](#quick-start) | Follow `audit → plan → apply` |
+| Need precise control | [Using the CLI](#using-the-cli) / [Using MCP](#using-mcp) | Only exact targets you approve can run |
+
+> **Want the safe first step?** After connecting MCP, copy only the first prompt below. It lists candidates first; no confirmation means no cleanup.
+
+<details id="ai-prompt-quick-start" open>
+<summary><strong>Beginner: tell your AI this</strong></summary>
+
+You do not need to know commands or `target_id` values. If MacCleaner is not connected to your AI yet, start with [Installation → MCP](#installation). Once connected, send these prompts in order.
+
+### Step 1: inspect only (send this first)
+
+```text
+Use MacCleaner to check my Mac storage. First, only audit and show me a list; do not delete or modify any files.
+Explain in plain language what is safe to clean, what needs my approval, and what will never be touched. Sort it by estimated space I could recover.
+```
+
+You get a list first. Browser logins, cookies, sessions, passwords, and Keychain data never become executable cleanup items.
+
+### Step 2: explain a plan, still do not run it
+
+```text
+Based on that inspection, create a cleanup plan, but do not run it yet.
+Group every item into “safe to clean”, “needs my approval”, or “will not be cleaned”; show estimated space and tell me which target_id values I would need to choose.
+```
+
+Choose only items you understand and want to remove. If something is unclear, ask the AI to explain it instead of approving it.
+
+### Step 3: run only the items you chose
+
+Copy real `target_id` values from the **current plan** and send:
+
+```text
+I approve only these target_id values from the current plan: TARGET_ID_1, TARGET_ID_2.
+Only run the target_id values I explicitly approve from the current plan; do not touch anything else. If any item needs extra confirmation, tell me first and do not run it.
+```
+
+Replace `TARGET_ID_1` and `TARGET_ID_2` with real IDs shown in the current plan. Do not use this step if you have not selected any IDs.
+
+**The one rule to remember:** ask for a list first; use Step 3 only to approve IDs you selected yourself.
+
+</details>
 
 <details id="what-it-solves">
 <summary><strong>What it solves</strong></summary>
@@ -131,6 +173,83 @@ maccleaner clean --apply --yes --require-explicit-plan --markdown \
 ```
 
 If the target is marked `exact_confirm`, also pass `--confirm-targets TARGET_ID`.
+
+</details>
+
+<details id="using-the-cli">
+<summary><strong>Using the CLI</strong></summary>
+
+Use the CLI from a terminal, shell script, or CI. Always follow audit → plan → apply; do not skip `plan`.
+
+```bash
+# 1. Read-only: inspect storage and candidates.
+maccleaner audit --markdown
+maccleaner plan --json > maccleaner-plan.json
+
+# 2. Clean only eligible low-risk targets.
+# If medium/high-risk candidates exist without exact approval, this refuses before changing files.
+maccleaner clean --apply --yes --require-explicit-plan --markdown
+
+# 3. Clean a sensitive scope only with an exact ID copied from plan.
+maccleaner clean --apply --yes --require-explicit-plan --markdown \
+  --include-hidden-home \
+  --approved-targets TARGET_ID \
+  --confirm-targets TARGET_ID
+
+# 4. Trace a folder that reappears without deleting anything.
+maccleaner trace --path "<TARGET_PATH>" --keyword "<KEYWORD>" --markdown
+```
+
+- `audit`, `plan`, and `trace` are always read-only.
+- Use `--json` for scripts and `--markdown` for human review.
+- Pass `--confirm-targets` only when the report says `exact_confirm`; never treat `TARGET_ID` in an example as a real ID.
+
+</details>
+
+<details id="using-mcp">
+<summary><strong>Using MCP</strong></summary>
+
+Add the local stdio server to your MCP client, then **restart or reload the client**:
+
+```json
+{
+  "mcpServers": {
+    "maccleaner": {
+      "command": "maccleaner-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+Client UIs vary. The following JSON shows the tool name and arguments to invoke; it is not a requirement to hand-write JSON-RPC:
+
+```json
+{ "name": "audit_storage", "arguments": { "profile": "generic" } }
+
+{ "name": "plan_storage", "arguments": { "profile": "generic" } }
+```
+
+Copy `plan_id` from `plan_storage` and choose real IDs only from `applicable_target_ids`:
+
+```json
+{
+  "name": "apply_storage_plan",
+  "arguments": {
+    "plan_id": "PLAN_ID_FROM_PLAN",
+    "approved_targets": ["TARGET_ID_FROM_PLAN"],
+    "confirm_targets": ["TARGET_ID_FROM_PLAN"]
+  }
+}
+```
+
+The four tools are `audit_storage` (read-only audit), `plan_storage` (read-only plan plus token), `trace_storage` (read-only tracing), and `apply_storage_plan` (the only mutating tool).
+
+- A plan token lives only in the current MCP server process, expires after 15 minutes, and is single-use. **Do not restart `maccleaner-mcp` between plan and apply.**
+- `apply_storage_plan` accepts no new scan scope. It runs only the exact IDs you approved from that plan; unapproved low-risk targets remain blocked.
+- Send `confirm_targets` only when an ID needs extra confirmation. Browser sessions, cookies, tokens, Keychain, and credentials never become executable candidates.
+
+See the [MCP guide](docs/mcp.md) for the full parameter reference and release notes.
 
 </details>
 
