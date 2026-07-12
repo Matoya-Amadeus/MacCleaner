@@ -1,6 +1,8 @@
 # MacCleaner
 
-![MacCleaner](assets/readme-header.svg)
+<p align="center">
+  <img src="assets/readme-header.svg" alt="MacCleaner：安全的 Mac 存储审计与清理流程" width="100%" />
+</p>
 
 > **先看清单，再决定删什么。**
 >

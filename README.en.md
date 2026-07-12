@@ -1,6 +1,8 @@
 # MacCleaner
 
-![MacCleaner](assets/readme-header.svg)
+<p align="center">
+  <img src="assets/readme-header.svg" alt="MacCleaner safe macOS storage audit and cleanup workflow" width="100%" />
+</p>
 
 > **Inspect first. Approve exact targets. Clean only what you selected.**
 >
