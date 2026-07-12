@@ -44,6 +44,49 @@ class ReadmeAssetTests(unittest.TestCase):
 
         self.assertGreaterEqual(width / height, 1.75)
 
+    def test_header_badge_labels_are_centered_in_consistent_pills(self) -> None:
+        root = ET.parse(ROOT / "assets" / "readme-header.svg").getroot()
+        badges = next(
+            group
+            for group in root.findall("svg:g", SVG_NS)
+            if group.get("transform", "").startswith("translate(172 568)")
+        )
+        pills = badges.findall("svg:rect", SVG_NS)
+        labels = badges.findall("svg:text", SVG_NS)
+
+        self.assertEqual(3, len(pills))
+        self.assertEqual(3, len(labels))
+        self.assertEqual({"260"}, {pill.attrib["width"] for pill in pills})
+        self.assertEqual("middle", badges.attrib.get("text-anchor"))
+        for pill, label in zip(pills, labels):
+            center_x = float(pill.attrib.get("x", "0")) + float(pill.attrib["width"]) / 2
+            self.assertEqual(center_x, float(label.attrib["x"]))
+
+    def test_header_workflow_cards_use_one_centered_alignment_system(self) -> None:
+        root = ET.parse(ROOT / "assets" / "readme-header.svg").getroot()
+        workflow = next(
+            group
+            for group in root.findall("svg:g", SVG_NS)
+            if group.get("transform", "").startswith("translate(172 386)")
+        )
+        cards = [
+            group
+            for group in workflow.findall("svg:g", SVG_NS)
+            if group.find("svg:rect", SVG_NS) is not None
+        ]
+
+        self.assertEqual(4, len(cards))
+        self.assertEqual(
+            {"190"},
+            {card.find("svg:rect", SVG_NS).attrib["width"] for card in cards},
+        )
+        for card in cards:
+            rect = card.find("svg:rect", SVG_NS)
+            center_x = float(rect.attrib.get("x", "0")) + float(rect.attrib["width"]) / 2
+            self.assertEqual("middle", card.attrib.get("text-anchor"))
+            for label in card.findall("svg:text", SVG_NS):
+                self.assertEqual(center_x, float(label.attrib["x"]))
+
 
 if __name__ == "__main__":
     unittest.main()
