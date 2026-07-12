@@ -64,6 +64,15 @@ class ReleaseContractTests(unittest.TestCase):
             english.index('id="installation"'),
         )
 
+    def test_readmes_show_only_their_selected_language_in_the_footer(self) -> None:
+        chinese = (ROOT / "README.md").read_text(encoding="utf-8")
+        english = (ROOT / "README.en.md").read_text(encoding="utf-8")
+
+        self.assertTrue(chinese.endswith("由 **AI·Maho** 和 **人类·Matoya** 共同维护\n"))
+        self.assertNotIn("Maintained jointly by", chinese)
+        self.assertTrue(english.endswith("Maintained jointly by **AI·Maho** and **Human·Matoya**\n"))
+        self.assertNotIn("由 **AI·Maho** 和 **人类·Matoya** 共同维护", english)
+
     def test_ci_and_trusted_publisher_workflows_exist(self) -> None:
         ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         publish = (ROOT / ".github" / "workflows" / "pypi-publish.yml").read_text(encoding="utf-8")

@@ -386,5 +386,4 @@ No. MCP first returns a read-only `plan_storage` result and a short-lived `plan_
 
 </details>
 
-由 **AI·Maho** 和 **人类·Matoya** 共同维护
 Maintained jointly by **AI·Maho** and **Human·Matoya**
