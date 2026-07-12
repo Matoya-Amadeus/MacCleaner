@@ -11,10 +11,14 @@ SVG_NS = {"svg": "http://www.w3.org/2000/svg"}
 
 
 class ReadmeAssetTests(unittest.TestCase):
-    def test_header_workflow_cards_fit_inside_the_glass_panel(self) -> None:
-        root = ET.parse(ROOT / "assets" / "readme-header.svg").getroot()
+    def _glass_panel(self, root: ET.Element) -> ET.Element:
         panel = root.find(".//svg:g[@filter]/svg:rect", SVG_NS)
         self.assertIsNotNone(panel)
+        return panel
+
+    def test_header_workflow_cards_fit_inside_the_glass_panel(self) -> None:
+        root = ET.parse(ROOT / "assets" / "readme-header.svg").getroot()
+        panel = self._glass_panel(root)
 
         workflow = next(
             group
@@ -36,6 +40,33 @@ class ReadmeAssetTests(unittest.TestCase):
             self.assertGreaterEqual(card_left, panel_left)
             self.assertLessEqual(card_right, panel_right)
 
+    def test_header_workflow_has_symmetric_glass_panel_padding(self) -> None:
+        root = ET.parse(ROOT / "assets" / "readme-header.svg").getroot()
+        panel = self._glass_panel(root)
+        workflow = next(
+            group
+            for group in root.findall("svg:g", SVG_NS)
+            if group.get("transform", "").startswith("translate(")
+            and "386" in group.get("transform", "")
+        )
+        cards = [
+            group
+            for group in workflow.findall("svg:g", SVG_NS)
+            if group.find("svg:rect", SVG_NS) is not None
+        ]
+        workflow_x = float(re.search(r"translate\((\d+)", workflow.attrib["transform"]).group(1))
+        card_bounds = []
+        for card in cards:
+            rect = card.find("svg:rect", SVG_NS)
+            offset = re.search(r"translate\((\d+) 0\)", card.get("transform", ""))
+            card_x = workflow_x + (float(offset.group(1)) if offset else 0.0)
+            card_bounds.append((card_x, card_x + float(rect.attrib["width"])))
+
+        panel_left = float(panel.attrib["x"])
+        panel_right = panel_left + float(panel.attrib["width"])
+        self.assertEqual(min(left for left, _ in card_bounds) - panel_left,
+                         panel_right - max(right for _, right in card_bounds))
+
     def test_header_has_a_landscape_aspect_ratio_for_readme_rendering(self) -> None:
         root = ET.parse(ROOT / "assets" / "readme-header.svg").getroot()
         view_box = [float(value) for value in root.attrib["viewBox"].split()]
@@ -49,7 +80,8 @@ class ReadmeAssetTests(unittest.TestCase):
         badges = next(
             group
             for group in root.findall("svg:g", SVG_NS)
-            if group.get("transform", "").startswith("translate(172 568)")
+            if group.get("transform", "").startswith("translate(")
+            and "568" in group.get("transform", "")
         )
         pills = badges.findall("svg:rect", SVG_NS)
         labels = badges.findall("svg:text", SVG_NS)
@@ -61,6 +93,27 @@ class ReadmeAssetTests(unittest.TestCase):
         for pill, label in zip(pills, labels):
             center_x = float(pill.attrib.get("x", "0")) + float(pill.attrib["width"]) / 2
             self.assertEqual(center_x, float(label.attrib["x"]))
+
+    def test_header_badge_row_is_centered_in_the_glass_panel(self) -> None:
+        root = ET.parse(ROOT / "assets" / "readme-header.svg").getroot()
+        panel = self._glass_panel(root)
+        badges = next(
+            group
+            for group in root.findall("svg:g", SVG_NS)
+            if group.get("transform", "").startswith("translate(")
+            and "568" in group.get("transform", "")
+        )
+        badges_x = float(re.search(r"translate\((\d+)", badges.attrib["transform"]).group(1))
+        pills = badges.findall("svg:rect", SVG_NS)
+        left = badges_x + min(float(pill.attrib.get("x", "0")) for pill in pills)
+        right = badges_x + max(
+            float(pill.attrib.get("x", "0")) + float(pill.attrib["width"])
+            for pill in pills
+        )
+        panel_left = float(panel.attrib["x"])
+        panel_right = panel_left + float(panel.attrib["width"])
+
+        self.assertEqual(left - panel_left, panel_right - right)
 
     def test_header_workflow_cards_use_one_centered_alignment_system(self) -> None:
         root = ET.parse(ROOT / "assets" / "readme-header.svg").getroot()

@@ -29,29 +29,29 @@
       <text x="95" y="48" fill="#0f172a" font-size="26" font-weight="700">1 Audit</text>
       <text x="95" y="82" fill="#334155" font-size="18">read-only scan</text>
     </g>
-    <path d="M215 56h72" stroke="#a7f3d0" stroke-width="8" stroke-linecap="round"/>
-    <path d="M275 34l28 22-28 22" fill="none" stroke="#a7f3d0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-    <g transform="translate(330 0)" text-anchor="middle">
+    <path d="M215 56h48" stroke="#a7f3d0" stroke-width="8" stroke-linecap="round"/>
+    <path d="M251 34l28 22-28 22" fill="none" stroke="#a7f3d0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <g transform="translate(306 0)" text-anchor="middle">
       <rect width="190" height="112" rx="24" fill="#ecfeff" opacity="0.94"/>
       <text x="95" y="48" fill="#0f172a" font-size="26" font-weight="700">2 Plan</text>
       <text x="95" y="82" fill="#334155" font-size="18">exact targets</text>
     </g>
-    <path d="M545 56h72" stroke="#a7f3d0" stroke-width="8" stroke-linecap="round"/>
-    <path d="M605 34l28 22-28 22" fill="none" stroke="#a7f3d0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-    <g transform="translate(660 0)" text-anchor="middle">
+    <path d="M521 56h48" stroke="#a7f3d0" stroke-width="8" stroke-linecap="round"/>
+    <path d="M557 34l28 22-28 22" fill="none" stroke="#a7f3d0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <g transform="translate(612 0)" text-anchor="middle">
       <rect width="190" height="112" rx="24" fill="#ecfeff" opacity="0.94"/>
       <text x="95" y="48" fill="#0f172a" font-size="26" font-weight="700">3 Approve</text>
       <text x="95" y="82" fill="#334155" font-size="18">target IDs only</text>
     </g>
-    <path d="M895 56h72" stroke="#a7f3d0" stroke-width="8" stroke-linecap="round"/>
-    <path d="M955 34l28 22-28 22" fill="none" stroke="#a7f3d0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-    <g transform="translate(986 0)" text-anchor="middle">
+    <path d="M841 56h48" stroke="#a7f3d0" stroke-width="8" stroke-linecap="round"/>
+    <path d="M877 34l28 22-28 22" fill="none" stroke="#a7f3d0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <g transform="translate(932 0)" text-anchor="middle">
       <rect width="190" height="112" rx="24" fill="#ecfeff" opacity="0.94"/>
       <text x="95" y="48" fill="#0f172a" font-size="26" font-weight="700">4 Verify</text>
       <text x="95" y="82" fill="#334155" font-size="18">receipt + audit</text>
     </g>
   </g>
-  <g transform="translate(172 568)" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="24" fill="#ecfeff" text-anchor="middle">
+  <g transform="translate(313 568)" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="24" fill="#ecfeff" text-anchor="middle">
     <rect width="260" height="54" rx="27" fill="#064e3b" opacity="0.78"/>
     <text x="130" y="36">generic by default</text>
     <rect x="290" width="260" height="54" rx="27" fill="#064e3b" opacity="0.78"/>
