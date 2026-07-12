@@ -73,6 +73,20 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertTrue(english.endswith("Maintained jointly by **AI·Maho** and **Human·Matoya**\n"))
         self.assertNotIn("由 **AI·Maho** 和 **人类·Matoya** 共同维护", english)
 
+    def test_readmes_use_assets_in_the_selected_language(self) -> None:
+        chinese = (ROOT / "README.md").read_text(encoding="utf-8")
+        english = (ROOT / "README.en.md").read_text(encoding="utf-8")
+        chinese_asset = (ROOT / "assets" / "readme-header.zh.svg").read_text(encoding="utf-8")
+        english_asset = (ROOT / "assets" / "readme-header.svg").read_text(encoding="utf-8")
+
+        self.assertIn('src="assets/readme-header.zh.svg"', chinese)
+        self.assertNotIn('src="assets/readme-header.svg"', chinese)
+        self.assertIn('src="assets/readme-header.svg"', english)
+        self.assertIn("先审计", chinese_asset)
+        self.assertIn("1 审计", chinese_asset)
+        self.assertIn("Audit first", english_asset)
+        self.assertIn("1 Audit", english_asset)
+
     def test_ci_and_trusted_publisher_workflows_exist(self) -> None:
         ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         publish = (ROOT / ".github" / "workflows" / "pypi-publish.yml").read_text(encoding="utf-8")

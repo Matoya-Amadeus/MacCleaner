@@ -11,6 +11,8 @@ SVG_NS = {"svg": "http://www.w3.org/2000/svg"}
 
 
 class ReadmeAssetTests(unittest.TestCase):
+    HEADER_NAMES = ("readme-header.svg", "readme-header.zh.svg")
+
     def _glass_panel(self, root: ET.Element) -> ET.Element:
         panel = root.find(".//svg:g[@filter]/svg:rect", SVG_NS)
         self.assertIsNotNone(panel)
@@ -116,29 +118,30 @@ class ReadmeAssetTests(unittest.TestCase):
         self.assertEqual(left - panel_left, panel_right - right)
 
     def test_header_workflow_cards_use_one_centered_alignment_system(self) -> None:
-        root = ET.parse(ROOT / "assets" / "readme-header.svg").getroot()
-        workflow = next(
-            group
-            for group in root.findall("svg:g", SVG_NS)
-            if group.get("transform", "").startswith("translate(172 386)")
-        )
-        cards = [
-            group
-            for group in workflow.findall("svg:g", SVG_NS)
-            if group.find("svg:rect", SVG_NS) is not None
-        ]
+        for name in self.HEADER_NAMES:
+            root = ET.parse(ROOT / "assets" / name).getroot()
+            workflow = next(
+                group
+                for group in root.findall("svg:g", SVG_NS)
+                if group.get("transform", "").startswith("translate(172 386)")
+            )
+            cards = [
+                group
+                for group in workflow.findall("svg:g", SVG_NS)
+                if group.find("svg:rect", SVG_NS) is not None
+            ]
 
-        self.assertEqual(4, len(cards))
-        self.assertEqual(
-            {"190"},
-            {card.find("svg:rect", SVG_NS).attrib["width"] for card in cards},
-        )
-        for card in cards:
-            rect = card.find("svg:rect", SVG_NS)
-            center_x = float(rect.attrib.get("x", "0")) + float(rect.attrib["width"]) / 2
-            self.assertEqual("middle", card.attrib.get("text-anchor"))
-            for label in card.findall("svg:text", SVG_NS):
-                self.assertEqual(center_x, float(label.attrib["x"]))
+            self.assertEqual(4, len(cards))
+            self.assertEqual(
+                {"190"},
+                {card.find("svg:rect", SVG_NS).attrib["width"] for card in cards},
+            )
+            for card in cards:
+                rect = card.find("svg:rect", SVG_NS)
+                center_x = float(rect.attrib.get("x", "0")) + float(rect.attrib["width"]) / 2
+                self.assertEqual("middle", card.attrib.get("text-anchor"))
+                for label in card.findall("svg:text", SVG_NS):
+                    self.assertEqual(center_x, float(label.attrib["x"]))
 
 
 if __name__ == "__main__":
