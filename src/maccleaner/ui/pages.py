@@ -27,11 +27,28 @@ def human_bytes(value: int | float) -> str:
     return f"{number:.2f} TiB"
 
 
-def _button(label: str, action: str, *, primary: bool = False, element_id: str = "") -> str:
+def _button(
+    label: str,
+    action: str,
+    *,
+    primary: bool = False,
+    element_id: str = "",
+    payload: dict[str, Any] | None = None,
+) -> str:
+    """按钮只携带**动作名 + 数据**；参数走 data-bridge-payload。
+
+    为什么参数不拼进动作名（`uninstall-plan:<id>`）：桥的动作白名单是按**裸动作名**匹配的，
+    拼字符串会被 400 拒掉；把参数放进 payload，白名单与校验逻辑就能保持单一来源。
+    """
+    import json as _json
+
     cls = "button primary" if primary else "button"
     ident = f' id="{html.escape(element_id)}"' if element_id else ""
+    data = ""
+    if payload:
+        data = f" data-bridge-payload='{html.escape(_json.dumps(payload, ensure_ascii=False))}'"
     return (
-        f'<button class="{cls}" type="button"{ident} data-bridge-action="{html.escape(action)}">'
+        f'<button class="{cls}" type="button"{ident}{data} data-bridge-action="{html.escape(action)}">'
         f"{html.escape(label)}</button>"
     )
 
@@ -93,6 +110,26 @@ def render_landing_html(payload: dict[str, Any], *, interactive: bool = True) ->
         current="clean",
     )
     return page.replace("</section>", f'<p class="muted" style="margin-top:14px">{html.escape(summary)}</p></section>')
+
+
+def render_progress_html(payload: dict[str, Any] | None = None, *, stage: str = "scanning") -> str:
+    """进度页：扫描/清理时给一句话，**不要借审阅页当进度页**。
+
+    借用的后果是：扫描阶段页面上会显示 review 的标题和"没有找到可清理的内容"——
+    用户在扫描时就先看到一句错误结论（会话用例抓到的就是这个）。
+    """
+    data = payload or {}
+    return state_page(
+        {
+            "message": str(data.get("message") or "正在扫描，请稍候…"),
+            "detail": str(data.get("detail") or "扫描只读；这一步不会改动任何文件。"),
+        },
+        stage=stage,
+        title=str(data.get("title") or "正在扫描"),
+        body=str(data.get("body") or "正在扫描"),
+        actions="",
+        current="clean",
+    )
 
 
 def render_review_html(payload: dict[str, Any], *, interactive: bool = True) -> str:
@@ -223,7 +260,11 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
     if interactive and apps:
         actions = _actions(
             *[
-                _button(f"卸载 {app.get('name', '')}", f"uninstall-plan:{app.get('bundle_id', '')}")
+                _button(
+                    f"卸载 {app.get('name', '')}",
+                    "uninstall-plan",
+                    payload={"bundle_id": app.get("bundle_id", ""), "path": app.get("path", "")},
+                )
                 for app in apps[:6]
             ]
         )
@@ -442,6 +483,7 @@ __all__ = [
     "render_completion_html",
     "render_confirmation_html",
     "render_landing_html",
+    "render_progress_html",
     "render_recovery_html",
     "render_review_html",
     "render_skills_html",

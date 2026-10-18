@@ -54,6 +54,50 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
 )
 
 
+# 页面运行时（2026-10-18）：把点击变成一次 `/action` 投递。
+# 为什么不用行内 onclick：动作必须带 CSRF 头，且要按勾选框收集 id——集中一处才不会各页各写一套。
+_RUNTIME_JS = """
+<script>
+(function(){
+  const csrf = () => {
+    const m = document.cookie.match(/(?:^|;\\s*)mc_csrf=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : "";
+  };
+  window.maccleanerAction = async function(action, payload){
+    const response = await fetch('/action', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type':'application/json','X-MC-CSRF':csrf(),'X-MC-Action':'1'},
+      body: JSON.stringify({action: action, payload: payload || {}})
+    });
+    let result = {};
+    try { result = await response.json(); } catch (e) {}
+    if (!response.ok || !result.accepted) { throw new Error(result.error || '动作未被接受'); }
+    setTimeout(() => location.reload(), 120);
+    return result;
+  };
+  const ids = (selector) => Array.from(document.querySelectorAll(selector))
+      .filter(node => node.checked).map(node => node.dataset.itemId || node.dataset.updateId);
+  document.addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-bridge-action]');
+    if (!button || button.disabled) return;
+    event.preventDefault();
+    const action = button.dataset.bridgeAction;
+    let payload = {};
+    try { payload = button.dataset.bridgePayload ? JSON.parse(button.dataset.bridgePayload) : {}; } catch (e) {}
+    if (action === 'uninstall-apply') { payload.selected_ids = ids('[data-item-id]'); }
+    if (action === 'updates-apply') { payload.ids = ids('[data-update-id]'); }
+    button.disabled = true;
+    try { await window.maccleanerAction(action, payload); }
+    catch (error) { button.disabled = false; alert(error.message); }
+  });
+  setInterval(() => fetch('/ready', {credentials:'same-origin',cache:'no-store'}).catch(()=>{}), 15000);
+  addEventListener('pagehide', () => fetch('/closed', {credentials:'same-origin',keepalive:true}).catch(()=>{}));
+})();
+</script>
+"""
+
+
 def render_nav(current: str) -> str:
     rows: list[str] = []
     for group in NAV_GROUPS:
@@ -114,6 +158,7 @@ def state_page(
     {ACTIONS_SLOT}
   </section>
 </main>
+{_RUNTIME_JS if with_nav else ""}
 </body>
 </html>
 """
