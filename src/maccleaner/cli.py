@@ -62,6 +62,11 @@ def build_parser() -> argparse.ArgumentParser:
     uninstall.add_argument("--ids", default="", help="comma separated plan item ids (default: all user-scope items)")
     uninstall.add_argument("--accept-admin", action="store_true", help="also remove system-level leftovers (asks for admin once)")
 
+    ui = sub.add_parser("ui", help="Open the local UI (loopback page, one session at a time)")
+    add_common(ui)
+    ui.add_argument("--no-open", action="store_true", help="print the URL instead of opening a browser")
+    ui.add_argument("--dry-run", action="store_true", help="rehearse cleanup without touching files")
+
     updates = sub.add_parser("updates", help="List third-party updates (brew/mas); --apply to install")
     add_common(updates)
     updates.add_argument("--apply", action="store_true", help="actually run the upgrades (default: dry-run)")
@@ -116,6 +121,33 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     ctx = _context_from_args(args)
     manager = StorageManager(ctx)
+
+    if args.command == "ui":
+        from .deps import build_deps
+        from .session import InteractiveSession, SessionBusy
+
+        deps = build_deps(
+            home=Path(ctx.home),
+            root=Path(ctx.root) if str(ctx.root) else None,
+            state_root=Path(args.state_root) if str(args.state_root) else None,
+            dry_run=bool(args.dry_run),
+        )
+        session = InteractiveSession(deps, state_root=Path(args.state_root) if str(args.state_root) else None)
+        try:
+            # 先把桥起来，好把入口 URL 交出去（run() 里会再调一次 start，幂等）。
+            session.bridge.start()
+            print(session.bridge.bootstrap_url, flush=True)
+            if not args.no_open:
+                import webbrowser
+
+                webbrowser.open(session.bridge.bootstrap_url)
+            result = session.run()
+        except SessionBusy as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        if getattr(args, "json", False):
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
 
     if args.command == "updates":
         from .updates import apply_updates, build_upgrade_plan, discover_updates, render_updates_text

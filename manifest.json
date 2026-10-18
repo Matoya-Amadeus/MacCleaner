@@ -1,0 +1,32 @@
+{
+  "id": "mac-cleaner",
+  "display_name": "MacCleaner",
+  "version": "0.1.0",
+  "protocol_version": 1,
+  "kind": "plugin",
+  "entry": {
+    "bin": "maccleaner",
+    "module": "maccleaner.cli:main",
+    "mcp": "maccleaner.mcp_server:main",
+    "skill_md": "SKILL.md"
+  },
+  "permissions": [
+    "exec",
+    "fs.read:home",
+    "fs.write:home/Library",
+    "fs.write:Library(admin)",
+    "trash",
+    "net.loopback"
+  ],
+  "permission_notes": {
+    "fs.write:home/Library": "清理缓存/日志与卸载残留；一律先移入废纸篓",
+    "fs.write:Library(admin)": "系统级残留需要一次管理员授权，只在用户勾选后执行",
+    "net.loopback": "本地界面用 127.0.0.1 上的临时端口通信，不对外监听"
+  },
+  "min_maho": "0.1.0",
+  "source": {
+    "repo": "https://github.com/Matoya-Amadeus/MacCleaner",
+    "channel": "git-tag",
+    "install_root": "~/.maho/plugins/mac-cleaner"
+  }
+}
