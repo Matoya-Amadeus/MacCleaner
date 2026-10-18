@@ -19,11 +19,25 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
     var window: NSWindow?
     var webView: WKWebView?
     var backend: Process?
+    var errorPipe: Pipe?
+
+    /// 读后端失败时的 stderr（最多 400 字符），给提示框用。
+    func backendErrorText() -> String {
+        guard let pipe = errorPipe else { return "" }
+        let data = pipe.fileHandleForReading.availableData
+        let text = String(data: data, encoding: .utf8) ?? ""
+        return String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(400))
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMenu()
         guard let url = startBackend() else {
-            presentError("无法启动本地服务。\n请先在终端运行：\n  cd \(repo) && ./bin/maccleaner ui --no-open")
+            let reason = backendErrorText()
+            presentError(
+                reason.isEmpty
+                    ? "无法启动本地服务。\n请先在终端运行：\n  cd \(repo) && ./bin/maccleaner ui --no-open"
+                    : "后端没有起来：\n\(reason)"
+            )
             return
         }
         showWindow(url: url)
@@ -49,7 +63,11 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
 
         let pipe = Pipe()
         process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
+        // 后端失败时把 stderr 收下来——"已有一个会话在运行"这类原因必须让用户看见，
+        // 否则他只会看到一句笼统的"启动失败"。
+        let errPipe = Pipe()
+        process.standardError = errPipe
+        errorPipe = errPipe
 
         do {
             try process.run()
