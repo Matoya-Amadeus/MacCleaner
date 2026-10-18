@@ -1,0 +1,123 @@
+"""页面外壳与导航（2026-10-18 迁入）。
+
+为什么先做"外壳"而不是直接搬整个界面：界面里真正难的是**数据从哪来**（会话、冻结计划、
+签名复核、回执），那部分要等 core 适配；而外壳与页面渲染只吃 dict，可以先用示例数据测。
+
+三条约束写死在这里，后面所有页面都继承：
+
+1. **配色只走 CSS 变量**：`theme.py` 里一套 `:root` + 深色变体；页面里不许出现硬编码色值
+   （否则调品牌色时总有几页不跟着变）；
+2. **动作只走插槽**：页面把按钮 HTML 交给 `state_page(..., actions=...)`，不允许各自拼 `<body>`；
+3. **侧栏只放真能点的入口**：未就绪的用 `disabled + aria-disabled` + "待实现"徽标，
+   绝不出现"点了没反应"的假菜单。
+"""
+from __future__ import annotations
+
+import html
+from dataclasses import dataclass, field
+from typing import Any
+
+from .theme import STYLE
+
+ACTIONS_SLOT = "<!--__ACTIONS__-->"
+NAV_SLOT = "<!--__NAV__-->"
+UI_SCHEMA = "maccleaner-ui-v1"
+
+
+@dataclass(frozen=True)
+class NavItem:
+    key: str
+    label: str
+    action: str
+    enabled: bool = True
+    badge: str = ""
+    group: str = ""
+
+
+@dataclass(frozen=True)
+class NavGroup:
+    title: str
+    items: tuple[NavItem, ...] = field(default_factory=tuple)
+
+
+# 三个真实入口 + 一个"技能说明"页；未实现的能力不列（宁缺勿假）。
+NAV_GROUPS: tuple[NavGroup, ...] = (
+    NavGroup("清理", (NavItem("clean", "Mac 清理", "start"),)),
+    NavGroup(
+        "应用",
+        (
+            NavItem("uninstall", "软件卸载（彻底）", "uninstall-list"),
+            NavItem("updates", "软件更新", "updates-open"),
+        ),
+    ),
+    NavGroup("技能", (NavItem("skills", "可调用的 Skill", "skills-open"),)),
+)
+
+
+def render_nav(current: str) -> str:
+    rows: list[str] = []
+    for group in NAV_GROUPS:
+        if group.title:
+            rows.append(f'<p class="side-group">{html.escape(group.title)}</p>')
+        for item in group.items:
+            if not item.enabled:
+                rows.append(
+                    f'<button class="side-item" type="button" disabled aria-disabled="true">{html.escape(item.label)}'
+                    f'<span class="side-badge">{html.escape(item.badge or "待实现")}</span></button>'
+                )
+                continue
+            is_current = item.key == current
+            cls = "side-item is-current" if is_current else "side-item"
+            aria = ' aria-current="page"' if is_current else ""
+            rows.append(
+                f'<button class="{cls}" type="button" data-nav-action="{html.escape(item.action)}"{aria}>'
+                f"{html.escape(item.label)}</button>"
+            )
+    return '<nav class="side" aria-label="功能导航">' + "".join(rows) + "</nav>"
+
+
+def state_page(
+    payload: dict[str, Any],
+    *,
+    stage: str,
+    title: str,
+    body: str,
+    actions: str = "",
+    current: str = "clean",
+    with_nav: bool = True,
+) -> str:
+    """拼一页：顶栏 + 侧栏 + 标题区 + 动作插槽 + 内联脚本。
+
+    `actions` 为空时插槽留空（静态预览与"只读页"都走这条）。
+    """
+    message = html.escape(str(payload.get("message", "") or ""))
+    detail = html.escape(str(payload.get("detail", "") or ""))
+    nav_html = render_nav(current) if with_nav else ""
+    page = f"""<!doctype html>
+<html lang="zh-CN" data-ui-schema="{UI_SCHEMA}" data-stage="{html.escape(stage)}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{html.escape(title)}</title>
+<style>{STYLE}</style>
+</head>
+<body class="{'has-nav' if with_nav else ''}">
+{NAV_SLOT}
+<main class="app">
+  <header class="topbar">
+    <div class="brand"><span class="mark">M</span><h1>{html.escape(title)}</h1></div>
+  </header>
+  <section class="state card">
+    <p class="state-head">{html.escape(body)}</p>
+    <p class="state-msg">{message}</p>
+    <p class="state-detail">{detail}</p>
+    {ACTIONS_SLOT}
+  </section>
+</main>
+</body>
+</html>
+"""
+    return page.replace(NAV_SLOT, nav_html).replace(ACTIONS_SLOT, actions)
+
+
+__all__ = ["ACTIONS_SLOT", "NAV_GROUPS", "NAV_SLOT", "NavGroup", "NavItem", "render_nav", "state_page"]
