@@ -30,7 +30,10 @@ class LandingPageTests(unittest.TestCase):
 
     def test_static_preview_has_no_action_button(self) -> None:
         page = render_landing_html({}, interactive=False)
-        self.assertNotIn("data-bridge-action", page)
+        # 注意：运行时脚本里含 `[data-bridge-action]` 选择器，所以这里查的是**按钮本身**，
+        # 不是那个属性名——否则命中脚本注释、误红一次（本批就误红过一次）。
+        self.assertNotIn('data-bridge-action="start"', page)
+        self.assertNotIn('class="button round primary"', page)
 
 
 class ShellTests(unittest.TestCase):
