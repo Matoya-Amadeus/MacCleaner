@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import plistlib
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -60,7 +61,19 @@ def _exists(path: Path) -> bool:
     return path.exists() or path.is_symlink()
 
 
+def _normalized(path: Path | str) -> Path:
+    """统一路径写法（2026-10-18）。
+
+    为什么必须统一：计划项的 `id = sha1(path)`，而 macOS 上同一目录可能写成 `/var/...` 或
+    `/private/var/...`；两种写法会算出**不同 id**，勾选就对不上（CLI 冒烟时实测到：应用本体是
+    `/var/...`、残留项是 `/private/var/...`）。这里用 `abspath` 统一，但**不**用 `resolve()`
+    ——后者会把 `/var/folders/...` 改写成 `/private/var/...`，等于替用户改写他自己的路径。
+    """
+    return Path(os.path.abspath(os.path.expanduser(str(path))))
+
+
 def _entry(path: Path, kind: str, confidence: str, *, requires_admin: bool = False) -> dict[str, Any]:
+    path = _normalized(path)
     return {
         "id": item_id(str(path)),
         "path": str(path),
@@ -186,10 +199,10 @@ def build_plan(
     `app` 需要 `path` / `bundle_id` / `name`；`home` 缺省取当前用户主目录。
     计划里每项都带稳定 `id`，供调用方只回传 id（不传路径）。
     """
-    home_path = Path(app.get("home") or home or Path.home())
+    home_path = _normalized(app.get("home") or home or Path.home())
     bundle_id = str(app.get("bundle_id") or "").strip()
     app_name = str(app.get("name") or "").strip()
-    app_path = str(app.get("path") or "").strip()
+    app_path = str(_normalized(app["path"])) if str(app.get("path") or "").strip() else ""
 
     items: list[dict[str, Any]] = []
     if app_path and _exists(Path(app_path)):

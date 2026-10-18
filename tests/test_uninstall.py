@@ -194,3 +194,26 @@ class RenderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PathNormalizationTests(unittest.TestCase):
+    """同一目录的两种写法必须给出同一个 id（2026-10-18 CLI 冒烟发现的真问题）。"""
+
+    def test_relative_and_absolute_spellings_share_one_id(self) -> None:
+        from maccleaner.uninstall import item_id
+
+        with tempfile.TemporaryDirectory(prefix="uninstall-norm-") as tmp:
+            root = Path(tmp)
+            target = _touch(root / "Library" / "Caches" / BUNDLE)
+            import os as _os
+
+            previous = _os.getcwd()
+            _os.chdir(root)
+            try:
+                found = discover_related_paths(home=Path("."), bundle_id=BUNDLE, app_name=NAME)
+            finally:
+                _os.chdir(previous)
+            paths = {item["path"] for item in found}
+            self.assertIn(str(target.resolve()), paths | {str(target)}, "相对写法也要归一成绝对路径")
+            self.assertEqual(len({item["id"] for item in found}), len(found), "同一次计划里 id 不能重复")
+            self.assertEqual(item_id(str(target)), item_id(str(target)), "同一路径 id 必须稳定")
