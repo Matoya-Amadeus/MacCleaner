@@ -54,6 +54,14 @@ class LandingPageTests(unittest.TestCase):
         segment = STYLE.split(".button.round{", 1)[1].split("}", 1)[0]
         self.assertIn("color:var(--text)", segment, "圆钮必须自己指定字色，不能继承 primary 的 --on-accent")
 
+    def test_checkbox_rows_override_space_between(self) -> None:
+        """勾选行必须左对齐：`.row` 的 space-between 会把复选框和名称甩到两头（2026-10-18 快照可见）。"""
+        from maccleaner.ui.theme import STYLE
+
+        segment = STYLE.split("label.row.opt{", 1)[1].split("}", 1)[0]
+        self.assertIn("justify-content:flex-start", segment)
+        self.assertIn("flex:1", STYLE, "文字块要占满剩余宽度")
+
 
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:

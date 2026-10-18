@@ -134,13 +134,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         session = InteractiveSession(deps, state_root=Path(args.state_root) if str(args.state_root) else None)
         try:
-            # 先把桥起来，好把入口 URL 交出去（run() 里会再调一次 start，幂等）。
-            session.bridge.start()
-            print(session.bridge.bootstrap_url, flush=True)
+            # 先拿锁 + 起桥，**再**打印 URL：否则会话锁冲突时会先广告一个随即失效的地址，
+            # 调用方只会看到"连接失败"，而真实原因是"已有会话在运行"（2026-10-18 用户实际遇到）。
+            url = session.prepare()
+            print(url, flush=True)
             if not args.no_open:
                 import webbrowser
 
-                webbrowser.open(session.bridge.bootstrap_url)
+                webbrowser.open(url)
             result = session.run()
         except SessionBusy as exc:
             print(str(exc), file=sys.stderr)

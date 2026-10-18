@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -98,9 +99,43 @@ class InteractiveSession:
 
     # ---- 对外 ----
 
+    def prepare(self) -> str:
+        """拿锁 + 起桥，返回入口 URL。
+
+        顺序很关键（2026-10-18 用户遇到"Could not connect"）：
+        先拿锁再起桥，否则**第二个实例会先打印一个 URL**、随后因会话锁直接退出，
+        调用方（原生外壳）拿着这个地址去连，只能得到"连接失败"——而真正的原因是"已有会话在运行"。
+        """
+        self._acquire_lock()
+        self.bridge.start()
+        self.state.url = self.bridge.bootstrap_url
+        self._watch_parent()
+        return self.bridge.bootstrap_url
+
+    def _watch_parent(self) -> None:
+        """父进程死了就退出（避免孤儿后端一直占着会话锁）。
+
+        为什么要这个：外壳被 SIGTERM/强杀时跑不到 `applicationWillTerminate`，
+        子进程会留下来；下次双击就撞上"已有会话在运行"，而用户看不到任何窗口。
+        父进程变成 1（被 init 收养）就是孤儿信号。
+        """
+        expected = os.environ.get("MACCLEANER_PARENT_PID", "")
+        if not expected.isdigit():
+            return
+        parent = int(expected)
+
+        def _loop() -> None:
+            while True:
+                time.sleep(2.0)
+                if os.getppid() != parent:
+                    os._exit(0)
+
+        threading.Thread(target=_loop, daemon=True, name="maccleaner-parent-watch").start()
+
     def run(self, *, timeout: float | None = None) -> dict[str, Any]:
         """跑完整个会话，返回终态 dict（`stage` 为 complete / cancelled）。"""
-        self._acquire_lock()
+        if self._lock_handle is None:
+            self._acquire_lock()
         try:
             self.bridge.start()
             self.state.url = self.bridge.bootstrap_url
