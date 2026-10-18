@@ -142,20 +142,37 @@ class CleanupFlowTests(unittest.TestCase):
             driver.wait_page('data-stage="cancelled"')
             self.assertEqual(driver.join()["stage"], "cancelled")
 
-    def test_error_shows_recovery_page_and_retry_returns_to_landing(self) -> None:
-        def boom() -> dict:
-            raise ValueError("scan exploded")
+    def test_error_shows_recovery_page_and_retry_reruns_the_step(self) -> None:
+        """重试必须**重跑刚才那一段**，而不是退回落地页让用户再点一次。
+
+        2026-10-18 真机冒烟发现：原来重试只回落地页，按钮写着"重试"却要两次点击才等效一次重试。
+        """
+        attempts = {"n": 0}
+
+        def flaky() -> dict:
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                raise ValueError("scan exploded")
+            return {"mode": "audit", "plan_items": [
+                {"paths": ["~/Library/Caches/Demo"], "category": "cache", "estimated_bytes": 4096,
+                 "recoverable": True, "status": "planned"}]}
 
         with tempfile.TemporaryDirectory(prefix="session-error-") as tmp:
-            driver = _Driver(_deps(audit=boom), Path(tmp))
+            driver = _Driver(_deps(audit=flaky), Path(tmp))
             driver.bootstrap()
             driver.wait_page('data-stage="idle"')
             driver.action("start")
             error_page = driver.wait_page('data-stage="error"')
             self.assertIn("没有删除任何东西", error_page)
+            self.assertEqual(attempts["n"], 1)
 
-            driver.action("start")           # 重试
-            driver.wait_page('data-stage="idle"')
+            driver.action("start")           # 重试 → 应直接重跑扫描
+            review = driver.wait_page('data-stage="review"')
+            self.assertEqual(attempts["n"], 2, "重试要真的重跑，而不是回到落地页等下一次点击")
+            # 页面行显示的是**末级目录名**（这里是 Demo），不是完整路径——别拿路径去断言。
+            self.assertIn("Demo", review)
+            self.assertEqual(review.count('class="row"'), 1, "应恰好一行候选")
+
             driver.action("cancel")
             result = driver.join()
             self.assertEqual(result["stage"], "cancelled", "出错不该落 failed，用户放弃才是 cancelled")

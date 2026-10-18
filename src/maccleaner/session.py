@@ -182,7 +182,10 @@ class InteractiveSession:
 
             return self._finish("complete", pages.render_completion_html(completion_payload(cleaned)))
         except Exception as exc:  # noqa: BLE001 - 运行期任何异常都走"可重试"，不落 failed
-            return self._recover(exc, timeout)
+            terminal = self._recover(exc, timeout)
+            if terminal is not None:
+                return terminal
+            return self._run_cleanup(timeout)   # 重试 = 重跑这一段（不是回落地页）
 
     # ---- 卸载 ----
 
@@ -231,7 +234,10 @@ class InteractiveSession:
                 self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
                 return None
         except Exception as exc:  # noqa: BLE001
-            return self._recover(exc, None)
+            terminal = self._recover(exc, None)
+            if terminal is not None:
+                return terminal
+            return self._run_uninstall()
 
     def _remaining_for(self, plan: dict[str, Any]) -> dict[str, Any]:
         """卸载后重扫：**只有还剩系统级项**时才让界面显示管理员按钮。"""
@@ -273,16 +279,25 @@ class InteractiveSession:
             self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
             return None
         except Exception as exc:  # noqa: BLE001
-            return self._recover(exc, None)
+            terminal = self._recover(exc, None)
+            if terminal is not None:
+                return terminal
+            return self._run_updates()
 
     # ---- 公共 ----
 
     def _recover(self, exc: BaseException, timeout: float | None) -> dict[str, Any] | None:
-        """出错：说明原因 + 可重试。用户点重试就回到落地页，**不写 failed**。"""
+        """出错：说明原因 + 可重试。
+
+        返回值语义：`None` = 用户点了【重试】（调用方应**直接重跑刚才那一段**）；
+        非 `None` = 会话终态（用户退出/超时 → cancelled）。
+
+        为什么重试不回落地页：按钮写着"重试"，若只是退回落地页，用户得**再点一次**才开始，
+        两次点击才等效一次重试——那是文案在骗人（2026-10-18 真机冒烟发现的）。
+        """
         self._serve("error", pages.render_recovery_html({"detail": f"{type(exc).__name__}: {exc}"}))
         action = self.bridge.wait_for_action(("start", "cancel"), timeout=timeout or self.ACTION_TIMEOUT_SECONDS)
         if action is not None and action["action"] == "start":
-            self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
             return None
         return self._finish("cancelled", pages.render_cancelled_html({}))
 
