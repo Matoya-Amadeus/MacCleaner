@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# 免安装入口（2026-10-18）：直接用仓库源码跑 CLI，不需要 pip install。
+#
+# 存在的理由有两个：① 人克隆下来就能 `./bin/maccleaner ui`；
+# ② maho 的插件解析器把 `manifest.json` 的 `entry.bin` 当**仓库内相对路径**校验，
+#    写命令名（`maccleaner`）在那里是找不到的。
+set -euo pipefail
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PYTHONPATH="${REPO_DIR}/src${PYTHONPATH:+:${PYTHONPATH}}"
+exec /usr/bin/env python3 -m maccleaner "$@"

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import os
 import plistlib
 import tempfile
 import unittest
@@ -98,6 +99,11 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(int(manifest["protocol_version"]), 1)
         skill_md = REPO_ROOT / str(manifest["entry"]["skill_md"])
         self.assertTrue(skill_md.is_file(), "manifest 指向的 SKILL.md 必须真的存在")
+        # maho 的解析器把 entry.bin 当**仓库内相对路径**用，所以它必须是一个真实文件——
+        # 写命令名（`maccleaner`）在那边会解析成 <root>/maccleaner 而找不到。
+        entry_bin = REPO_ROOT / str(manifest["entry"]["bin"])
+        self.assertTrue(entry_bin.is_file(), f"entry.bin 必须是仓库内的真实文件：{entry_bin}")
+        self.assertTrue(os.access(entry_bin, os.X_OK), "entry.bin 必须可执行")
         self.assertIn("permissions", manifest)
         self.assertIn("git-tag", json.dumps(manifest), "渠道必须是可复现的 tag，不是浮动分支")
 

@@ -5,7 +5,7 @@
   "protocol_version": 1,
   "kind": "plugin",
   "entry": {
-    "bin": "maccleaner",
+    "bin": "bin/maccleaner",
     "module": "maccleaner.cli:main",
     "mcp": "maccleaner.mcp_server:main",
     "skill_md": "SKILL.md"
