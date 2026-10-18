@@ -35,6 +35,15 @@ class LandingPageTests(unittest.TestCase):
         self.assertNotIn('data-bridge-action="start"', page)
         self.assertNotIn('class="button round primary"', page)
 
+    def test_runtime_binds_nav_buttons_too(self) -> None:
+        """侧栏按钮是 `data-nav-action`，正文按钮是 `data-bridge-action`——两者都必须被监听。
+
+        2026-10-18 真机双击发现：只监听后者，导致**四个侧栏入口点了完全没反应**。
+        """
+        page = render_landing_html({})
+        self.assertIn("[data-nav-action]", page, "点击处理器要包含侧栏选择器")
+        self.assertIn("dataset.navAction", page, "要能从按钮上取出侧栏动作名")
+
 
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:

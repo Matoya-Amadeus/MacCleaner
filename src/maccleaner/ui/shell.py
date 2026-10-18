@@ -79,10 +79,12 @@ _RUNTIME_JS = """
   const ids = (selector) => Array.from(document.querySelectorAll(selector))
       .filter(node => node.checked).map(node => node.dataset.itemId || node.dataset.updateId);
   document.addEventListener('click', async (event) => {
-    const button = event.target.closest('[data-bridge-action]');
+    // 两种按钮都要接：正文动作（data-bridge-action）与侧栏导航（data-nav-action）。
+    // 2026-10-18 真机发现：原来只监听前者，于是**四个侧栏入口点了完全没反应**。
+    const button = event.target.closest('[data-bridge-action],[data-nav-action]');
     if (!button || button.disabled) return;
     event.preventDefault();
-    const action = button.dataset.bridgeAction;
+    const action = button.dataset.bridgeAction || button.dataset.navAction;
     let payload = {};
     try { payload = button.dataset.bridgePayload ? JSON.parse(button.dataset.bridgePayload) : {}; } catch (e) {}
     if (action === 'uninstall-apply') { payload.selected_ids = ids('[data-item-id]'); }

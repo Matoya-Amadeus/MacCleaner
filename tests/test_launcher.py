@@ -36,9 +36,11 @@ class LauncherBundleTests(unittest.TestCase):
             with (contents / "Info.plist").open("rb") as handle:
                 plist = plistlib.load(handle)
             self.assertEqual(plist["CFBundleIconFile"], "AppIcon", "缺这个键 Dock 会显示占位图")
-            self.assertEqual(plist["CFBundleExecutable"], "launch")
             self.assertEqual(plist["CFBundleIdentifier"], "local.maho.maccleaner.launcher")
             self.assertTrue(plist["NSHighResolutionCapable"])
+            # 双击入口：有 swiftc 时是原生窗口，没有时退回 launch 脚本（两种都合法，不能写死一个）。
+            self.assertIn(plist["CFBundleExecutable"], {"MacCleaner", "launch"})
+            self.assertEqual(plist["MacCleanerRepo"], str(REPO_ROOT), "原生外壳要靠它找到仓库")
 
             icon = contents / "Resources" / "AppIcon.icns"
             self.assertTrue(icon.is_file() and icon.stat().st_size > 0, "图标必须真的被拷进 bundle")
@@ -46,6 +48,12 @@ class LauncherBundleTests(unittest.TestCase):
             launch = contents / "MacOS" / "launch"
             self.assertTrue(launch.is_file())
             self.assertTrue(os.access(launch, os.X_OK), "launch 必须可执行")
+            # 有 swiftc 时必须产出真正的 Mach-O 可执行（不是脚本），否则双击会跳浏览器。
+            native = contents / "MacOS" / "MacCleaner"
+            if plist["CFBundleExecutable"] == "MacCleaner":
+                self.assertTrue(native.is_file(), "原生外壳缺失")
+                info = subprocess.run(["/usr/bin/file", str(native)], capture_output=True, text=True)
+                self.assertIn("Mach-O", info.stdout, f"双击入口必须是原生可执行：{info.stdout.strip()}")
 
     def test_launch_forwards_arguments_to_the_cli(self) -> None:
         """`launch --help` 应当打到 `maccleaner ui` 的帮助页（证明它真的接到 CLI，而不是空壳）。"""
