@@ -54,6 +54,11 @@ def build_parser() -> argparse.ArgumentParser:
     clean.add_argument("--require-explicit-plan", action="store_true")
     clean.add_argument("--topk", type=int, default=5)
 
+    uninstall = sub.add_parser("uninstall", help="List an app's leftover files (read-only)")
+    add_common(uninstall)
+    uninstall.add_argument("--bundle-id", default="")
+    uninstall.add_argument("--app-name", default="")
+
     trace = sub.add_parser("trace", help="Trace repeated regeneration sources for a target")
     add_common(trace)
     trace.add_argument("--path", required=True)
@@ -103,6 +108,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     ctx = _context_from_args(args)
     manager = StorageManager(ctx)
+
+    if args.command == "uninstall":
+        from .uninstall import build_plan, read_app_identity, render_plan_text, summarize
+
+        app_path = str(getattr(args, "app_path", "") or "").strip()
+        if not app_path:
+            print("uninstall 需要 --app-path（例如 /Applications/Foo.app）", file=sys.stderr)
+            return 2
+        identity = read_app_identity(app_path)
+        bundle_id = str(getattr(args, "bundle_id", "") or identity.get("bundle_id", ""))
+        app_name = str(getattr(args, "app_name", "") or identity.get("name", ""))
+        plan = build_plan(
+            {"path": app_path, "bundle_id": bundle_id, "name": app_name, "home": ctx.home},
+            home=ctx.home,
+        )
+        if getattr(args, "json", False):
+            print(json.dumps({**summarize(plan), "items": plan["items"], "system_items": plan["system_items"]},
+                             ensure_ascii=False, indent=2))
+        else:
+            print(render_plan_text(plan))
+        return 0
 
     if args.command == "trace":
         trace_report = manager.trace(Path(args.path), str(args.keyword))
