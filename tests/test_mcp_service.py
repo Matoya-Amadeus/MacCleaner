@@ -159,3 +159,66 @@ if __name__ == "__main__":
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UninstallAndUpdatesServiceTests(unittest.TestCase):
+    """service 层的两个新入口（2026-10-18）：只做编排，语义在 uninstall/updates 模块里。"""
+
+    def test_uninstall_plan_is_read_only_and_scoped_to_home(self) -> None:
+        import plistlib
+        import tempfile
+        from pathlib import Path
+
+        from maccleaner.mcp_service import StorageService
+
+        with tempfile.TemporaryDirectory(prefix="svc-uninstall-") as tmp:
+            root = Path(tmp)
+            app = root / "Applications" / "Example.app"
+            (app / "Contents").mkdir(parents=True)
+            with (app / "Contents" / "Info.plist").open("wb") as handle:
+                plistlib.dump({"CFBundleIdentifier": "com.example.app", "CFBundleName": "Example App"}, handle)
+            (root / "home" / "Library" / "Caches" / "com.example.app").mkdir(parents=True)
+
+            result = StorageService().uninstall_plan(app_path=str(app), home=str(root / "home"))
+            paths = {item["path"] for item in result["items"]}
+            self.assertIn(str(app), paths, "应用本体要在计划里")
+            self.assertTrue(any("com.example.app" in path for path in paths), "缓存残留要被发现")
+            self.assertIn("plan_hash", result)
+            self.assertTrue(app.is_dir(), "只读：计划生成不得移动任何东西")
+
+    def test_updates_check_delegates_to_the_module(self) -> None:
+        from unittest.mock import patch
+
+        from maccleaner.mcp_service import StorageService
+
+        fake = {"items": [{"name": "aom"}], "count": 1, "notes": [], "scope": "third-party only"}
+        with patch("maccleaner.updates.discover_updates", return_value=fake) as spy:
+            result = StorageService().updates_check()
+        self.assertTrue(spy.called)
+        self.assertEqual(result["count"], 1)
+
+    def test_updates_apply_filters_by_name(self) -> None:
+        from unittest.mock import patch
+
+        from maccleaner.mcp_service import StorageService
+
+        found = {
+            "items": [
+                {"manager": "brew", "kind": "formula", "name": "aom"},
+                {"manager": "brew", "kind": "formula", "name": "cmake"},
+            ],
+            "count": 2,
+        }
+        captured: dict[str, object] = {}
+
+        def fake_plan(items, **_kwargs):
+            captured["names"] = [item["name"] for item in items]
+            return {"groups": [{"command": "brew upgrade aom", "argv": ["brew", "upgrade", "aom"]}], "count": 1}
+
+        with patch("maccleaner.updates.discover_updates", return_value=found), \
+                patch("maccleaner.updates.build_upgrade_plan", side_effect=fake_plan), \
+                patch("maccleaner.updates.apply_updates", return_value={"status": "dry-run"}) as apply_spy:
+            result = StorageService().updates_apply(names=["aom"])
+        self.assertEqual(captured["names"], ["aom"], "只把点名的那一个交给执行层")
+        self.assertTrue(apply_spy.called)
+        self.assertEqual(result["status"], "dry-run")

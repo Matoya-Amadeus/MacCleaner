@@ -88,6 +88,25 @@ def build_mcp_server(service: StorageService | None = None):  # noqa: ANN201
         return storage.trace(target_path=target_path, keyword=keyword, profile=profile)
 
     @mcp.tool()
+    def uninstall_plan(
+        app_path: str,
+        bundle_id: str = "",
+        app_name: str = "",
+    ) -> dict[str, object]:
+        """List an app's leftover files (read-only). Never deletes anything."""
+        return storage.uninstall_plan(app_path=app_path, bundle_id=bundle_id, app_name=app_name)
+
+    @mcp.tool()
+    def updates_check() -> dict[str, object]:
+        """List third-party updates (Homebrew + App Store). macOS system updates are out of scope."""
+        return storage.updates_check()
+
+    @mcp.tool()
+    def updates_apply(names: Sequence[str] = ()) -> dict[str, object]:
+        """Upgrade the named third-party packages (empty = all). Each group reports its own exit code."""
+        return storage.updates_apply(names=names)
+
+    @mcp.tool()
     def apply_storage_plan(
         plan_id: str,
         approved_targets: Sequence[str],

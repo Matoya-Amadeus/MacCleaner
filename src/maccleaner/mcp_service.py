@@ -189,6 +189,56 @@ class StorageService:
         context = self._context(profile=profile)
         return self._manager(context).trace(Path(target_path), keyword).to_dict()
 
+    # ---- 卸载与更新（2026-10-18 迁入）----
+    # 两个能力都**只在这里做编排**：真正的逻辑在 uninstall.py / updates.py，
+    # 这样 CLI、MCP、UI 三个入口共用同一套语义，不会各自漂移。
+
+    def uninstall_plan(
+        self,
+        *,
+        app_path: str | Path,
+        bundle_id: str = "",
+        app_name: str = "",
+        home: str | Path | None = None,
+    ) -> dict[str, object]:
+        """列出某个应用的残留（只读）。不传 bundle-id/名称时从 Info.plist 自动读取。
+
+        `home` 只给测试与多用户场景用（默认当前用户主目录）——否则用例会去扫真实的 `~/Library`。
+        """
+        from .uninstall import build_plan, read_app_identity, summarize
+
+        identity = read_app_identity(app_path)
+        plan = build_plan(
+            {
+                "path": str(app_path),
+                "bundle_id": bundle_id or identity.get("bundle_id", ""),
+                "name": app_name or identity.get("name", ""),
+                "home": str(home) if home is not None else "",
+            },
+            home=home,
+        )
+        return {**summarize(plan), "items": plan["items"], "system_items": plan["system_items"]}
+
+    def updates_check(self) -> dict[str, object]:
+        """第三方软件更新（只读）：Homebrew + App Store，不含 macOS 系统更新。"""
+        from .updates import discover_updates
+
+        return discover_updates()
+
+    def updates_apply(self, *, names: Sequence[str] = ()) -> dict[str, object]:
+        """按名称代装第三方更新（不传则全部）；返回逐组结果。"""
+        from .updates import apply_updates, build_upgrade_plan, discover_updates
+
+        found = discover_updates()
+        wanted = {str(name) for name in names}
+        selected = [
+            item
+            for item in found["items"]
+            if not wanted or str(item.get("name")) in wanted or str(item.get("app_id")) in wanted
+        ]
+        plan = build_upgrade_plan(selected)
+        return apply_updates(plan, dry_run=False)
+
     def apply(
         self,
         *,
