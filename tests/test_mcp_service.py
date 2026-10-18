@@ -222,3 +222,68 @@ class UninstallAndUpdatesServiceTests(unittest.TestCase):
         self.assertEqual(captured["names"], ["aom"], "只把点名的那一个交给执行层")
         self.assertTrue(apply_spy.called)
         self.assertEqual(result["status"], "dry-run")
+
+
+class PlanDigestTests(unittest.TestCase):
+    """计划摘要（2026-10-18）：证明"执行的就是给人看的那份计划"，不符则**一个都不删**。"""
+
+    def _service_with_cache(self, root):
+        from maccleaner.mcp_service import StorageService
+
+        cache = root / "Library" / "Caches" / "Demo"
+        cache.mkdir(parents=True)
+        (cache / "big.cache").write_bytes(b"z" * 8192)
+        import os as _os
+
+        _os.utime(cache / "big.cache", (1, 1))
+        # home/root 在构造时给；plan() 本身不接受它们（见 StorageService._context）。
+        return StorageService(home=root, root=root), cache
+
+    def test_plan_exposes_a_digest_and_apply_accepts_it(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory(prefix="digest-") as tmp:
+            root = Path(tmp) / "home"
+            service, cache = self._service_with_cache(root)
+            plan = service.plan()
+            self.assertTrue(plan.get("plan_digest"), "计划必须带摘要")
+            approved = list(plan["applicable_target_ids"])
+            result = service.apply(
+                plan_id=str(plan["plan_id"]), approved_targets=approved, confirm_targets=[],
+                plan_digest=str(plan["plan_digest"]),
+            )
+            self.assertIn("plan_items", result)
+            self.assertFalse(cache.exists(), "摘要正确时应正常执行")
+
+    def test_wrong_digest_refuses_before_touching_anything(self) -> None:
+        import tempfile
+        from pathlib import Path
+        from maccleaner.mcp_service import PlanValidationError
+
+        with tempfile.TemporaryDirectory(prefix="digest-bad-") as tmp:
+            root = Path(tmp) / "home"
+            service, cache = self._service_with_cache(root)
+            plan = service.plan()
+            with self.assertRaises(PlanValidationError) as ctx:
+                service.apply(
+                    plan_id=str(plan["plan_id"]),
+                    approved_targets=list(plan["applicable_target_ids"]),
+                    confirm_targets=[],
+                    plan_digest="not-the-digest",
+                )
+            self.assertIn("digest", str(ctx.exception))
+            self.assertTrue(cache.exists(), "摘要不符时一个字节都不能动")
+
+    def test_digest_changes_when_the_plan_structure_changes(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory(prefix="digest-diff-") as tmp:
+            first_root = Path(tmp) / "a"
+            second_root = Path(tmp) / "b"
+            service_a, _ = self._service_with_cache(first_root)
+            service_b, _ = self._service_with_cache(second_root)
+            digest_a = service_a.plan()["plan_digest"]
+            digest_b = service_b.plan()["plan_digest"]
+            self.assertNotEqual(digest_a, digest_b, "不同计划不该有相同摘要")

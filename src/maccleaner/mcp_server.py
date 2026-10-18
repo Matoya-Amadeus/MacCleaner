@@ -111,13 +111,19 @@ def build_mcp_server(service: StorageService | None = None):  # noqa: ANN201
         plan_id: str,
         approved_targets: Sequence[str],
         confirm_targets: Sequence[str] = (),
+        plan_digest: str = "",
     ) -> dict[str, object]:
-        """Apply one live plan using exact approved target IDs only."""
+        """Apply one live plan using exact approved target IDs only.
+
+        Pass the `plan_digest` returned by `plan_storage` to prove the plan being applied is the one
+        you showed the user; a mismatch is refused before anything is touched.
+        """
         try:
             return storage.apply(
                 plan_id=plan_id,
                 approved_targets=approved_targets,
                 confirm_targets=confirm_targets,
+                plan_digest=plan_digest,
             )
         except PlanValidationError as exc:
             raise ValueError(str(exc)) from exc
