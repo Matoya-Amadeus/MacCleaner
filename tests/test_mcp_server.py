@@ -56,9 +56,18 @@ class McpTransportTests(unittest.TestCase):
                     tools = await session.list_tools()
                     return [tool.name for tool in tools.tools]
 
+        # 2026-10-18：卸载与更新也成了一等 agent 入口，公开面从 4 个变 7 个。
         self.assertEqual(
             set(asyncio.run(check())),
-            {"apply_storage_plan", "audit_storage", "plan_storage", "trace_storage"},
+            {
+                "apply_storage_plan",
+                "audit_storage",
+                "plan_storage",
+                "trace_storage",
+                "uninstall_plan",
+                "updates_check",
+                "updates_apply",
+            },
         )
 
     def test_tool_adapter_applies_only_the_selected_plan_target(self) -> None:
@@ -76,14 +85,25 @@ class McpTransportTests(unittest.TestCase):
 
         async def apply_plan() -> tuple[dict[str, object], dict[str, object]]:
             tools = await server.list_tools()
+            # 2026-10-18：新增卸载与更新入口（uninstall_plan / updates_check / updates_apply），
+            # 工具集合从 4 个变 7 个——这条断言要跟着产品面走，不是放宽。
             self.assertEqual(
                 {tool.name for tool in tools},
-                {"audit_storage", "plan_storage", "trace_storage", "apply_storage_plan"},
+                {
+                    "audit_storage",
+                    "plan_storage",
+                    "trace_storage",
+                    "apply_storage_plan",
+                    "uninstall_plan",
+                    "updates_check",
+                    "updates_apply",
+                },
             )
             apply_tool = next(tool for tool in tools if tool.name == "apply_storage_plan")
             self.assertEqual(
                 set(apply_tool.inputSchema["properties"]),
-                {"plan_id", "approved_targets", "confirm_targets"},
+                # plan_digest：回传计划摘要，用来证明"执行的就是给人看的那份计划"。
+                {"plan_id", "approved_targets", "confirm_targets", "plan_digest"},
             )
             _plan_content, plan = await server.call_tool("plan_storage", {})
             _apply_content, applied = await server.call_tool(
