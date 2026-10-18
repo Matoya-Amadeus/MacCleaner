@@ -196,7 +196,8 @@ class NavigationTests(unittest.TestCase):
             driver.bootstrap()
             driver.wait_page('data-stage="idle"')
             self.assertEqual(driver.action("updates-open"), 202)
-            page = driver.wait_page('data-stage="updates"')
+            # 注意：先出的是**进度页**（stage 同样是 updates），要等列表独有的标记 `data-update-id`。
+            page = driver.wait_page("data-update-id=")
             self.assertIn("aom", page)
             self.assertIn("macOS 系统更新不在此列", page)
             driver.action("cancel")

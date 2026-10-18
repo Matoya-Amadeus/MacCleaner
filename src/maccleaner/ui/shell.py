@@ -73,7 +73,21 @@ _RUNTIME_JS = """
     let result = {};
     try { result = await response.json(); } catch (e) {}
     if (!response.ok || !result.accepted) { throw new Error(result.error || '动作未被接受'); }
-    setTimeout(() => location.reload(), 120);
+    // 关键：动作只是**入队**，页面由服务端稍后才发布。若此时立刻 reload，取回的仍是旧页，
+    // 用户就会觉得"点了没反应"（2026-10-18 真浏览器实测：四次点击的显示都慢一拍）。
+    // 这里轮询到页面真的变了再刷新；最多等 ~3 秒，超时也刷新一次（总比不动强）。
+    const before = document.documentElement.dataset.stage + '|' + document.body.innerHTML.length;
+    for (let attempt = 0; attempt < 15; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      try {
+        const text = await (await fetch('/', {credentials: 'same-origin', cache: 'no-store'})).text();
+        const stage = (text.match(/data-stage="([a-z-]+)"/) || [])[1] || '';
+        const changed = stage !== document.documentElement.dataset.stage
+          || (text.match(/<body[\s\S]*<\/body>/) || [''])[0].length !== document.body.innerHTML.length;
+        if (changed) { location.reload(); return result; }
+      } catch (e) { /* 网络抖动就再试一次 */ }
+    }
+    location.reload();
     return result;
   };
   const ids = (selector) => Array.from(document.querySelectorAll(selector))

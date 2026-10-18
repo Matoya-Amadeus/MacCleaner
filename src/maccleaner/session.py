@@ -31,6 +31,10 @@ ACTIVE_STAGES = frozenset({"idle", "scanning", "review", "confirming", "cleaning
                            "updates", "skills", "error"})
 TERMINAL_STAGES = frozenset({"complete", "cancelled"})
 
+# 侧栏在任何页面都可见 ⇒ 任何等待都必须能接住它们，否则用户在子流程里点侧栏会"没反应"
+# （2026-10-18 真浏览器实测：点了更新页后再点卸载，队列里的动作没人取）。
+NAV_ACTIONS: tuple[str, ...] = ("start", "uninstall-list", "updates-open", "skills-open")
+
 
 class SessionBusy(RuntimeError):
     """已有一个会话在跑（单会话锁）。"""
@@ -102,42 +106,45 @@ class InteractiveSession:
             self.state.url = self.bridge.bootstrap_url
             self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
 
+            pending: str | None = None
             while True:
-                action = self.bridge.wait_for_action(
-                    ("start", "cancel", "uninstall-list", "updates-open", "skills-open"),
-                    timeout=timeout or self.IDLE_TIMEOUT_SECONDS,
-                )
-                if action is None:
-                    return self._finish("cancelled", pages.render_cancelled_html({}))
+                if pending is None:
+                    action = self.bridge.wait_for_action(
+                        ("start", "cancel", "uninstall-list", "updates-open", "skills-open"),
+                        timeout=timeout or self.IDLE_TIMEOUT_SECONDS,
+                    )
+                    if action is None:
+                        return self._finish("cancelled", pages.render_cancelled_html({}))
+                    pending = action["action"]
 
-                kind = action["action"]
+                kind, pending = pending, None
                 if kind == "cancel":
                     return self._finish("cancelled", pages.render_cancelled_html({}))
+
                 if kind == "skills-open":
                     self._serve("skills", pages.render_skills_html())
-                    back = self.bridge.wait_for_action(
-                        ("start", "cancel"), timeout=self.ACTION_TIMEOUT_SECONDS
-                    )
-                    # `cancel` 在任何页面都必须**结束会话**：只回落地页会让用户以为退出了、
-                    # 而进程还挂着（用例里表现为"取消后 join 等不到结束"）。
+                    back = self._wait_or_nav(("cancel",), self.ACTION_TIMEOUT_SECONDS)
+                    # **先判 nav 再取 action**：`_wait_or_nav` 在用户点侧栏时返回 {"nav": …}，
+                    # 没有 "action" 键——顺序写反会 KeyError 把会话打崩（2026-10-18 真机复现）。
+                    if back is not None and "nav" in back:
+                        pending = back["nav"]      # 从技能页直接切走，不必先回落地页
+                        continue
                     if back is not None and back["action"] == "cancel":
                         return self._finish("cancelled", pages.render_cancelled_html({}))
                     self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
                     continue
-                if kind == "updates-open":
-                    terminal = self._run_updates()
-                    if terminal is not None:
-                        return terminal
-                    continue
-                if kind == "uninstall-list":
-                    terminal = self._run_uninstall()
-                    if terminal is not None:
-                        return terminal
-                    continue
 
-                outcome = self._run_cleanup(timeout)
-                if outcome is not None:
-                    return outcome
+                if kind == "updates-open":
+                    outcome = self._run_updates()
+                elif kind == "uninstall-list":
+                    outcome = self._run_uninstall()
+                else:
+                    outcome = self._run_cleanup(timeout)
+
+                if isinstance(outcome, dict):
+                    return outcome            # 终态（complete / cancelled）
+                if isinstance(outcome, str):
+                    pending = outcome         # 用户在子流程里点了别的侧栏入口
         finally:
             self._release_lock()
 
@@ -152,9 +159,9 @@ class InteractiveSession:
             payload = review_payload(report)
             self._serve("review", pages.render_review_html(payload))
 
-            action = self.bridge.wait_for_action(
-                ("approval", "rescan", "cancel"), timeout=timeout or self.ACTION_TIMEOUT_SECONDS
-            )
+            action = self._wait_or_nav(("approval", "rescan", "cancel"), timeout or self.ACTION_TIMEOUT_SECONDS)
+            if action is not None and "nav" in action:
+                return None          # 用户切到别的入口，交回主循环
             if action is None or action["action"] in {"cancel", "rescan"}:
                 if action is not None and action["action"] == "cancel":
                     return self._finish("cancelled", pages.render_cancelled_html({}))
@@ -164,9 +171,9 @@ class InteractiveSession:
                 "selected_count": payload.get("count", 0),
                 "selected_bytes": payload.get("total_bytes", 0),
             }))
-            decision = self.bridge.wait_for_action(
-                ("confirm", "back", "cancel"), timeout=timeout or self.ACTION_TIMEOUT_SECONDS
-            )
+            decision = self._wait_or_nav(("confirm", "back", "cancel"), timeout or self.ACTION_TIMEOUT_SECONDS)
+            if decision is not None and "nav" in decision:
+                return None
             if decision is None or decision["action"] == "cancel":
                 return self._finish("cancelled", pages.render_cancelled_html({}))
             if decision["action"] == "back":
@@ -191,13 +198,18 @@ class InteractiveSession:
 
     def _run_uninstall(self) -> dict[str, Any] | None:
         try:
+            self._serve("uninstalling", pages.render_progress_html(
+                {"title": "软件卸载", "body": "正在读取应用列表", "message": "扫描 /Applications 与 ~/Applications…",
+                 "detail": "只读目录，不会改动任何应用。", "nav": "uninstall"},
+                stage="uninstalling",
+            ))
             apps = self._safe(self.deps.apps)
             self._serve("uninstalling", pages.render_uninstall_list_html({"apps": apps}))
             while True:
-                action = self.bridge.wait_for_action(
-                    ("uninstall-plan", "uninstall-list", "cancel", "start"),
-                    timeout=self.ACTION_TIMEOUT_SECONDS,
-                )
+                action = self._wait_or_nav(("uninstall-plan", "uninstall-list", "cancel"), self.ACTION_TIMEOUT_SECONDS)
+                if action is not None and "nav" in action:
+                    self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
+                    return action["nav"]
                 if action is not None and action["action"] == "cancel":
                     return self._finish("cancelled", pages.render_cancelled_html({}))
                 if action is None or action["action"] in {"start", "uninstall-list"}:
@@ -210,10 +222,10 @@ class InteractiveSession:
                     app_name=str(payload.get("name", "")),
                 )
                 self._serve("uninstalling", pages.render_uninstall_preview_html(plan))
-                decision = self.bridge.wait_for_action(
-                    ("uninstall-apply", "uninstall-back", "cancel"),
-                    timeout=self.ACTION_TIMEOUT_SECONDS,
-                )
+                decision = self._wait_or_nav(("uninstall-apply", "uninstall-back", "cancel"), self.ACTION_TIMEOUT_SECONDS)
+                if decision is not None and "nav" in decision:
+                    self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
+                    return decision["nav"]
                 if decision is None or decision["action"] in {"cancel", "uninstall-back"}:
                     self._serve("uninstalling", pages.render_uninstall_list_html({"apps": apps}))
                     continue
@@ -224,9 +236,10 @@ class InteractiveSession:
                     "moved_count": int(result.get("moved_count", 0) or 0),
                     "remaining": remaining,
                 }))
-                follow = self.bridge.wait_for_action(
-                    ("uninstall-system", "uninstall-list", "cancel"), timeout=self.ACTION_TIMEOUT_SECONDS
-                )
+                follow = self._wait_or_nav(("uninstall-system", "uninstall-list", "cancel"), self.ACTION_TIMEOUT_SECONDS)
+                if follow is not None and "nav" in follow:
+                    self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
+                    return follow["nav"]
                 if follow is not None and follow["action"] == "uninstall-system":
                     from .uninstall import apply_system_leftovers
 
@@ -253,12 +266,18 @@ class InteractiveSession:
 
     def _run_updates(self) -> dict[str, Any] | None:
         try:
+            # 先发进度页：`brew outdated` 在包多时要几秒，期间什么都看不到等于"点了没反应"。
+            self._serve("updates", pages.render_progress_html(
+                {"title": "软件更新", "body": "正在检查更新", "message": "正在检查 Homebrew 与 App Store…",
+                 "detail": "这一步只读，不会安装或升级任何东西。", "nav": "updates"},
+                stage="updates",
+            ))
             found = self.deps.updates_check()
             self._serve("updates", pages.render_updates_list_html(found))
-            action = self.bridge.wait_for_action(
-                ("updates-apply", "updates-refresh", "cancel", "start"),
-                timeout=self.ACTION_TIMEOUT_SECONDS,
-            )
+            action = self._wait_or_nav(("updates-apply", "updates-refresh", "cancel"), self.ACTION_TIMEOUT_SECONDS)
+            if action is not None and "nav" in action:
+                self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
+                return action["nav"]
             if action is not None and action["action"] == "cancel":
                 return self._finish("cancelled", pages.render_cancelled_html({}))
             if action is None or action["action"] == "start":
@@ -271,9 +290,10 @@ class InteractiveSession:
             ids = [str(value) for value in (action.get("payload") or {}).get("ids") or []]
             result = self.deps.updates_apply(ids=ids)
             self._serve("updates", pages.render_updates_result_html(result))
-            follow = self.bridge.wait_for_action(
-                ("updates-open", "start", "cancel"), timeout=self.ACTION_TIMEOUT_SECONDS
-            )
+            follow = self._wait_or_nav(("updates-refresh", "cancel"), self.ACTION_TIMEOUT_SECONDS)
+            if follow is not None and "nav" in follow:
+                self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
+                return follow["nav"]
             if follow is not None and follow["action"] == "cancel":
                 return self._finish("cancelled", pages.render_cancelled_html({}))
             self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
@@ -285,6 +305,17 @@ class InteractiveSession:
             return self._run_updates()
 
     # ---- 公共 ----
+
+    def _wait_or_nav(
+        self, kinds: tuple[str, ...], timeout: float
+    ) -> dict[str, Any] | None:
+        """等指定动作，但**也接住侧栏导航**：返回 `{"nav": "<kind>"}` 表示用户切走了。"""
+        action = self.bridge.wait_for_action(tuple(kinds) + NAV_ACTIONS, timeout=timeout)
+        if action is None:
+            return None
+        if action["action"] in NAV_ACTIONS and action["action"] not in kinds:
+            return {"nav": action["action"]}
+        return action
 
     def _recover(self, exc: BaseException, timeout: float | None) -> dict[str, Any] | None:
         """出错：说明原因 + 可重试。

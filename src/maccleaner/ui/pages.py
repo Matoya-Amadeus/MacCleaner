@@ -127,8 +127,14 @@ def render_progress_html(payload: dict[str, Any] | None = None, *, stage: str = 
         stage=stage,
         title=str(data.get("title") or "正在扫描"),
         body=str(data.get("body") or "正在扫描"),
-        actions="",
-        current="clean",
+        # 进度页**自己轮询刷新**：慢操作（例如 brew outdated 要几秒）期间服务端不会发新页，
+        # 不自刷的话用户就一直停在"正在…"（2026-10-18 真浏览器实测过的坑）。
+        actions=(
+            "<script>setTimeout(function(){location.reload()}, 800)</script>"
+            if data.get("auto_refresh", True)
+            else ""
+        ),
+        current=str(data.get("nav") or "clean"),
     )
 
 
