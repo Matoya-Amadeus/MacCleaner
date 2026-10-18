@@ -59,6 +59,11 @@ def build_parser() -> argparse.ArgumentParser:
     uninstall.add_argument("--bundle-id", default="")
     uninstall.add_argument("--app-name", default="")
 
+    updates = sub.add_parser("updates", help="List third-party updates (brew/mas); --apply to install")
+    add_common(updates)
+    updates.add_argument("--apply", action="store_true", help="actually run the upgrades (default: dry-run)")
+    updates.add_argument("--only", default="", help="comma separated names / app ids to upgrade")
+
     trace = sub.add_parser("trace", help="Trace repeated regeneration sources for a target")
     add_common(trace)
     trace.add_argument("--path", required=True)
@@ -108,6 +113,37 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     ctx = _context_from_args(args)
     manager = StorageManager(ctx)
+
+    if args.command == "updates":
+        from .updates import apply_updates, build_upgrade_plan, discover_updates, render_updates_text
+
+        found = discover_updates()
+        wanted = {part.strip() for part in str(getattr(args, "only", "") or "").split(",") if part.strip()}
+        selected = [
+            item for item in found["items"]
+            if not wanted
+            or str(item.get("name")) in wanted
+            or str(item.get("app_id")) in wanted
+        ]
+        plan = build_upgrade_plan(selected)
+        applied = None
+        if getattr(args, "apply", False) and plan["groups"]:
+            applied = apply_updates(plan, dry_run=False)
+        elif getattr(args, "apply", False):
+            print("没有可升级项（或 --only 没匹配到）。", file=sys.stderr)
+
+        if getattr(args, "json", False):
+            payload = {
+                **found,
+                "selected": plan["count"],
+                "commands": [group["command"] for group in plan["groups"]],
+            }
+            if applied is not None:
+                payload["applied"] = applied
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(render_updates_text(found, applied=applied))
+        return 0
 
     if args.command == "uninstall":
         from .uninstall import build_plan, read_app_identity, render_plan_text, summarize

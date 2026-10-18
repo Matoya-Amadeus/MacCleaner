@@ -1,0 +1,205 @@
+"""第三方软件更新（2026-10-18 迁入）。
+
+钉住的都是"真机上会咬人"的点：
+
+1. 两个来源（brew / mas）**互相独立**——一个失败不该让另一个消失；
+2. runner 有**两种形态**（可调用对象 / 带 `.run()` 的对象）；在 maho 里就因此把整个会话打成过失败；
+3. 执行按**组**跑，一组失败不拖累其它组；
+4. `dry_run` 只回命令、**不执行**（CLI 默认就是它）。
+"""
+from __future__ import annotations
+
+import unittest
+
+from maccleaner.updates import (
+    SCOPE_NOTE,
+    apply_updates,
+    build_upgrade_plan,
+    discover_updates,
+    parse_brew_outdated,
+    parse_mas_outdated,
+)
+
+BREW_JSON = """
+{
+  "formulae": [
+    {"name": "ffmpeg", "installed_versions": ["6.0"], "current_version": "7.1"},
+    {"name": "jq", "installed_versions": "1.7.1", "current_version": "1.7.1"}
+  ],
+  "casks": [
+    {"token": "raycast", "installed_versions": "1.50.0", "current_version": "1.60.0"}
+  ]
+}
+"""
+
+MAS_TEXT = """497799835 Xcode (15.0)
+409183694 Keynote (13.2)
+"""
+
+
+class _Runner:
+    """按命令片段返回预置结果，并记录调用。"""
+
+    def __init__(self, answers: dict[str, tuple[int, str, str]]) -> None:
+        self.answers = answers
+        self.calls: list[list[str]] = []
+
+    def __call__(self, argv, **_kwargs):  # noqa: ANN001, ANN003
+        self.calls.append(list(argv))
+        joined = " ".join(str(part) for part in argv)
+        for key, (code, out, err) in self.answers.items():
+            if key in joined:
+                return type("R", (), {"returncode": code, "stdout": out, "stderr": err})()
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+
+def _with_fake_managers(runner):
+    """把两个 CLI 都当成"存在"，否则用例会依赖本机是否装了 brew/mas。"""
+    import maccleaner.updates as mod
+
+    original = mod._resolve
+    mod._resolve = lambda name: f"/fake/{name}"  # type: ignore[assignment]
+    try:
+        return mod.discover_updates(runner=runner)
+    finally:
+        mod._resolve = original  # type: ignore[assignment]
+
+
+class ParseTests(unittest.TestCase):
+    def test_brew_json_covers_formula_and_cask(self) -> None:
+        by_name = {item["name"]: item for item in parse_brew_outdated(BREW_JSON)}
+        self.assertEqual(by_name["ffmpeg"]["installed"], "6.0")
+        self.assertEqual(by_name["ffmpeg"]["available"], "7.1")
+        self.assertEqual(by_name["raycast"]["kind"], "cask")
+        self.assertEqual(by_name["raycast"]["installed"], "1.50.0", "installed_versions 是字符串时也要能解析")
+
+    def test_mas_text(self) -> None:
+        items = parse_mas_outdated(MAS_TEXT)
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0]["app_id"], "497799835")
+        self.assertEqual(items[0]["available"], "15.0")
+
+    def test_garbage_yields_empty_not_exception(self) -> None:
+        self.assertEqual(parse_brew_outdated("not json"), [])
+        self.assertEqual(parse_mas_outdated("garbage line without id"), [])
+
+
+class DiscoverTests(unittest.TestCase):
+    def test_merges_both_sources_and_states_scope(self) -> None:
+        runner = _Runner({"outdated --json=v2": (0, BREW_JSON, ""), "outdated": (0, MAS_TEXT, "")})
+        result = _with_fake_managers(runner)
+        names = [item["name"] for item in result["items"]]
+        self.assertIn("ffmpeg", names)
+        self.assertIn("Xcode", names)
+        self.assertEqual(result["count"], 5, "brew 3 项 + mas 2 项")
+        self.assertIn("macOS system updates are out of scope", result["scope"])
+        self.assertEqual(result["notes"], [])
+
+    def test_missing_cli_degrades_to_note(self) -> None:
+        import maccleaner.updates as mod
+
+        original = mod._resolve
+        mod._resolve = lambda name: ""  # type: ignore[assignment]
+        try:
+            result = mod.discover_updates(runner=_Runner({}))
+        finally:
+            mod._resolve = original  # type: ignore[assignment]
+        self.assertEqual(result["items"], [])
+        self.assertEqual(len(result["notes"]), 2)
+        self.assertTrue(all("未安装" in note for note in result["notes"]))
+
+    def test_one_source_failing_keeps_the_other(self) -> None:
+        runner = _Runner({"outdated --json=v2": (1, "", "boom"), "outdated": (0, MAS_TEXT, "")})
+        result = _with_fake_managers(runner)
+        self.assertTrue(any("Homebrew 查询失败" in note for note in result["notes"]))
+        self.assertIn("Xcode", [item["name"] for item in result["items"]])
+
+    def test_scope_note_is_explicit(self) -> None:
+        self.assertIn("third-party only", SCOPE_NOTE)
+
+
+class UpgradePlanTests(unittest.TestCase):
+    ITEMS = [
+        {"manager": "brew", "kind": "formula", "name": "aom"},
+        {"manager": "brew", "kind": "formula", "name": "cmake"},
+        {"manager": "brew", "kind": "cask", "name": "devin-desktop"},
+        {"manager": "mas", "kind": "app-store", "name": "Xcode", "app_id": "497799835"},
+        {"manager": "unknown", "kind": "x", "name": "nope"},
+    ]
+
+    def test_groups_by_manager_and_kind(self) -> None:
+        plan = build_upgrade_plan(self.ITEMS, brew="/fake/brew", mas="/fake/mas")
+        self.assertEqual(len(plan["groups"]), 3)
+        self.assertEqual(plan["count"], 4)
+        self.assertEqual(plan["ignored"], ["nope"])
+        commands = [group["command"] for group in plan["groups"]]
+        self.assertIn("brew upgrade aom cmake", commands)
+        self.assertIn("brew upgrade --cask devin-desktop", commands, "cask 必须带 --cask")
+        self.assertIn("mas upgrade 497799835", commands)
+
+    def test_empty_selection_is_refused(self) -> None:
+        result = apply_updates(build_upgrade_plan([]))
+        self.assertEqual(result["status"], "refused")
+        self.assertEqual(result["reason"], "nothing selected")
+
+    def test_dry_run_returns_commands_without_executing(self) -> None:
+        calls: list[list[str]] = []
+        plan = build_upgrade_plan(self.ITEMS, brew="/fake/brew", mas="/fake/mas")
+        result = apply_updates(plan, dry_run=True, runner=lambda *a, **k: calls.append(list(a[0])))
+        self.assertEqual(result["status"], "dry-run")
+        self.assertEqual(len(result["commands"]), 3)
+        self.assertEqual(calls, [], "dry-run 不得调用 runner")
+
+    def test_partial_failure_does_not_stop_other_groups(self) -> None:
+        def runner(argv, **_kwargs):
+            code = 1 if "aom" in argv else 0
+            return type("R", (), {
+                "returncode": code,
+                "stdout": "ok" if code == 0 else "",
+                "stderr": "" if code == 0 else "boom",
+            })()
+
+        result = apply_updates(build_upgrade_plan(self.ITEMS, brew="/fake/brew", mas="/fake/mas"), runner=runner)
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["ok_count"], 2)
+        failed = [group for group in result["groups"] if not group["ok"]]
+        self.assertEqual(len(failed), 1)
+        self.assertIn("boom", failed[0]["stderr_tail"], "失败要留下 stderr")
+
+    def test_all_failed(self) -> None:
+        def runner(argv, **_kwargs):
+            return type("R", (), {"returncode": 2, "stdout": "", "stderr": "nope"})()
+
+        result = apply_updates(build_upgrade_plan(self.ITEMS, brew="/fake/brew", mas="/fake/mas"), runner=runner)
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["ok_count"], 0)
+
+
+class RunnerShapeTests(unittest.TestCase):
+    """两种 runner 形态都要能用（maho 里就因 `CommandRunner` 不可调用把会话打成过失败）。"""
+
+    def test_runnable_object_is_supported(self) -> None:
+        class _Obj:
+            def __init__(self) -> None:
+                self.calls: list[list[str]] = []
+
+            def run(self, argv, **_kwargs):
+                self.calls.append(list(argv))
+                return type("R", (), {"returncode": 0, "stdout": BREW_JSON, "stderr": ""})()
+
+        obj = _Obj()
+        result = _with_fake_managers(obj)
+        self.assertTrue(obj.calls)
+        self.assertEqual(result["count"], 3)
+
+    def test_apply_accepts_runnable_object(self) -> None:
+        class _Obj:
+            def run(self, argv, **_kwargs):
+                return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
+
+        plan = build_upgrade_plan([{"manager": "brew", "kind": "formula", "name": "aom"}], brew="/fake/brew")
+        self.assertEqual(apply_updates(plan, runner=_Obj())["status"], "applied")
+
+
+if __name__ == "__main__":
+    unittest.main()
