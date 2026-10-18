@@ -41,6 +41,14 @@ class LauncherBundleTests(unittest.TestCase):
             # 双击入口：有 swiftc 时是原生窗口，没有时退回 launch 脚本（两种都合法，不能写死一个）。
             self.assertIn(plist["CFBundleExecutable"], {"MacCleaner", "launch"})
             self.assertEqual(plist["MacCleanerRepo"], str(REPO_ROOT), "原生外壳要靠它找到仓库")
+            # 缺这个键，WKWebView 会被 ATS 拦住 http://127.0.0.1，而**失败时不报错、只黑屏**
+            # （2026-10-18 用户实际遇到）。它是打包契约，不是可选优化。
+            ats = plist.get("NSAppTransportSecurity") or {}
+            self.assertTrue(ats.get("NSAllowsLocalNetworking"), "必须放行本机网络")
+            self.assertTrue(
+                (ats.get("NSExceptionDomains") or {}).get("127.0.0.1", {}).get("NSExceptionAllowsInsecureHTTPLoads"),
+                "必须为本机 loopback 放行明文 HTTP",
+            )
 
             icon = contents / "Resources" / "AppIcon.icns"
             self.assertTrue(icon.is_file() and icon.stat().st_size > 0, "图标必须真的被拷进 bundle")

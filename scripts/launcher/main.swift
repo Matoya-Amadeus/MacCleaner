@@ -40,6 +40,7 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
             )
             return
         }
+        log("backend url=\(url.absoluteString)")
         showWindow(url: url)
     }
 
@@ -106,7 +107,6 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
 
         let webView = WKWebView(frame: frame)
         webView.navigationDelegate = self
-        webView.setValue(false, forKey: "drawsBackground")
         window.contentView = webView
         webView.load(URLRequest(url: url))
 
@@ -135,6 +135,70 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
         appMenu.addItem(withTitle: "退出 MacCleaner", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenuItem.submenu = appMenu
         app.mainMenu = mainMenu
+    }
+
+    // ---- 加载结果自证（2026-10-18：用户遇到黑屏，而我上一轮只验了"进程在跑"）----
+    //
+    // 教训：进程活着 ≠ 页面渲染了。WKWebView 默认禁止 http://（ATS），失败时**不报错、只是白/黑**。
+    // 所以这里把"加载完成"和"加载失败"都写到日志，并用 JS 读一次 data-stage 证明 HTML 真的跑起来了。
+
+    func log(_ message: String) {
+        let line = "[\(ISO8601DateFormatter().string(from: Date()))] \(message)\n"
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/MacCleaner", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("launcher.log")
+        if let handle = try? FileHandle(forWritingTo: file) {
+            handle.seekToEndOfFile()
+            handle.write(line.data(using: .utf8) ?? Data())
+            try? handle.close()
+        } else {
+            try? line.write(to: file, atomically: true, encoding: .utf8)
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        webView.evaluateJavaScript("document.documentElement.dataset.stage || '(none)'") { value, error in
+            if let error = error {
+                self.log("loaded but eval failed: \(error.localizedDescription)")
+            } else {
+                self.log("loaded stage=\(value ?? "nil")")
+            }
+        }
+        // 自证渲染：等一帧后把窗口内容截成 PNG。用户上一轮遇到黑屏，而我当时只看到"进程在跑"。
+        // 这张图是"页面真的有内容"的证据，也可用于以后的自动验收。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            let config = WKSnapshotConfiguration()
+            webView.takeSnapshot(with: config) { image, error in
+                guard let image = image,
+                      let tiff = image.tiffRepresentation,
+                      let rep = NSBitmapImageRep(data: tiff),
+                      let png = rep.representation(using: .png, properties: [:]) else {
+                    self.log("snapshot failed: \(error?.localizedDescription ?? "unknown")")
+                    return
+                }
+                let dir = FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent("Library/Logs/MacCleaner", isDirectory: true)
+                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                let file = dir.appendingPathComponent("launcher-snapshot.png")
+                try? png.write(to: file)
+                self.log("snapshot ok \(Int(image.size.width))x\(Int(image.size.height)) -> \(file.path)")
+            }
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        log("navigation failed: \(error.localizedDescription)")
+        presentError("页面加载失败：\(error.localizedDescription)")
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        log("provisional navigation failed: \(error.localizedDescription)")
+        presentError("页面加载失败：\(error.localizedDescription)")
     }
 
     func windowWillClose(_ notification: Notification) {

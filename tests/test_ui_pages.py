@@ -44,6 +44,16 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn("[data-nav-action]", page, "点击处理器要包含侧栏选择器")
         self.assertIn("dataset.navAction", page, "要能从按钮上取出侧栏动作名")
 
+    def test_round_button_sets_its_own_text_colour(self) -> None:
+        """圆钮会与 `primary` 叠用：`primary` 的字色在圆钮背景上不可读，必须显式重设。
+
+        2026-10-18：用户看到的是"按钮几乎看不见"——深色字压在深色底上。
+        """
+        from maccleaner.ui.theme import STYLE
+
+        segment = STYLE.split(".button.round{", 1)[1].split("}", 1)[0]
+        self.assertIn("color:var(--text)", segment, "圆钮必须自己指定字色，不能继承 primary 的 --on-accent")
+
 
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:

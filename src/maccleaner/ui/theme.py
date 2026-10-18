@@ -49,8 +49,11 @@ body.has-nav{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:1
   color:var(--text);font:inherit;cursor:pointer}
 .button:hover{border-color:var(--accent)}
 .button.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
-.button.round{width:132px;height:132px;border-radius:999px;font-size:17px;font-weight:650;background:var(--surface);
-  border:1.5px solid var(--line);box-shadow:0 0 0 10px var(--surface-muted),var(--shadow)}
+/* 圆钮常与 `primary` 叠用：`primary` 把字色设成 `--on-accent`（深色），这里又把背景换成 `--surface`
+   （深色）→ 深字压深底，按钮几乎看不见（2026-10-18 看快照才发现）。所以必须**显式重设字色**。 */
+.button.round{width:132px;height:132px;border-radius:999px;font-size:17px;font-weight:650;
+  background:var(--surface);color:var(--text);
+  border:1.5px solid var(--accent);box-shadow:0 0 0 10px var(--surface-muted),var(--shadow)}
 .button.round:hover{border-color:var(--accent);color:var(--accent)}
 .row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:11px 14px;border-top:1px solid var(--line)}
 .row:first-of-type{border-top:0}

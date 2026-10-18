@@ -65,6 +65,24 @@ cat > "${CONTENTS}/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>MacCleanerRepo</key><string>${REPO_DIR}</string>
+  <!-- 本机 loopback 页面是 http://127.0.0.1:<port>；WKWebView 默认被 ATS 拦住，
+       失败时**不报错、只是黑屏**（2026-10-18 用户实际遇到）。这里只放行本机地址。 -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsLocalNetworking</key><true/>
+    <key>NSExceptionDomains</key>
+    <dict>
+      <key>127.0.0.1</key>
+      <dict>
+        <key>NSExceptionAllowsInsecureHTTPLoads</key><true/>
+        <key>NSIncludesSubdomains</key><true/>
+      </dict>
+      <key>localhost</key>
+      <dict>
+        <key>NSExceptionAllowsInsecureHTTPLoads</key><true/>
+      </dict>
+    </dict>
+  </dict>
 </dict>
 </plist>
 PLIST
