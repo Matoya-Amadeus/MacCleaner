@@ -20,10 +20,16 @@ from __future__ import annotations
 import hashlib
 import os
 import plistlib
+import shlex
+import shutil
+import subprocess
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
-from .core import _allocated_bytes
+from .core import _allocated_bytes, _protected_session_reason
+
+TRASH_DIRNAME = ".Trash"
 
 # 用户域里按 bundle-id 精确命中的位置（kind 供界面分组显示）。
 RELATED_SPECS: tuple[tuple[str, str], ...] = (
@@ -233,6 +239,184 @@ def build_plan(
     }
 
 
+def _trash_dir(home: Path) -> Path:
+    return _normalized(home) / TRASH_DIRNAME
+
+
+def _move_to_trash(path: Path, trash: Path) -> Path:
+    """移入废纸篓，重名自动加序号（绝不覆盖废纸篓里已有的东西）。"""
+    trash.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    base = f"{stamp}-{path.name}"
+    target = trash / base
+    counter = 1
+    while target.exists() or target.is_symlink():
+        target = trash / f"{base}-{counter}"
+        counter += 1
+    shutil.move(str(path), str(target))
+    return target
+
+
+def apply_plan(
+    plan: dict[str, Any],
+    *,
+    home: Path | None = None,
+    selected_ids: Sequence[str] | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """执行卸载计划：**只移勾选项、只移用户域**，一律移入废纸篓（可恢复）。
+
+    安全口径（与发现侧同源，不另造一套）：
+
+    1. `selected_ids` 为 `None` 表示全选；传了就只保留**冻结计划里存在**的 id——
+       调用方换不掉路径（哪怕直接塞路径字符串，也匹配不到任何 id）；
+    2. 空选 → `refused`，**一个都不动**；
+    3. 系统级项（`requires_admin`）**一律不动**，交给 `apply_system_leftovers`；
+    4. 命中内核的受保护路径（`.ssh`、钥匙串、浏览器身份数据…）→ 跳过并记原因；
+    5. `dry_run` 只回清单，不移动任何东西。
+    """
+    home_path = _dict_home(plan, home)
+    items = [item for item in (plan.get("items") or []) if isinstance(item, dict)]
+    user_items = [item for item in items if not item.get("requires_admin")]
+
+    if selected_ids is not None:
+        wanted = {str(value) for value in selected_ids}
+        user_items = [item for item in user_items if str(item.get("id", "")) in wanted]
+        if not user_items:
+            return {"status": "refused", "reason": "nothing selected", "moved": [], "skipped": []}
+    if not user_items:
+        # 计划里只有系统级项时，user 域无事可做——报 applied 会让人以为"清过了"。
+        return {"status": "refused", "reason": "no user-scope items", "moved": [], "skipped": []}
+
+    would_move: list[str] = []
+    skipped: list[dict[str, str]] = []
+    for item in user_items:
+        path = Path(str(item.get("path", "")))
+        reason = _protected_session_reason(path)
+        if reason:
+            skipped.append({"path": str(path), "reason": reason})
+            continue
+        if not _exists(path):
+            skipped.append({"path": str(path), "reason": "already gone"})
+            continue
+        would_move.append(str(path))
+
+    if dry_run:
+        return {"status": "dry-run", "would_move": would_move, "skipped": skipped, "moved": []}
+
+    trash = _trash_dir(home_path)
+    moved: list[dict[str, str]] = []
+    failed: list[dict[str, str]] = []
+    for path_text in would_move:
+        source = Path(path_text)
+        try:
+            destination = _move_to_trash(source, trash)
+        except OSError as exc:
+            failed.append({"path": path_text, "reason": f"{type(exc).__name__}: {exc}"})
+            continue
+        moved.append({"path": path_text, "trash_path": str(destination)})
+
+    status = "applied" if not failed else ("failed" if not moved else "partial")
+    return {
+        "status": status,
+        "moved": moved,
+        "moved_count": len(moved),
+        "skipped": skipped,
+        "failed": failed,
+        "failed_count": len(failed),
+        "trash_dir": str(trash),
+    }
+
+
+def _dict_home(plan: dict[str, Any], home: Path | None) -> Path:
+    app = plan.get("app") if isinstance(plan.get("app"), dict) else {}
+    return _normalized(home or app.get("home") or Path.home())
+
+
+def build_admin_command(paths: Sequence[str]) -> list[str]:
+    """一次管理员调用：`osascript ... with administrator privileges` 里跑 `rm -rf -- <quoted>`。"""
+    quoted = " ".join(shlex.quote(str(path)) for path in paths)
+    script = f'/bin/rm -rf -- {quoted}'
+    escaped = script.replace("\\", "\\\\").replace('"', '\\"')
+    return ["/usr/bin/osascript", "-e", f'do shell script "{escaped}" with administrator privileges']
+
+
+def _admin_guard(paths: Sequence[str]) -> tuple[list[str], str]:
+    """代跑前的硬性校验：绝对路径、拒绝 `/`、拒绝 `..`、拒绝空。"""
+    cleaned: list[str] = []
+    for raw in paths:
+        text = str(raw or "").strip()
+        if not text:
+            return [], "empty path"
+        if not text.startswith("/"):
+            return [], f"relative path refused: {text}"
+        if ".." in Path(text).parts:
+            return [], f"parent traversal refused: {text}"
+        if text.rstrip("/") == "":
+            return [], "refusing to remove /"
+        cleaned.append(text)
+    return cleaned, ""
+
+
+def _exec(execute: Any, argv: Sequence[str], *, timeout: float | None = None) -> Any:
+    if callable(execute):
+        return execute(argv, capture_output=True, text=True, timeout=timeout)
+    method = getattr(execute, "run", None)
+    if method is None:
+        raise TypeError("runner 既不可调用也没有 .run()")
+    try:
+        return method(argv, timeout=timeout)
+    except TypeError:
+        return method(argv)
+
+
+def apply_system_leftovers(
+    paths: Sequence[str],
+    *,
+    runner: Any | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """代跑系统级残留：一次授权、逐条校验、失败要记录（不吞）。"""
+    cleaned, error = _admin_guard(paths)
+    if error:
+        return {"status": "refused", "reason": error, "paths": [], "command": []}
+    if not cleaned:
+        return {"status": "refused", "reason": "nothing selected", "paths": [], "command": []}
+    command = build_admin_command(cleaned)
+    if dry_run:
+        return {"status": "dry-run", "paths": cleaned, "command": command}
+
+    # 快照必须在**执行之前**：命令跑完路径就没了，之后再数只会得到 0，
+    # 回执就会撒谎说"一项都没删"。这个错在 maho 里踩过一次，移植时又写反了一次。
+    pre_existing = [path for path in cleaned if os.path.lexists(path)]
+    execute = runner or subprocess.run
+    try:
+        completed = _exec(execute, command, timeout=180)
+    except (OSError, subprocess.SubprocessError, TypeError) as exc:
+        return {
+            "status": "failed",
+            "paths": cleaned,
+            "command": command,
+            "error": f"{type(exc).__name__}: {exc}",
+            "remaining": pre_existing,
+            "removed_count": 0,
+            "pre_existing_count": len(pre_existing),
+        }
+    code = int(getattr(completed, "returncode", 0) or 0)
+    stderr = str(getattr(completed, "stderr", "") or "").strip()
+    remaining = [path for path in pre_existing if os.path.lexists(path)]
+    return {
+        "status": "applied" if code == 0 else "failed",
+        "paths": cleaned,
+        "command": command,
+        "exit_code": code,
+        "error": stderr[:400],
+        "remaining": remaining,
+        "removed_count": len(pre_existing) - len(remaining),
+        "pre_existing_count": len(pre_existing),
+    }
+
+
 def summarize(plan: dict[str, Any]) -> dict[str, Any]:
     """给 CLI / MCP 的紧凑视图：只回答"有多少、多大、要不要管理员"。"""
     return {
@@ -249,6 +433,9 @@ def summarize(plan: dict[str, Any]) -> dict[str, Any]:
 __all__ = [
     "RELATED_SPECS",
     "SYSTEM_LIBRARY_SPECS",
+    "apply_plan",
+    "apply_system_leftovers",
+    "build_admin_command",
     "build_plan",
     "discover_related_paths",
     "discover_system_related_paths",

@@ -219,6 +219,33 @@ class StorageService:
         )
         return {**summarize(plan), "items": plan["items"], "system_items": plan["system_items"]}
 
+    def uninstall_apply(
+        self,
+        *,
+        app_path: str | Path,
+        bundle_id: str = "",
+        app_name: str = "",
+        ids: Sequence[str] = (),
+        home: str | Path | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, object]:
+        """执行卸载：只移勾选项、只移用户域、一律进废纸篓（可恢复）。
+
+        `ids` 为空表示"计划里的全部用户域项"；传了就只认这些 id（调用方换不掉路径）。
+        """
+        from .uninstall import apply_plan, build_plan, read_app_identity
+
+        identity = read_app_identity(app_path)
+        plan = build_plan(
+            {
+                "path": str(app_path),
+                "bundle_id": bundle_id or identity.get("bundle_id", ""),
+                "name": app_name or identity.get("name", ""),
+            },
+            home=home,
+        )
+        return apply_plan(plan, home=home, selected_ids=list(ids) or None, dry_run=dry_run)
+
     def updates_check(self) -> dict[str, object]:
         """第三方软件更新（只读）：Homebrew + App Store，不含 macOS 系统更新。"""
         from .updates import discover_updates

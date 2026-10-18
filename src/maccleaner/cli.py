@@ -58,6 +58,9 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(uninstall)
     uninstall.add_argument("--bundle-id", default="")
     uninstall.add_argument("--app-name", default="")
+    uninstall.add_argument("--apply", action="store_true", help="actually move the selected items to Trash")
+    uninstall.add_argument("--ids", default="", help="comma separated plan item ids (default: all user-scope items)")
+    uninstall.add_argument("--accept-admin", action="store_true", help="also remove system-level leftovers (asks for admin once)")
 
     updates = sub.add_parser("updates", help="List third-party updates (brew/mas); --apply to install")
     add_common(updates)
@@ -159,12 +162,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             {"path": app_path, "bundle_id": bundle_id, "name": app_name, "home": ctx.home},
             home=ctx.home,
         )
+        if not getattr(args, "apply", False):
+            if getattr(args, "json", False):
+                print(json.dumps({**summarize(plan), "items": plan["items"], "system_items": plan["system_items"]},
+                                 ensure_ascii=False, indent=2))
+            else:
+                print(render_plan_text(plan))
+            return 0
+
+        from .uninstall import apply_plan, apply_system_leftovers
+
+        ids = [part.strip() for part in str(getattr(args, "ids", "") or "").split(",") if part.strip()]
+        result = apply_plan(plan, home=ctx.home, selected_ids=ids or None)
+        if getattr(args, "accept_admin", False) and plan.get("system_items"):
+            result["system"] = apply_system_leftovers([item["path"] for item in plan["system_items"]])
         if getattr(args, "json", False):
-            print(json.dumps({**summarize(plan), "items": plan["items"], "system_items": plan["system_items"]},
-                             ensure_ascii=False, indent=2))
+            print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
-            print(render_plan_text(plan))
-        return 0
+            print(f"卸载 {result['status']}：移入废纸篓 {result['moved_count']} 项"
+                  + (f"，跳过 {len(result['skipped'])} 项" if result.get("skipped") else "")
+                  + (f"，失败 {result['failed_count']} 项" if result.get("failed_count") else ""))
+            for item in result.get("moved") or []:
+                print(f"  -> {item['trash_path']}")
+        return 0 if result["status"] in {"applied", "dry-run"} else 1
 
     if args.command == "trace":
         trace_report = manager.trace(Path(args.path), str(args.keyword))
