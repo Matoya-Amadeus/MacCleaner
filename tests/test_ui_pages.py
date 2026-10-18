@@ -75,3 +75,124 @@ class ShellTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RemainingPagesTests(unittest.TestCase):
+    """其余页面（2026-10-18）：每页只钉"这一屏必须说清什么"。"""
+
+    def test_review_lists_candidates_and_offers_approval(self) -> None:
+        from maccleaner.ui.pages import render_review_html
+
+        page = render_review_html({"candidates": [
+            {"path": "/Users/x/Library/Caches/a", "kind": "caches", "allocated_bytes": 2048},
+        ]})
+        self.assertIn('data-stage="review"', page)
+        self.assertIn("data-bridge-action=\"approval\"", page)
+        self.assertIn("废纸篓", page, "要说明可恢复")
+
+    def test_review_without_candidates_says_so(self) -> None:
+        from maccleaner.ui.pages import render_review_html
+
+        page = render_review_html({"candidates": []})
+        self.assertIn("没有找到可清理的内容", page)
+        self.assertIn("data-bridge-action=\"rescan\"", page, "空结果要能重扫")
+
+    def test_confirmation_restates_count_and_size(self) -> None:
+        from maccleaner.ui.pages import render_confirmation_html
+
+        page = render_confirmation_html({"selected_count": 3, "selected_bytes": 3 * 1024 * 1024})
+        self.assertIn('data-stage="confirming"', page)
+        self.assertIn("3 组", page)
+        self.assertIn("3.00 MiB", page)
+        self.assertIn("data-bridge-action=\"confirm\"", page)
+        self.assertIn("data-bridge-action=\"back\"", page)
+
+    def test_completion_hero_prefers_recoverable_and_explains_trash(self) -> None:
+        from maccleaner.ui.pages import render_completion_html
+
+        page = render_completion_html({"recoverable_bytes": 4096, "actual_freed_bytes": 0, "receipt_path": "/r.json"})
+        self.assertIn('data-stage="complete"', page)
+        self.assertIn("4.00 KiB", page, "头条数字必须是可恢复字节，而不是 0")
+        self.assertIn("清空废纸篓后释放", page)
+        self.assertIn("/r.json", page, "回执路径要可见")
+
+    def test_completion_real_delete_shows_actual_freed(self) -> None:
+        from maccleaner.ui.pages import render_completion_html
+
+        page = render_completion_html({"recoverable_bytes": 0, "actual_freed_bytes": 1024 * 1024})
+        self.assertIn("实际释放", page)
+        self.assertNotIn("清空废纸篓后释放", page, "真删路径不该出现废纸篓说明")
+
+    def test_recovery_page_offers_retry_not_a_dead_end(self) -> None:
+        from maccleaner.ui.pages import render_recovery_html
+
+        page = render_recovery_html({"detail": "ValueError: boom"})
+        self.assertIn('data-stage="error"', page)
+        self.assertIn("data-bridge-action=\"start\"", page, "必须能重试")
+        self.assertIn("没有删除任何东西", page)
+
+    def test_uninstall_preview_marks_bundle_as_required_and_guessed_unchecked(self) -> None:
+        from maccleaner.ui.pages import render_uninstall_preview_html
+
+        plan = {
+            "app": {"name": "Example App", "bundle_id": "com.example.app"},
+            "items": [
+                {"id": "aaa", "path": "/Applications/Example.app", "kind": "app-bundle", "confidence": "exact",
+                 "allocated_bytes": 10},
+                {"id": "bbb", "path": "/Users/x/Library/Caches/com.example.app", "kind": "caches",
+                 "confidence": "exact", "allocated_bytes": 20},
+                {"id": "ccc", "path": "/Users/x/Library/Logs/Example App", "kind": "log-name",
+                 "confidence": "name-match", "allocated_bytes": 30},
+            ],
+            "user_total_bytes": 60,
+        }
+        page = render_uninstall_preview_html(plan)
+        self.assertIn('data-stage="uninstall-preview"', page)
+        self.assertIn("必选", page)
+        self.assertNotIn('data-item-id="aaa"', page, "本体不提供勾选框")
+        self.assertIn('data-item-id="bbb" checked', page, "确定项默认勾选")
+        self.assertIn('data-item-id="ccc"', page)
+        self.assertNotIn('data-item-id="ccc" checked', page, "名称匹配默认不勾")
+        self.assertIn("默认不勾", page)
+
+    def test_uninstall_complete_hides_admin_button_when_nothing_left(self) -> None:
+        from maccleaner.ui.pages import render_uninstall_complete_html
+
+        clean = render_uninstall_complete_html({"moved_count": 3, "remaining": {"system_count": 0}})
+        self.assertIn('data-stage="uninstall-complete"', clean)
+        self.assertNotIn("uninstall-system", clean, "没剩余就不显示管理员按钮")
+
+        leftover = render_uninstall_complete_html({"moved_count": 1, "remaining": {"system_count": 2}})
+        self.assertIn("uninstall-system", leftover)
+        self.assertIn("2 项", leftover)
+
+    def test_updates_list_marks_scope_and_checkboxes(self) -> None:
+        from maccleaner.ui.pages import render_updates_list_html
+
+        page = render_updates_list_html({"items": [
+            {"name": "aom", "manager": "brew", "kind": "formula", "installed": "1", "available": "2"},
+        ], "notes": ["未安装 mas：跳过 App Store 检查"]})
+        self.assertIn('data-stage="updates"', page)
+        self.assertIn("data-update-id=\"0\"", page)
+        self.assertIn("macOS 系统更新不在此列", page, "范围必须写明")
+        self.assertIn("未安装 mas", page)
+
+    def test_updates_result_shows_exit_codes(self) -> None:
+        from maccleaner.ui.pages import render_updates_result_html
+
+        page = render_updates_result_html({"status": "partial", "ok_count": 1, "total": 2, "groups": [
+            {"command": "brew upgrade aom", "exit_code": 0, "ok": True},
+            {"command": "mas upgrade 1", "exit_code": 1, "ok": False, "stderr_tail": "boom"},
+        ]})
+        self.assertIn('data-stage="updates-result"', page)
+        self.assertIn("部分更新完成", page)
+        self.assertIn("exit 1", page)
+        self.assertIn("boom", page)
+
+    def test_skills_page_folds_details(self) -> None:
+        from maccleaner.ui.pages import render_skills_html
+
+        page = render_skills_html()
+        self.assertIn('data-stage="skills"', page)
+        self.assertIn("<details", page, "细节要收进折叠菜单")
+        self.assertIn("触发词", page)

@@ -58,6 +58,11 @@ body.has-nav{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:1
 .pill{font-size:11px;border-radius:999px;padding:2px 8px;background:var(--surface-muted);color:var(--muted)}
 .pill.ok{background:var(--accent-soft);color:var(--accent)}
 .muted{color:var(--muted);font-size:12px}
+.hero{font-size:40px;font-weight:700;letter-spacing:-.02em;margin:6px 0 0;color:var(--accent)}
+.group-title{margin:18px 0 6px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+label.row.opt{cursor:pointer}
+label.row.opt input{margin:0 10px 0 0}
+details summary{cursor:pointer;color:var(--muted);font-size:13px}
 """
 
 __all__ = ["STYLE"]

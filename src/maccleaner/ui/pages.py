@@ -1,23 +1,63 @@
 """页面渲染（2026-10-18 迁入）。
 
-**只吃 dict**：页面不碰文件系统、不碰 core，因此可以用示例数据单测。
-真数据由会话层/服务层提供（下一步）。
+**只吃 dict**：页面不碰文件系统、不碰 core，因此全部可以用示例数据单测。
+真数据由会话层/服务层提供（下一步：适配器）。
+
+统一的几条约定：
+
+- 每个页面都有明确的 `data-stage`，测试与验收脚本靠它判断"现在在哪一屏"；
+- 按钮一律通过 `state_page(actions=...)` 注入，页面不自己拼 `<body>`；
+- 金额/字节走 `human_bytes`，**回收量口径与清理侧一致**：走废纸篓显示"可恢复"，真删才显示"实际释放"；
+- 页面上**不出现硬编码色值**（`tests/test_ui_pages.py` 会检查）。
 """
 from __future__ import annotations
 
 import html
-from typing import Any
+from typing import Any, Iterable, Sequence
 
 from .shell import state_page
 
 
-def _human_bytes(value: int) -> str:
+def human_bytes(value: int | float) -> str:
     number = float(max(0, int(value or 0)))
     for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
         if number < 1024 or unit == "TiB":
             return f"{int(number)} B" if unit == "B" else f"{number:.2f} {unit}"
         number /= 1024
     return f"{number:.2f} TiB"
+
+
+def _button(label: str, action: str, *, primary: bool = False, element_id: str = "") -> str:
+    cls = "button primary" if primary else "button"
+    ident = f' id="{html.escape(element_id)}"' if element_id else ""
+    return (
+        f'<button class="{cls}" type="button"{ident} data-bridge-action="{html.escape(action)}">'
+        f"{html.escape(label)}</button>"
+    )
+
+
+def _actions(*buttons: str) -> str:
+    return '<div class="actions">' + "".join(buttons) + "</div>" if buttons else ""
+
+
+def _rows(items: Iterable[dict[str, Any]], *, note_key: str = "reason") -> str:
+    rows: list[str] = []
+    for item in items:
+        path = str(item.get("path", "") or "")
+        name = path.rstrip("/").split("/")[-1] or path
+        kind = str(item.get("kind", "") or item.get("status", "") or "")
+        note = str(item.get(note_key, "") or "")
+        size = human_bytes(int(item.get("allocated_bytes", 0) or item.get("bytes", 0) or 0))
+        rows.append(
+            '<div class="row"><div>'
+            f"<strong>{html.escape(name)}</strong>"
+            f'<div class="meta">{html.escape(kind)}{" · " + html.escape(note) if note else ""}</div>'
+            f"</div><span class=\"meta\">{size}</span></div>"
+        )
+    return "".join(rows)
+
+
+# --------------------------------------------------------------------------- 清理链路
 
 
 def render_landing_html(payload: dict[str, Any], *, interactive: bool = True) -> str:
@@ -29,18 +69,18 @@ def render_landing_html(payload: dict[str, Any], *, interactive: bool = True) ->
     history = payload.get("history") or {}
     total = int(history.get("total_freed_bytes") or 0)
     runs = int(history.get("total_runs") or 0)
-    if total or runs:
-        summary = f"上次共清理 {runs} 次，可恢复 {_human_bytes(total)}（清空废纸篓后才真正释放）"
-    else:
-        summary = "还没有清理记录"
-
-    actions = ""
-    if interactive:
-        actions = (
-            '<div class="actions" style="justify-content:center">'
-            '<button class="button round primary" type="button" id="start-scan" '
-            'data-bridge-action="start">开始扫描</button></div>'
-        )
+    summary = (
+        f"上次共清理 {runs} 次，可恢复 {human_bytes(total)}（清空废纸篓后才真正释放）"
+        if (total or runs)
+        else "还没有清理记录"
+    )
+    actions = (
+        '<div class="actions" style="justify-content:center">'
+        '<button class="button round primary" type="button" id="start-scan" '
+        'data-bridge-action="start">开始扫描</button></div>'
+        if interactive
+        else ""
+    )
     page = state_page(
         {
             "message": "将扫描启动盘上的缓存、日志、废纸篓等推荐类型。",
@@ -55,4 +95,359 @@ def render_landing_html(payload: dict[str, Any], *, interactive: bool = True) ->
     return page.replace("</section>", f'<p class="muted" style="margin-top:14px">{html.escape(summary)}</p></section>')
 
 
-__all__ = ["render_landing_html"]
+def render_review_html(payload: dict[str, Any], *, interactive: bool = True) -> str:
+    """审阅页：列出候选，**用户可以逐条不选**；没有候选时明确说"没找到"。
+
+    这一页的核心承诺是"先看清单再决定删什么"——所以候选必须逐条可见（名称、类型、大小），
+    而不是只给一个总数。
+    """
+    candidates = [item for item in (payload.get("candidates") or []) if isinstance(item, dict)]
+    total = sum(int(item.get("allocated_bytes", 0) or 0) for item in candidates)
+    body = "找到可清理的内容" if candidates else "没有找到可清理的内容"
+    detail = (
+        f"共 {len(candidates)} 组候选，可恢复 {human_bytes(total)}；"
+        "点【开始清理】前会再让你确认一次，文件一律移入废纸篓（可恢复）。"
+        if candidates
+        else "你的 Mac 现在很干净。可以调大扫描范围或稍后再试。"
+    )
+    actions = _actions(_button("取消", "cancel"), _button("开始清理", "approval", primary=True)) if (interactive and candidates) else _actions(_button("重新扫描", "rescan", primary=interactive))
+    return state_page(
+        {"message": f"扫描完成：{len(candidates)} 组候选，{human_bytes(total)}", "detail": detail},
+        stage="review",
+        title="审阅清单",
+        body=body,
+        actions=actions + _rows(candidates),
+        current="clean",
+    )
+
+
+def render_confirmation_html(payload: dict[str, Any], *, interactive: bool = True) -> str:
+    """确认页：再拦一次（这是"删除"前的最后一道门）。"""
+    count = int(payload.get("selected_count", 0) or 0)
+    size = human_bytes(int(payload.get("selected_bytes", 0) or 0))
+    actions = _actions(
+        _button("返回修改", "back"),
+        _button("确认清理", "confirm", primary=True),
+    ) if interactive else ""
+    return state_page(
+        {
+            "message": f"将移入废纸篓：{count} 组，共 {size}",
+            "detail": "点【确认清理】立即执行；文件仍可从废纸篓恢复。",
+        },
+        stage="confirming",
+        title="确认清理",
+        body="确认清理",
+        actions=actions,
+        current="clean",
+    )
+
+
+def render_completion_html(payload: dict[str, Any], *, interactive: bool = True) -> str:
+    """完成页：头条数字是**可恢复**字节。
+
+    走废纸篓不会立即释放空间（字节还在废纸篓里），所以这里显示"可恢复"并注明
+    "清空废纸篓后释放"；只有真删路径（`actual_freed_bytes`）才显示"实际释放"。
+    曾经这里显示 `0 B`，用户以为没清掉。
+    """
+    actual = int(payload.get("actual_freed_bytes", 0) or 0)
+    recoverable = int(payload.get("recoverable_bytes", 0) or 0)
+    via_trash = not actual and bool(recoverable)
+    hero = human_bytes(actual or recoverable)
+    caveat = "（已移入废纸篓，清空废纸篓后释放）" if via_trash else ""
+    receipt = str(payload.get("receipt_path", "") or "")
+    actions = _actions(_button("再看一眼", "rescan"), _button("打开废纸篓", "open-trash", primary=True)) if interactive else ""
+    page = state_page(
+        {
+            "message": f"可恢复 {human_bytes(recoverable)}{caveat}" if via_trash else f"实际释放 {human_bytes(actual)}",
+            "detail": (f"回执：{receipt}" if receipt else "") + " · 失败/跳过：%d" % int(payload.get("failed_count", 0) or 0),
+        },
+        stage="complete",
+        title="清理完成",
+        body="清理完成",
+        actions=actions,
+        current="clean",
+    )
+    return page.replace(
+        '<p class="state-head">清理完成</p>',
+        f'<p class="state-head">清理完成</p><p class="hero">{html.escape(hero)}</p>',
+    )
+
+
+def render_cancelled_html(payload: dict[str, Any], *, interactive: bool = True) -> str:
+    actions = _actions(_button("重新开始", "start", primary=True)) if interactive else ""
+    return state_page(
+        {"message": "分析已取消", "detail": "没有文件被删除；你可以重新开始一次分析。"},
+        stage="cancelled",
+        title="分析已取消",
+        body="分析已取消",
+        actions=actions,
+        current="clean",
+    )
+
+
+def render_recovery_html(payload: dict[str, Any], *, interactive: bool = True) -> str:
+    """出错后的恢复页：**说明原因 + 可重试**，不是一张死掉的失败页。"""
+    reason = str(payload.get("detail", "") or "")
+    actions = _actions(_button("退出", "cancel"), _button("重试", "start", primary=True)) if interactive else ""
+    return state_page(
+        {
+            "message": "这次没有完成，但没有删除任何东西。",
+            "detail": (f"原因：{reason} · " if reason else "") + "点【重试】重新开始；也可以退出后再打开。",
+        },
+        stage="error",
+        title="可以重试",
+        body="这次没有完成",
+        actions=actions,
+        current="clean",
+    )
+
+
+# --------------------------------------------------------------------------- 卸载
+
+
+def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = True) -> str:
+    """应用列表（只列 `/Applications` 与用户应用目录里的 `.app`）。"""
+    apps = [item for item in (payload.get("apps") or []) if isinstance(item, dict)]
+    rows = _rows(
+        [
+            {
+                "path": app.get("name") or app.get("path", ""),
+                "kind": app.get("bundle_id", ""),
+                "allocated_bytes": app.get("allocated_bytes", 0),
+                "reason": app.get("version", ""),
+            }
+            for app in apps
+        ]
+    )
+    actions = ""
+    if interactive and apps:
+        actions = _actions(
+            *[
+                _button(f"卸载 {app.get('name', '')}", f"uninstall-plan:{app.get('bundle_id', '')}")
+                for app in apps[:6]
+            ]
+        )
+    return state_page(
+        {
+            "message": f"共 {len(apps)} 个应用",
+            "detail": "卸载会先列出残留清单，确认后才移入废纸篓；系统级残留需要管理员权限。",
+        },
+        stage="uninstall-list",
+        title="软件卸载（彻底）",
+        body="选择一个应用",
+        actions=actions + rows,
+        current="uninstall",
+    )
+
+
+def render_uninstall_preview_html(plan: dict[str, Any], *, interactive: bool = True) -> str:
+    """卸载预览：**应用本体必选**；残留按 confidence 分组，名称匹配默认不勾。
+
+    名称匹配（`name-match`）可能命中别的应用的同名目录，所以默认不勾、并写明理由；
+    页面只回传 item id，路径永不经过浏览器/调用方。
+    """
+    items = [item for item in (plan.get("items") or []) if isinstance(item, dict)]
+    app = plan.get("app") or {}
+    exact = [item for item in items if item.get("confidence") != "name-match" and item.get("kind") != "app-bundle"]
+    guessed = [item for item in items if item.get("confidence") == "name-match"]
+    bundle = next((item for item in items if item.get("kind") == "app-bundle"), None)
+
+    parts: list[str] = []
+    if bundle:
+        parts.append(
+            '<div class="row"><div><strong>'
+            + html.escape(str(app.get("name", "")))
+            + '</strong><div class="meta">应用本体 · 始终包含</div></div>'
+            '<span class="pill">必选</span></div>'
+        )
+    if exact:
+        parts.append('<p class="group-title">确定项</p>')
+        for item in exact:
+            parts.append(
+                '<label class="row opt"><input type="checkbox" data-item-id="'
+                + html.escape(str(item.get("id", "")))
+                + '" checked><div><strong>'
+                + html.escape(str(item.get("path", "")).rstrip("/").split("/")[-1])
+                + '</strong><div class="meta">'
+                + html.escape(str(item.get("kind", "")))
+                + "</div></div><span class=\"meta\">"
+                + human_bytes(int(item.get("allocated_bytes", 0) or 0))
+                + "</span></label>"
+            )
+    if guessed:
+        parts.append('<p class="group-title">按名称匹配（默认不勾）</p>')
+        for item in guessed:
+            parts.append(
+                '<label class="row opt"><input type="checkbox" data-item-id="'
+                + html.escape(str(item.get("id", "")))
+                + '"><div><strong>'
+                + html.escape(str(item.get("path", "")).rstrip("/").split("/")[-1])
+                + '</strong><div class="meta">可能是别的应用 · '
+                + html.escape(str(item.get("kind", "")))
+                + "</div></div><span class=\"meta\">"
+                + human_bytes(int(item.get("allocated_bytes", 0) or 0))
+                + "</span></label>"
+            )
+
+    actions = _actions(_button("返回列表", "uninstall-back"), _button("卸载所选", "uninstall-apply", primary=True)) if interactive else ""
+    return state_page(
+        {
+            "message": f"将移入废纸篓 {len(items)} 项，共 {human_bytes(int(plan.get('user_total_bytes', 0) or 0))}（可恢复）",
+            "detail": "确认后会再核对每个位置；名称匹配项默认不勾，请自行判断。",
+        },
+        stage="uninstall-preview",
+        title=f"卸载 {app.get('name', '')}".strip(),
+        body="确认要清理的内容",
+        actions=actions + "".join(parts),
+        current="uninstall",
+    )
+
+
+def render_uninstall_complete_html(result: dict[str, Any], *, interactive: bool = True) -> str:
+    """卸载完成：**只有还剩系统级残留时**才显示管理员按钮。"""
+    remaining = result.get("remaining") or {}
+    system_count = int(remaining.get("system_count", 0) or 0)
+    moved = int(result.get("moved_count", 0) or 0)
+    actions = _actions(
+        _button("返回", "uninstall-list", primary=not system_count),
+        *(
+            [_button(f"清除系统级残留（{system_count} 项，需要授权）", "uninstall-system", primary=True)]
+            if system_count and interactive
+            else []
+        ),
+    ) if interactive else ""
+    return state_page(
+        {
+            "message": f"已移入废纸篓 {moved} 项（可恢复）",
+            "detail": (
+                f"仍有 {system_count} 项系统级残留（/Library 或安装收据），需要一次管理员授权才能清除。"
+                if system_count
+                else "没有剩余的系统级残留。"
+            ),
+        },
+        stage="uninstall-complete",
+        title="卸载完成",
+        body="卸载完成",
+        actions=actions,
+        current="uninstall",
+    )
+
+
+# --------------------------------------------------------------------------- 更新
+
+
+def render_updates_list_html(payload: dict[str, Any], *, interactive: bool = True) -> str:
+    items = [item for item in (payload.get("items") or []) if isinstance(item, dict)]
+    rows: list[str] = []
+    for index, item in enumerate(items):
+        transition = f"{item.get('installed') or '?'} → {item.get('available') or '?'}"
+        rows.append(
+            '<label class="row opt"><input type="checkbox" data-update-id="'
+            + str(index)
+            + '" checked><div><strong>'
+            + html.escape(str(item.get("name", "")))
+            + '</strong><div class="meta">'
+            + html.escape(f"{item.get('manager')}/{item.get('kind')} · {transition}")
+            + '</div></div></label>'
+        )
+    notes = "".join(f'<p class="muted">{html.escape(str(note))}</p>' for note in (payload.get("notes") or []))
+    actions = _actions(_button("重新检查", "updates-refresh"), _button("更新所选", "updates-apply", primary=True)) if interactive else ""
+    return state_page(
+        {
+            "message": f"可升级 {len(items)} 项（只处理第三方：Homebrew / App Store）",
+            "detail": "macOS 系统更新不在此列——它有自己的机制。升级不可逆，确认后逐组执行并记录输出。",
+        },
+        stage="updates",
+        title="软件更新",
+        body="可升级的第三方软件",
+        actions=actions + "".join(rows) + notes,
+        current="updates",
+    )
+
+
+def render_updates_result_html(result: dict[str, Any], *, interactive: bool = True) -> str:
+    status = str(result.get("status", ""))
+    headline = {"applied": "全部更新完成", "partial": "部分更新完成", "failed": "更新失败", "dry-run": "预演"}.get(status, status)
+    rows: list[str] = []
+    for group in result.get("groups") or []:
+        if not isinstance(group, dict):
+            continue
+        ok = bool(group.get("ok"))
+        tail = str(group.get("stderr_tail") or group.get("stdout_tail") or "")
+        rows.append(
+            '<div class="row"><div><strong>'
+            + html.escape(str(group.get("command", "")))
+            + '</strong><div class="meta">exit '
+            + str(int(group.get("exit_code", 0) or 0))
+            + (f" · {html.escape(tail[:160])}" if tail else "")
+            + '</div></div><span class="pill '
+            + ("ok" if ok else "")
+            + '">'
+            + ("成功" if ok else "失败")
+            + "</span></div>"
+        )
+    actions = _actions(_button("返回", "updates-open", primary=True)) if interactive else ""
+    return state_page(
+        {
+            "message": headline,
+            "detail": f"成功 {int(result.get('ok_count', 0) or 0)}/{int(result.get('total', 0) or 0)} 组",
+        },
+        stage="updates-result",
+        title="更新结果",
+        body=headline,
+        actions=actions + "".join(rows),
+        current="updates",
+    )
+
+
+# --------------------------------------------------------------------------- 技能
+
+
+def render_skills_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
+    """可调用的 Skill：只讲 MacCleaner 自己，细节收进折叠菜单。"""
+    info = payload or {}
+    name = str(info.get("name") or "Mac Cleaner")
+    description = str(info.get("description") or "说一句话就能清理磁盘：扫描只读，清理移入废纸篓且可恢复。")
+    triggers = str(info.get("triggers") or "mac清理、清理磁盘、清理缓存、清理磁盘空间")
+    entry = str(info.get("entry") or "maccleaner audit / plan / clean（也可通过 MCP 调用）")
+    card = (
+        '<div class="row"><div><strong>'
+        + html.escape(name)
+        + '</strong><div class="meta">'
+        + html.escape(description)
+        + '</div></div><span class="pill ok">已就绪</span></div>'
+    )
+    details = (
+        '<details style="margin-top:12px"><summary>更多信息（触发词 / 怎么调用 / 边界）</summary>'
+        '<div class="meta" style="margin-top:8px;line-height:1.9">'
+        f"<div><b>触发词</b>：{html.escape(triggers)}</div>"
+        f"<div><b>怎么调用</b>：{html.escape(entry)}</div>"
+        "<div><b>边界</b>：只清理可安全重建的内容；受保护路径（会话、凭据）永不触碰。</div>"
+        "</div></details>"
+    )
+    actions = _actions(_button("返回", "start", primary=True)) if interactive else ""
+    return state_page(
+        {"message": "这是本工具唯一可被调用的 skill", "detail": "其它页面是它的入口，不是几个不同的工具。"},
+        stage="skills",
+        title="可调用的 Skill",
+        body=name,
+        actions=actions + card + details,
+        current="skills",
+    )
+
+
+__all__ = [
+    "human_bytes",
+    "render_cancelled_html",
+    "render_completion_html",
+    "render_confirmation_html",
+    "render_landing_html",
+    "render_recovery_html",
+    "render_review_html",
+    "render_skills_html",
+    "render_uninstall_complete_html",
+    "render_uninstall_list_html",
+    "render_uninstall_preview_html",
+    "render_updates_list_html",
+    "render_updates_result_html",
+]
