@@ -147,6 +147,13 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:1
 .toast.is-on{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.is-error{border-color:var(--danger);color:var(--danger)}
 
+/* 右键菜单：跟随主题、不拦截滚轮。 */
+.ctx{position:fixed;z-index:60;min-width:168px;padding:4px;border-radius:10px;
+  background:var(--surface-2);border:1px solid var(--line-strong);box-shadow:var(--e2)}
+.ctx button{display:block;width:100%;text-align:left;appearance:none;border:0;background:transparent;
+  color:var(--text);font:inherit;font-size:var(--fs-meta);padding:7px 10px;border-radius:6px;cursor:pointer}
+.ctx button:hover{background:var(--accent-soft);color:var(--accent)}
+
 /* 排序条：小、安静，不抢主操作。 */
 .sortbar{display:flex;align-items:center;gap:6px;padding:8px 0 2px}
 .sortbtn{appearance:none;border:1px solid transparent;background:transparent;color:var(--muted);

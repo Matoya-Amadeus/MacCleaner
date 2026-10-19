@@ -394,6 +394,31 @@ class UpdatesFlowTests(unittest.TestCase):
             driver.action("cancel")
             driver.join()
 
+
+    def test_reveal_only_accepts_paths_shown_on_the_current_page(self) -> None:
+        """右键"在 Finder 中显示"必须受限：只允许本页出现过的路径（否则是任意路径后门）。"""
+        revealed: list[str] = []
+        with tempfile.TemporaryDirectory(prefix="session-reveal-", ignore_cleanup_errors=True) as tmp:
+            driver = _Driver(_deps(reveal=revealed.append), Path(tmp))
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+            driver.action("start")
+            driver.wait_page('data-stage="review"')
+
+            # 页面上有的路径 → 允许
+            self.assertEqual(driver.action("reveal", {"path": "~/Library/Caches/Demo"}), 202)
+            # 页面上没有的路径 → 忽略
+            self.assertEqual(driver.action("reveal", {"path": "/etc/passwd"}), 202)
+            deadline = time.time() + 4
+            while time.time() < deadline and not revealed:
+                time.sleep(0.05)
+            time.sleep(0.3)
+            self.assertEqual(len(revealed), 1, f"只应打开页面上的那条，实际：{revealed}")
+            self.assertIn("Caches/Demo", revealed[0])
+
+            driver.action("cancel")
+            driver.join()
+
 class NavigationTests(unittest.TestCase):
     def test_uninstall_entry_lists_apps(self) -> None:
         with tempfile.TemporaryDirectory(prefix="session-unin-") as tmp:

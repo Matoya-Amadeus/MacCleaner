@@ -102,6 +102,7 @@ def _rows(
         size = human_bytes(int(item.get("allocated_bytes", 0) or item.get("bytes", 0) or 0))
         label = _category_label(kind)
         meta = " · ".join(part for part in (label, _display_path(path), note) if part)
+        reveal_attr = f' data-reveal-path="{html.escape(path)}"' if path else ""
         sort_attrs = (
             f' data-sort-text="{html.escape(name.lower())}"'
             f' data-sort-bytes="{int(item.get("allocated_bytes", 0) or item.get("bytes", 0) or 0)}"'
@@ -123,12 +124,12 @@ def _rows(
                 '<span class="pill risk">高风险 · 确认页单独确认</span>' if risky else ""
             )
             rows.append(
-                f'<label class="row opt"{sort_attrs}>{box}<div>{body}{risk_note}</div>'
+                f'<label class="row opt"{sort_attrs}{reveal_attr}>{box}<div>{body}{risk_note}</div>'
                 f'<span class="meta value">{size}</span></label>'
             )
         else:
             rows.append(
-                f'<div class="row"{sort_attrs}><div>{body}</div><span class="meta value">{size}</span></div>'
+                f'<div class="row"{sort_attrs}{reveal_attr}><div>{body}</div><span class="meta value">{size}</span></div>'
             )
     return "".join(rows)
 
@@ -462,7 +463,7 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
         )
         rows.append(
             f'<label class="row opt" data-sort-text="{html.escape(str(app.get("name", "")).lower())}"'
-            f' data-sort-bytes="{size}">'
+            f' data-sort-bytes="{size}" data-reveal-path="{html.escape(str(app.get("path", "")))}">'
             + checkbox
             + '<div style="min-width:0;flex:1">'
             f'<strong>{html.escape(str(app.get("name", "")))}</strong>'

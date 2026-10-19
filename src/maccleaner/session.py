@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import signal
 import threading
@@ -32,6 +33,9 @@ except ImportError:  # pragma: no cover
 ACTIVE_STAGES = frozenset({"idle", "scanning", "review", "confirming", "cleaning", "uninstalling",
                            "updates", "skills", "error"})
 TERMINAL_STAGES = frozenset({"complete", "cancelled"})
+
+# 页面上标记"这个路径可以 reveal"的属性（右键菜单 / 在 Finder 中显示）。
+REVEAL_PATH = re.compile(r'data-reveal-path="([^"]+)"')
 
 # 侧栏在任何页面都可见 ⇒ 任何等待都必须能接住它们，否则用户在子流程里点侧栏会"没反应"
 # （2026-10-18 真浏览器实测：点了更新页后再点卸载，队列里的动作没人取）。
@@ -53,6 +57,8 @@ class SessionDeps:
     clean_approved: Callable[[list[str], list[str]], dict[str, Any]] | None = None
     # 打开废纸篓（完成页的按钮）。默认不做事，真实实现由 deps 注入。
     open_trash: Callable[[], None] | None = None
+    # 在 Finder 中显示（右键菜单）。会话负责白名单校验。
+    reveal: Callable[[str], None] | None = None
     # 只读的"看一眼"页面（磁盘/系统）。
     disk: Callable[[], dict[str, Any]] = lambda: {}
     system: Callable[[], dict[str, Any]] = lambda: {}
@@ -571,9 +577,19 @@ class InteractiveSession:
         self, kinds: tuple[str, ...], timeout: float
     ) -> dict[str, Any] | None:
         """等指定动作，但**也接住侧栏导航**：返回 `{"nav": "<kind>"}` 表示用户切走了。"""
-        action = self.bridge.wait_for_action(tuple(kinds) + NAV_ACTIONS, timeout=timeout)
-        if action is None:
-            return None
+        # `reveal` 任何页面都可能点：在这里拦下处理，处理完继续等原来的动作。
+        deadline = time.monotonic() + max(0.0, timeout)
+        while True:
+            remaining = max(0.0, deadline - time.monotonic())
+            action = self.bridge.wait_for_action(
+                tuple(kinds) + NAV_ACTIONS + ("reveal",), timeout=remaining
+            )
+            if action is None:
+                return None
+            if action["action"] == "reveal":
+                self._reveal(str((action.get("payload") or {}).get("path", "")))
+                continue
+            break
         if action["action"] in NAV_ACTIONS and action["action"] not in kinds:
             return {"nav": action["action"]}
         return action
@@ -594,10 +610,26 @@ class InteractiveSession:
         return self._finish("cancelled", pages.render_cancelled_html({}))
 
     def _serve(self, stage: str, page: str) -> None:
+        # 记录本页出现过的路径：`reveal` 只允许打开这些，否则就成了任意路径后门。
+        self._visible_paths = {match.group(1) for match in REVEAL_PATH.finditer(page)}
         self.state.stage = stage
         self.state.updated_at = time.time()
         self.bridge.set_page(page)
         self._write_state()
+
+    def _reveal(self, raw: str) -> bool:
+        """在 Finder 中显示某个路径。只接受**当前页面出现过**的路径。"""
+        path = str(raw or "").strip()
+        if not path or path not in self._visible_paths:
+            return False
+        opener = self.deps.reveal
+        if opener is None:
+            return False
+        try:
+            opener(str(Path(os.path.expanduser(path))))
+        except Exception:  # noqa: BLE001 - 打不开不该把流程变成错误
+            return False
+        return True
 
     def _finish(self, stage: str, page: str) -> dict[str, Any]:
         self.state.stage = stage
@@ -644,6 +676,7 @@ class InteractiveSession:
                     pass
             self._lock_handle.close()
             self._lock_handle = None
+        self._visible_paths: set[str] = set()
 
     @staticmethod
     def _safe(call: Callable[[], Any], default: Any = None) -> Any:

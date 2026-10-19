@@ -249,6 +249,36 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn("data-sort", uninstall)  # 排序条按钮
         self.assertIn("localeCompare", uninstall, "名称排序要走本地化比较")
 
+    def test_rows_expose_reveal_path_for_the_context_menu(self) -> None:
+        """右键菜单靠 `data-reveal-path` 定位；没有它的行不应弹菜单。"""
+        from maccleaner.ui.pages import render_review_html, render_uninstall_list_html, render_landing_html
+
+        review = render_review_html({"candidates": [
+            {"name": "Big", "path": "~/Library/Caches/X", "kind": "cache",
+             "allocated_bytes": 5, "target_id": "t1"},
+        ]})
+        self.assertIn('data-reveal-path="~/Library/Caches/X"', review)
+        self.assertIn("mc-menu", review, "运行时要有右键菜单")
+
+        uninstall = render_uninstall_list_html({"apps": [
+            {"name": "A", "bundle_id": "a", "path": "/Applications/A.app"},
+        ]})
+        self.assertIn('data-reveal-path="/Applications/A.app"', uninstall)
+
+        landing = render_landing_html({})
+        # 注意：JS 里也有选择器字符串 `[data-reveal-path]`，所以只查"属性写法"。
+        self.assertNotIn('data-reveal-path="', landing, "落地页没有可 reveal 的行")
+
+    def test_context_menu_offers_copy_and_reveal(self) -> None:
+        from maccleaner.ui.pages import render_review_html
+        from maccleaner.ui.theme import STYLE
+
+        page = render_review_html({"candidates": []})
+        self.assertIn("复制路径", page)
+        self.assertIn("在 Finder 中显示", page)
+        self.assertIn("navigator.clipboard.writeText", page)
+        self.assertIn(".ctx{", STYLE)
+
 
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:

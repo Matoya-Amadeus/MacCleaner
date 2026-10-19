@@ -211,6 +211,57 @@ _RUNTIME_JS = """
     catch (error) { button.disabled = false; toast(error.message); }
   });
   refreshBatch();
+  // ---- 右键菜单（2026-10-19）：复制路径 / 在 Finder 中显示 ----
+  // 只对带 data-reveal-path 的行生效；"在 Finder 中显示"要经过会话白名单校验。
+  // 复制路径：安全上下文用剪贴板 API，否则退回隐藏 textarea（file:// 或旧内核）。
+  function copyText(text){
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    try { document.execCommand('copy'); } finally { area.remove(); }
+    return Promise.resolve();
+  }
+
+  function closeMenu(){
+    const el = document.getElementById('mc-menu');
+    if (el) el.remove();
+  }
+
+  document.addEventListener('contextmenu', (event) => {
+    const row = event.target.closest('[data-reveal-path]');
+    if (!row) return;
+    event.preventDefault();
+    closeMenu();
+    const path = row.dataset.revealPath;
+    const menu = document.createElement('div');
+    menu.id = 'mc-menu';
+    menu.className = 'ctx';
+    menu.innerHTML =
+      '<button type="button" data-menu="copy">复制路径</button>' +
+      '<button type="button" data-menu="reveal">在 Finder 中显示</button>';
+    menu.style.left = Math.min(event.clientX, window.innerWidth - 180) + 'px';
+    menu.style.top = Math.min(event.clientY, window.innerHeight - 90) + 'px';
+    menu.addEventListener('click', async (click) => {
+      const item = click.target.closest('[data-menu]');
+      if (!item) return;
+      closeMenu();
+      if (item.dataset.menu === 'copy') {
+        try { await copyText(path); toast('已复制：' + path); }
+        catch (error) { toast('复制失败，请手动选择路径'); }
+        return;
+      }
+      window.maccleanerAction('reveal', { path }).catch((error) => toast(error.message));
+    });
+    document.body.appendChild(menu);
+  });
+
+  document.addEventListener('click', closeMenu);
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenu(); });
+
   setInterval(() => fetch('/ready', {credentials:'same-origin',cache:'no-store'}).catch(()=>{}), 15000);
   addEventListener('pagehide', () => fetch('/closed', {credentials:'same-origin',keepalive:true}).catch(()=>{}));
 })();

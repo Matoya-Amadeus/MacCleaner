@@ -215,6 +215,11 @@ def scan_report(
 
 
 
+def _reveal(path: str) -> None:
+    """在 Finder 中选中该路径（`open -R`）。"""
+    subprocess.run(["/usr/bin/open", "-R", path], check=False)
+
+
 def _open_trash(home: Path) -> None:
     """在 Finder 里打开废纸篓（扫描 home 下的 .Trash，没有就开用户的）。"""
     candidate = Path(home) / ".Trash"
@@ -490,6 +495,7 @@ def build_deps(
         clean=clean,
         clean_approved=clean,   # clean(approved) 同一实现：无参时 dry-run，带 id 才真执行
         open_trash=lambda: _open_trash(home_path),
+        reveal=_reveal,
         history=lambda: history_summary(state_root=state_path),
         apps=lambda: list_applications(home=home_path),
         skills=list_skills,
