@@ -195,3 +195,28 @@ class SkillListingTests(unittest.TestCase):
         self.assertIn("本工具", page, "自己的那条要标注出来")
         self.assertIn("~/.codex/skills", page, "按来源分组")
         self.assertIn("<details", page, "自己的细节仍收进折叠块")
+
+
+class ListingSpeedTests(unittest.TestCase):
+    """列表页不许算体积（2026-10-19：用户看到"正在读取应用列表"卡住 6 秒）。"""
+
+    def test_list_does_not_shell_out_by_default(self) -> None:
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory(prefix="deps-fast-") as tmp:
+            home = Path(tmp) / "home"
+            (home / "Applications").mkdir(parents=True)
+            _fake_app(home / "Applications")
+            with patch("maccleaner.deps.subprocess.run", side_effect=AssertionError("列表不该调用 du")):
+                apps = list_applications(home=home)
+            # 注意：它也会扫真实的 /Applications，所以只断言"假的那个在、且没有体积字段"。
+            self.assertIn("Example App", {item["name"] for item in apps})
+            self.assertTrue(all("allocated_bytes" not in item for item in apps), "默认不返回体积，页面显示 —")
+
+    def test_explicit_with_sizes_still_works(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="deps-sized-") as tmp:
+            home = Path(tmp) / "home"
+            (home / "Applications").mkdir(parents=True)
+            _fake_app(home / "Applications")
+            apps = list_applications(home=home, with_sizes=True)
+            self.assertIn("allocated_bytes", apps[0])

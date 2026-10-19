@@ -278,7 +278,8 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
     return state_page(
         {
             "message": f"共 {len(apps)} 个应用",
-            "detail": "卸载会先列出残留清单，确认后才移入废纸篓；系统级残留需要管理员权限。",
+            "detail": "卸载会先列出残留清单，确认后才移入废纸篓；系统级残留需要管理员权限。"
+                      "（体积在点开某个应用后计算——一次算 50 个要好几秒，不值得让你等）",
         },
         stage="uninstall-list",
         title="软件卸载（彻底）",

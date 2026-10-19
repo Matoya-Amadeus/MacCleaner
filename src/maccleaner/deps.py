@@ -35,8 +35,15 @@ def _context(home: Path, root: Path) -> StorageContext:
     return StorageContext(home=home, root=root)
 
 
-def list_applications(*, home: Path | None = None, limit: int = 60) -> list[dict[str, Any]]:
-    """列出用户级应用目录里的 `.app`（不含体积，理由见模块文档）。"""
+def list_applications(
+    *, home: Path | None = None, limit: int = 60, with_sizes: bool = False
+) -> list[dict[str, Any]]:
+    """列出用户级应用目录里的 `.app`。
+
+    **默认不算体积**（2026-10-19 实测：50 个 app 用 `du -sk` 要 6.3s、用 `_allocated_bytes` 要 12.3s，
+    共 32 GiB；用户看到的就是"正在读取应用列表"卡住）。体积在**点开某个应用**时再算——
+    单个应用实测 0.1–0.5s，而且那时才真的有用。
+    """
     home_path = Path(home) if home is not None else Path.home()
     apps: list[dict[str, Any]] = []
     for base in (Path("/Applications"), home_path / "Applications"):
@@ -59,8 +66,8 @@ def list_applications(*, home: Path | None = None, limit: int = 60) -> list[dict
                 }
             )
             if len(apps) >= limit:
-                return _with_sizes(apps)
-    return _with_sizes(apps)
+                return _with_sizes(apps) if with_sizes else apps
+    return _with_sizes(apps) if with_sizes else apps
 
 
 def _with_sizes(apps: list[dict[str, Any]]) -> list[dict[str, Any]]:
