@@ -330,16 +330,33 @@ class InteractiveSession:
                     bundle_id=str(payload.get("bundle_id", "")),
                     app_name=str(payload.get("name", "")),
                 )
-                self._serve("uninstalling", pages.render_uninstall_preview_html(plan))
-                decision = self._wait_or_nav(("uninstall-apply", "uninstall-back", "cancel"), self.ACTION_TIMEOUT_SECONDS)
-                if decision is not None and "nav" in decision:
-                    self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
-                    return decision["nav"]
-                if decision is None or decision["action"] in {"cancel", "uninstall-back"}:
-                    self._serve("uninstalling", pages.render_uninstall_list_html({"apps": apps}))
-                    continue
-                selected = [str(value) for value in (decision.get("payload") or {}).get("selected_ids") or []]
-                result = self.deps.uninstall_apply(plan=plan, ids=selected)
+                # 预览页的决策要**循环等待**：用户可能先空勾一次（被拒绝）、再勾选提交。
+                # 曾经把"被拒绝"写成 `continue` 回到外层，外层等的是 `uninstall-plan`，
+                # 于是用户第二次点"卸载所选"没人接——真机上表现为"点了没反应"（2026-10-19 验收撞到）。
+                notice = ""
+                applied: dict[str, Any] | None = None
+                while applied is None:
+                    self._serve("uninstalling", pages.render_uninstall_preview_html(plan, notice=notice))
+                    decision = self._wait_or_nav(
+                        ("uninstall-apply", "uninstall-back", "cancel"), self.ACTION_TIMEOUT_SECONDS
+                    )
+                    if decision is not None and "nav" in decision:
+                        self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
+                        return decision["nav"]
+                    if decision is None or decision["action"] in {"cancel", "uninstall-back"}:
+                        self._serve("uninstalling", pages.render_uninstall_list_html({"apps": apps}))
+                        break
+                    selected = [
+                        str(value) for value in (decision.get("payload") or {}).get("selected_ids") or []
+                    ]
+                    result = self.deps.uninstall_apply(plan=plan, ids=selected)
+                    if str(result.get("status")) == "refused":
+                        notice = "至少选一项再执行（应用本体是必选的）"
+                        continue
+                    applied = result
+                if applied is None:
+                    continue          # 用户回列表重新选（外层等 uninstall-plan）
+                result = applied
                 remaining = self._remaining_for(plan)
                 self._serve("uninstalling", pages.render_uninstall_complete_html({
                     "moved_count": int(result.get("moved_count", 0) or 0),

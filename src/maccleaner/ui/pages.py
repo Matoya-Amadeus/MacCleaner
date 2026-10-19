@@ -376,7 +376,9 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
     )
 
 
-def render_uninstall_preview_html(plan: dict[str, Any], *, interactive: bool = True) -> str:
+def render_uninstall_preview_html(
+    plan: dict[str, Any], *, interactive: bool = True, notice: str = ""
+) -> str:
     """卸载预览：**应用本体必选**；残留按 confidence 分组，名称匹配默认不勾。
 
     名称匹配（`name-match`）可能命中别的应用的同名目录，所以默认不勾、并写明理由；
@@ -425,7 +427,14 @@ def render_uninstall_preview_html(plan: dict[str, Any], *, interactive: bool = T
                 + "</span></label>"
             )
 
-    actions = _actions(_button("返回列表", "uninstall-back"), _button("卸载所选", "uninstall-apply", primary=True)) if interactive else ""
+    actions = (
+        _actions(_button("返回列表", "uninstall-back"), _button("卸载所选", "uninstall-apply", primary=True))
+        if interactive
+        else ""
+    )
+    if notice:
+        # 提示放在按钮**上方**，否则它会挤在动作条里、看起来像另一个按钮。
+        actions = f'<p class="pill warn" role="status">{html.escape(notice)}</p>' + actions
     return state_page(
         {
             "message": f"将移入废纸篓 {len(items)} 项，共 {human_bytes(int(plan.get('user_total_bytes', 0) or 0))}（可恢复）",

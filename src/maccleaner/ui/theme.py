@@ -165,6 +165,7 @@ label.row.opt input{margin:0;flex:0 0 auto;accent-color:var(--accent)}
 .pill{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;
   font-size:var(--fs-label);white-space:nowrap;background:var(--surface-2);color:var(--muted)}
 .pill.ok{background:var(--accent-soft);color:var(--accent)}
+.pill.warn{background:rgba(245,192,90,.14);color:var(--warn)}
 .muted{color:var(--muted);font-size:var(--fs-meta)}
 .group-title{margin:var(--sp-4) 0 var(--sp-1);font-size:var(--fs-label);font-weight:600;
   letter-spacing:.02em;color:var(--muted)}

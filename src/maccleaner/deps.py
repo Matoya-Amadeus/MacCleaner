@@ -314,8 +314,15 @@ def build_deps(
             home=home_path,
         )
 
-    def uninstall_apply(*, plan: dict[str, Any], ids: list[str]) -> dict[str, Any]:
-        return apply_plan(plan, home=home_path, selected_ids=list(ids) or None, dry_run=dry_run)
+    def uninstall_apply(*, plan: dict[str, Any], ids: list[str] | None) -> dict[str, Any]:
+        """执行卸载。
+
+        `ids=None` 表示"全部用户域项"（命令行默认）；`ids=[]` 表示**用户什么都没勾**，
+        必须原样传下去让 `apply_plan` 拒绝 —— 曾经写成 `list(ids) or None`，
+        于是"全不勾"被当成"全选"，点一下卸载就把所有残留都搬走了（2026-10-19 复查发现）。
+        """
+        selected = None if ids is None else [str(item) for item in ids]
+        return apply_plan(plan, home=home_path, selected_ids=selected, dry_run=dry_run)
 
     def updates_check() -> dict[str, Any]:
         return discover_updates()

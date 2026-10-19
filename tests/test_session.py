@@ -281,3 +281,44 @@ class ShutdownStateTests(unittest.TestCase):
             payload = json.loads((Path(tmp) / "session.json").read_text(encoding="utf-8"))
             self.assertEqual(payload["stage"], "cancelled", "退出时不能停在中间态")
             self.assertFalse(payload["active"], "退出后不得再声称会话活动")
+
+    def test_uninstall_empty_selection_stays_on_preview_then_applies(self) -> None:
+        """一个都不勾时必须**停在预览页**并提示，而不是冒充"卸载完成 0 项"。
+
+        2026-10-19 真机 HTTP 验收撞到：空勾选会把会话推进到完成页，用户再勾选提交就没人接了
+        （外层等的是 uninstall-plan）。这里钉住"拒绝 → 重等 → 再提交 → 成功"。
+        """
+        calls: list[list[str]] = []
+
+        def apply(**kwargs):
+            ids = list(kwargs.get("ids") or [])
+            calls.append(ids)
+            if not ids:
+                return {"status": "refused", "reason": "nothing selected", "moved": [], "skipped": []}
+            return {"status": "applied", "moved_count": 1, "moved": [], "skipped": []}
+
+        with tempfile.TemporaryDirectory(prefix="session-unin-") as tmp:
+            driver = _Driver(_deps(uninstall_apply=apply), Path(tmp))
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+
+            self.assertEqual(driver.action("uninstall-list"), 202)
+            driver.wait_page('data-stage="uninstall-list"')
+            self.assertEqual(
+                driver.action("uninstall-plan", {"bundle_id": "com.example.app", "path": "/Applications/Example.app"}),
+                202,
+            )
+            driver.wait_page('data-stage="uninstall-preview"')
+
+            self.assertEqual(driver.action("uninstall-apply", {"selected_ids": []}), 202)
+            notice = driver.wait_page("至少选一项", timeout=5)
+            self.assertIn('data-stage="uninstall-preview"', notice, "被拒绝后应留在预览页")
+
+            self.assertEqual(driver.action("uninstall-apply", {"selected_ids": ["aaa"]}), 202)
+            done = driver.wait_page('data-stage="uninstall-complete"', timeout=5)
+            self.assertIn("卸载", done)
+            self.assertEqual(calls, [[], ["aaa"]], "拒绝一次后必须还能再提交")
+
+            driver.action("cancel")
+            driver.join()
+
