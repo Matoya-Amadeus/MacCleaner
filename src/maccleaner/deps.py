@@ -269,6 +269,15 @@ def scan_report(
 
 
 
+def _open_app_store() -> None:
+    """打开 App Store 的"更新"页。
+
+    App Store 应用必须由 storeagent 用你的 Apple ID 下载安装，命令行绕不开登录；
+    所以"mas 用不了"时的正确兜底是**把更新页打开**，让系统自己完成。
+    """
+    subprocess.run(["/usr/bin/open", "macappstore://showUpdatesPage"], check=False, timeout=10)
+
+
 def _reveal(path: str) -> None:
     """在 Finder 中选中该路径，并把 Finder 带到前台。
 
@@ -626,6 +635,7 @@ def build_deps(
         clean_approved=clean,   # clean(approved) 同一实现：无参时 dry-run，带 id 才真执行
         open_trash=lambda: _open_trash(home_path),
         reveal=_reveal,
+        open_app_store=_open_app_store,
         # 落地页的"上次清理"也从回执算：`history.json` 没人写，读它永远是空
         # （2026-10-19 发现；现在与「清理历史」页共用同一真相源）。
         history=lambda: _landing_history(home_path, state_path),

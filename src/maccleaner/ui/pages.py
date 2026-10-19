@@ -779,6 +779,12 @@ def render_updates_list_html(
             '<span class="meta" id="mc-updates-count"></span></div>'
             '<div class="toolbar-right">'
             + _button("重新检查", "updates-refresh")
+            # App Store 应用绕不开 Apple ID：mas 用不了时把更新页打开，让系统自己装。
+            + (
+                _button("打开 App Store 更新页", "open-app-store", ghost=True)
+                if any(str(item.get("manager")) == "mas" for item in items)
+                else ""
+            )
             + _button("更新所选", "updates-apply", primary=True)
             + "</div>"
         )

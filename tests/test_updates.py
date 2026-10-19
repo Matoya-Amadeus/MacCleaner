@@ -374,3 +374,68 @@ class UpdatesCacheTests(unittest.TestCase):
         self.assertEqual(env.get("HOMEBREW_NO_AUTO_UPDATE"), "1")
         self.assertIn(str(Path.home() / ".local" / "bin"), env["PATH"])
 
+class AppStoreFallbackTests(unittest.TestCase):
+    """App Store：代理诊断 + 不依赖 mas 联网的公开查询兜底（2026-10-19 实测驱动）。"""
+
+    def test_parse_mas_list(self) -> None:
+        from maccleaner.updates import parse_mas_list
+
+        items = parse_mas_list(" 682658836  库乐队      (10.4.14)\n1247341465 同花顺      (5.3.5)")
+        self.assertEqual([i["app_id"] for i in items], ["682658836", "1247341465"])
+        self.assertEqual(items[0]["name"], "库乐队")
+        self.assertEqual(items[0]["installed"], "10.4.14")
+
+    def test_version_compare_handles_numbers(self) -> None:
+        from maccleaner.updates import _version_tuple
+
+        self.assertGreater(_version_tuple("12.4"), _version_tuple("11.2"))
+        self.assertGreater(_version_tuple("5.10"), _version_tuple("5.9"))
+        self.assertEqual(_version_tuple("1.0"), _version_tuple("1"))
+
+    def test_proxy_hint_names_the_socks_proxy(self) -> None:
+        """mas 连不上时的真凶常常是"系统代理开着但代理没运行"，提示里要写出地址。"""
+        from unittest.mock import patch
+
+        from maccleaner.updates import _proxy_hint
+
+        fake = "SOCKSEnable : 1\nSOCKSPort : 7892\nSOCKSProxy : 127.0.0.1"
+        with patch("maccleaner.updates._system_proxy_state",
+                   return_value={"SOCKSEnable": "1", "SOCKSPort": "7892", "SOCKSProxy": "127.0.0.1"}):
+            hint = _proxy_hint()
+        self.assertIn("127.0.0.1:7892", hint)
+        self.assertIn("连不上", hint)
+
+    def test_lookup_fallback_lists_updates_without_mas_network(self) -> None:
+        """mas 的 URLSession 走系统代理，代理坏了就整条断；公开查询能绕过它。"""
+        import io
+        import json as _json
+        from unittest.mock import patch
+
+        from maccleaner.updates import app_store_outdated_via_lookup
+
+        def fake_run(argv, **kwargs):
+            if "list" in argv:
+                return 0, " 682658836  库乐队      (10.4.14)", ""
+            return 0, "store ▁▁ CN", ""
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        class FakeOpener:
+            def open(self, url, timeout=None):
+                payload = {"results": [{"version": "10.4.16", "trackName": "库乐队"}]}
+                return FakeResponse(_json.dumps(payload).encode())
+
+        with patch("maccleaner.updates._run", side_effect=fake_run), \
+                patch("urllib.request.build_opener", return_value=FakeOpener()):
+            items = app_store_outdated_via_lookup()
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["installed"], "10.4.14")
+        self.assertEqual(items[0]["available"], "10.4.16")
+        self.assertEqual(items[0]["source"], "itunes-lookup")
+

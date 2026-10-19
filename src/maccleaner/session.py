@@ -62,6 +62,8 @@ class SessionDeps:
     open_trash: Callable[[], None] | None = None
     # 在 Finder 中显示（右键菜单）。会话负责白名单校验。
     reveal: Callable[[str], None] | None = None
+    # 打开 App Store 更新页（mas 不可用时的合法兜底）。
+    open_app_store: Callable[[], None] | None = None
     # 只读的"看一眼"页面（磁盘/系统）。
     disk: Callable[[], dict[str, Any]] = lambda: {}
     # 磁盘钻取：传目录路径，返回下一级条目。
@@ -651,12 +653,20 @@ class InteractiveSession:
         while True:
             remaining = max(0.0, deadline - time.monotonic())
             action = self.bridge.wait_for_action(
-                tuple(kinds) + NAV_ACTIONS + ("reveal",), timeout=remaining
+                tuple(kinds) + NAV_ACTIONS + ("reveal", "open-app-store"), timeout=remaining
             )
             if action is None:
                 return None
             if action["action"] == "reveal":
                 self._reveal(str((action.get("payload") or {}).get("path", "")))
+                continue
+            if action["action"] == "open-app-store":
+                opener = getattr(self.deps, "open_app_store", None)
+                if opener is not None:
+                    try:
+                        opener()
+                    except Exception:  # noqa: BLE001 - 打不开不该把流程变成错误
+                        pass
                 continue
             break
         if action["action"] in NAV_ACTIONS and action["action"] not in kinds:

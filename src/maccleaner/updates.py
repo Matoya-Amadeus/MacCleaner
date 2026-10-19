@@ -357,6 +357,131 @@ def updates_report(
     return {**report, "checked_at": checked_at, "cached": False}
 
 
+def _system_proxy_state() -> dict[str, str]:
+    """读系统代理配置（`scutil --proxy`），用于把 mas 的失败翻译成人话。"""
+    try:
+        out = subprocess.run(
+            ["/usr/sbin/scutil", "--proxy"], capture_output=True, text=True, timeout=5
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    state: dict[str, str] = {}
+    for line in out.splitlines():
+        key, _, value = line.partition(":")
+        key, value = key.strip(), value.strip()
+        if key in {"SOCKSEnable", "SOCKSPort", "SOCKSProxy", "HTTPEnable", "HTTPPort", "HTTPProxy",
+                   "HTTPSEnable", "HTTPSPort", "HTTPSProxy"}:
+            state[key] = value
+    return state
+
+
+def _proxy_hint() -> str:
+    """如果系统代理开着，回一句"代理不可用"的提示；否则空串。"""
+    state = _system_proxy_state()
+    if not state:
+        return ""
+    if state.get("SOCKSEnable") == "1":
+        host = state.get("SOCKSProxy", "127.0.0.1")
+        port = state.get("SOCKSPort", "")
+        return f"系统 SOCKS 代理 {host}:{port} 启用中但连不上（代理进程没开？）"
+    if state.get("HTTPEnable") == "1" or state.get("HTTPSEnable") == "1":
+        host = state.get("HTTPSProxy") or state.get("HTTPProxy") or "127.0.0.1"
+        port = state.get("HTTPSPort") or state.get("HTTPPort") or ""
+        return f"系统 HTTP(S) 代理 {host}:{port} 启用中但连不上"
+    return ""
+
+
+MAS_LIST = re.compile(r"^\s*(?P<app_id>\d+)\s+(?P<name>.+?)\s+\((?P<version>[^)]*)\)\s*$")
+
+
+def parse_mas_list(payload: str) -> list[dict[str, str]]:
+    """`mas list`（**本地库**，不需要网络）：`<id> <名字> (<版本>)`。"""
+    items: list[dict[str, str]] = []
+    for line in (payload or "").splitlines():
+        match = MAS_LIST.match(line)
+        if match:
+            items.append(
+                {
+                    "app_id": match.group("app_id"),
+                    "name": match.group("name").strip(),
+                    "installed": match.group("version").strip(),
+                }
+            )
+    return items
+
+
+def _version_tuple(text: str) -> tuple[int, ...]:
+    """把 `1.2.3` / `10.4.14` 变成可比较的元组；非数字段退回 0。"""
+    parts: list[int] = []
+    for chunk in re.split(r"[.\-]", str(text or "")):
+        digits = "".join(ch for ch in chunk if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    # 去掉尾部 0：`1.0` 与 `1` 是同一个版本，不该判成"有更新"。
+    while len(parts) > 1 and parts[-1] == 0:
+        parts.pop()
+    return tuple(parts)
+
+
+def app_store_outdated_via_lookup(
+    *, store: str = "CN", timeout: float = 3.0, limit: int = 40
+) -> list[dict[str, Any]]:
+    """不依赖 mas 联网的 App Store 更新发现：`mas list`（本地）+ iTunes 公开查询。
+
+    为什么要这条兜底：`mas outdated` 走 URLSession，会跟随**系统代理**；
+    代理不可用时整条链路就断了（实测），但其实"有没有新版本"用公开 API 就能问。
+    注意：这里只解决**发现**，真正升级仍必须 `mas upgrade`（需要 App Store 登录与可用网络）。
+    """
+    import urllib.parse
+    import urllib.request
+
+    binary = _resolve("mas")
+    if not binary:
+        return []
+    code, out, _ = _run([binary, "list"], timeout=15)
+    if code != 0:
+        return []
+    installed = parse_mas_list(out)[:limit]
+
+    store_code = store
+    code, config_out, _ = _run([binary, "config"], timeout=10)
+    if code == 0:
+        for line in config_out.splitlines():
+            if line.strip().startswith("store"):
+                store_code = line.split()[-1].strip() or store_code
+
+    items: list[dict[str, Any]] = []
+    # 直连：为的是**绕过**系统代理（代理坏了，但直连是通的）。
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    for entry in installed:
+        query = urllib.parse.urlencode(
+            {"id": entry["app_id"], "country": store_code, "entity": "desktopSoftware", "media": "software"}
+        )
+        try:
+            with opener.open(f"https://itunes.apple.com/lookup?{query}", timeout=timeout) as response:
+                payload = json.loads(response.read().decode("utf-8", "replace"))
+        except Exception:  # noqa: BLE001 - 单个应用查不到就跳过，不要毁掉整页
+            continue
+        results = payload.get("results") or []
+        if not results:
+            continue
+        latest = str(results[0].get("version") or "")
+        if not latest:
+            continue
+        if _version_tuple(latest) > _version_tuple(entry["installed"]):
+            items.append(
+                {
+                    "manager": "mas",
+                    "kind": "app-store",
+                    "app_id": entry["app_id"],
+                    "name": results[0].get("trackName") or entry["name"],
+                    "installed": entry["installed"],
+                    "available": latest,
+                    "source": "itunes-lookup",
+                }
+            )
+    return items
+
+
 def _enabled_sources() -> list[dict[str, Any]]:
     """按 `MACCLEANER_UPDATE_SOURCES`（逗号分隔）挑源；未设置时用各自的 default。"""
     raw = os.environ.get("MACCLEANER_UPDATE_SOURCES", "").strip()
@@ -397,9 +522,10 @@ def discover_updates(*, runner: Any | None = None) -> dict[str, Any]:
             return (parser(out) if callable(parser) else []), ""
         detail = (err or out).strip()[:160]
         if tool == "mas" and ("NSURLError" in detail or code == 6):
-            # mas 走 App Store 的私有接口：未登录 / 网络受限时会 exit 6，
-            # 原始报错是一串 NSURLErrorDomain，用户看不懂，这里补人话。
-            return [], f"App Store（mas）查询失败：可能未登录 App Store 或网络受限（exit {code}）"
+            # 实测最常见的不是"没登录"，而是**系统代理开着但代理进程没运行**：
+            # mas 的 URLSession 跟随系统代理，curl 直连却是通的。
+            hint = _proxy_hint() or "可能未登录 App Store 或网络受限"
+            return [], f"App Store（mas）查询失败：{hint}（exit {code}）"
         if code == 1 and "Timeout" in detail:
             return [], f"{source['label']} 超时（{int(source['timeout'])}s，多半是网络）：{detail[:80]}"
         return [], f"{source['label']} 查询失败（exit {code}）：{detail}"
@@ -410,6 +536,13 @@ def discover_updates(*, runner: Any | None = None) -> dict[str, Any]:
                 items.extend(parsed)
                 if note:
                     notes.append(note)
+
+    # App Store 兜底：mas 联网失败（代理/网络）时，用本地库 + 公开查询仍然把"有更新"列出来。
+    if not any(item.get("manager") == "mas" for item in items):
+        fallback = app_store_outdated_via_lookup()
+        if fallback:
+            items.extend(fallback)
+            notes.append("mas 联网不可用，App Store 更新改用公开查询发现（升级仍需 App Store 可用）")
 
     items.sort(key=lambda item: (str(item.get("manager")), str(item.get("name")).lower()))
     return {"items": items, "count": len(items), "managers": managers, "notes": notes, "scope": SCOPE_NOTE}
