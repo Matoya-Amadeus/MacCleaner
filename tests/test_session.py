@@ -22,7 +22,8 @@ from maccleaner.session import InteractiveSession, SessionBusy, SessionDeps
 def _deps(**overrides) -> SessionDeps:
     base = dict(
         audit=lambda: {"mode": "audit", "plan_items": [
-            {"paths": ["~/Library/Caches/Demo"], "category": "cache", "estimated_bytes": 4096,
+            {"target_id": "home-caches", "name": "Home caches", "paths": ["~/Library/Caches/Demo"],
+             "category": "cache", "estimated_bytes": 4096,
              "recoverable": True, "status": "planned"}]},
         plan=lambda: {"mode": "plan", "plan_items": []},
         clean=lambda: {"mode": "clean", "actual_reclaimed_bytes": 0, "plan_items": [
@@ -120,7 +121,7 @@ class CleanupFlowTests(unittest.TestCase):
             review = driver.wait_page('data-stage="review"')
             self.assertIn("Demo", review, "审阅页要列出候选")
 
-            self.assertEqual(driver.action("approval"), 202)
+            self.assertEqual(driver.action("approval", {"approved_ids": ["home-caches"]}), 202)
             driver.wait_page('data-stage="confirming"')
 
             self.assertEqual(driver.action("confirm"), 202)
@@ -158,7 +159,8 @@ class CleanupFlowTests(unittest.TestCase):
             if attempts["n"] == 1:
                 raise ValueError("scan exploded")
             return {"mode": "audit", "plan_items": [
-                {"paths": ["~/Library/Caches/Demo"], "category": "cache", "estimated_bytes": 4096,
+                {"target_id": "home-caches", "name": "Home caches", "paths": ["~/Library/Caches/Demo"],
+                 "category": "cache", "estimated_bytes": 4096,
                  "recoverable": True, "status": "planned"}]}
 
         with tempfile.TemporaryDirectory(prefix="session-error-") as tmp:
@@ -173,9 +175,10 @@ class CleanupFlowTests(unittest.TestCase):
             driver.action("start")           # 重试 → 应直接重跑扫描
             review = driver.wait_page('data-stage="review"')
             self.assertEqual(attempts["n"], 2, "重试要真的重跑，而不是回到落地页等下一次点击")
-            # 页面行显示的是**末级目录名**（这里是 Demo），不是完整路径——别拿路径去断言。
-            self.assertIn("Demo", review)
-            self.assertEqual(review.count('class="row"'), 1, "应恰好一行候选")
+            # 行标题现在用 target 的 **name**（"Home caches"），副标题才是路径；
+            # 勾选行是 `label.row opt`（不是 `div.row`），所以按勾选框计数。
+            self.assertIn("Home caches", review)
+            self.assertEqual(review.count('data-target-id="home-caches"'), 1, "应恰好一行候选")
 
             driver.action("cancel")
             result = driver.join()
@@ -190,7 +193,7 @@ class CleanupFlowTests(unittest.TestCase):
             driver.wait_page('data-stage="idle"')
             self.assertEqual(driver.action("start"), 202)
             driver.wait_page('data-stage="review"')
-            self.assertEqual(driver.action("approval"), 202)
+            self.assertEqual(driver.action("approval", {"approved_ids": ["home-caches"]}), 202)
             driver.wait_page('data-stage="confirming"')
             self.assertEqual(driver.action("confirm"), 202)
             driver.wait_page('data-stage="complete"')

@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import html
+from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from .shell import state_page
@@ -57,20 +58,46 @@ def _actions(*buttons: str) -> str:
     return '<div class="actions">' + "".join(buttons) + "</div>" if buttons else ""
 
 
-def _rows(items: Iterable[dict[str, Any]], *, note_key: str = "reason") -> str:
+def _display_path(path: str) -> str:
+    """把家目录缩成 `~`（只用于展示）。"""
+    home = str(Path.home())
+    return "~" + path[len(home):] if path.startswith(home) else path
+
+
+def _rows(
+    items: Iterable[dict[str, Any]], *, note_key: str = "reason", selectable: bool = False
+) -> str:
+    """列表行。
+
+    `selectable=True` 时每行带勾选框（`data-target-id`）——审阅页要能"逐条决定清不清"，
+    而不是只有"全部清理"一个按钮（2026-10-19 用户指出）。
+
+    标题优先用 target 的 **name**：以前取路径末级名，`homebrew-cache` 与 `brew-cleanup`
+    都显示成 "Homebrew"，看起来像重复项；现在显示 "Homebrew cache" / "Homebrew cleanup"，
+    副标题给出真实路径。
+    """
     rows: list[str] = []
     for item in items:
         path = str(item.get("path", "") or "")
-        name = path.rstrip("/").split("/")[-1] or path
+        name = str(item.get("name") or "") or (path.rstrip("/").split("/")[-1] or path)
         kind = str(item.get("kind", "") or item.get("status", "") or "")
         note = str(item.get(note_key, "") or "")
         size = human_bytes(int(item.get("allocated_bytes", 0) or item.get("bytes", 0) or 0))
-        rows.append(
-            '<div class="row"><div>'
+        meta = " · ".join(part for part in (_display_path(path) if selectable else kind, note) if part)
+        body = (
             f"<strong>{html.escape(name)}</strong>"
-            f'<div class="meta">{html.escape(kind)}{" · " + html.escape(note) if note else ""}</div>'
-            f"</div><span class=\"meta\">{size}</span></div>"
+            f'<div class="meta">{html.escape(meta)}</div>'
         )
+        if selectable:
+            target_id = html.escape(str(item.get("target_id", "") or ""))
+            rows.append(
+                f'<label class="row opt"><input type="checkbox" data-target-id="{target_id}" checked>'
+                f'<div>{body}</div><span class="meta value">{size}</span></label>'
+            )
+        else:
+            rows.append(
+                f'<div class="row"><div>{body}</div><span class="meta value">{size}</span></div>'
+            )
     return "".join(rows)
 
 
@@ -184,7 +211,9 @@ def render_progress_html(payload: dict[str, Any] | None = None, *, stage: str = 
     )
 
 
-def render_review_html(payload: dict[str, Any], *, interactive: bool = True) -> str:
+def render_review_html(
+    payload: dict[str, Any], *, interactive: bool = True, notice: str = ""
+) -> str:
     """审阅页：列出候选，**用户可以逐条不选**；没有候选时明确说"没找到"。
 
     这一页的核心承诺是"先看清单再决定删什么"——所以候选必须逐条可见（名称、类型、大小），
@@ -227,7 +256,19 @@ def render_review_html(payload: dict[str, Any], *, interactive: bool = True) -> 
         stage="review",
         title="审阅清单",
         body=body,
-        actions=empty + _rows(candidates) + actions,
+        actions=(
+            empty   # 空结果时的"没有找到可清理的内容"块（别在改写时漏掉）
+            + (f'<p class="pill warn" role="status">{html.escape(notice)}</p>' if notice else "")
+            + (
+                '<label class="row opt select-all"><input type="checkbox" data-select-all checked>'
+                '<div><strong>全选</strong><div class="meta">取消勾选可跳过某一组</div></div>'
+                '<span class="meta value">' + human_bytes(total) + "</span></label>"
+                if candidates and interactive
+                else ""
+            )
+            + _rows(candidates, selectable=interactive and bool(candidates))
+            + actions
+        ),
         current="clean",
         subtitle="只读预览：点【开始清理】之前不会动任何文件" if candidates else "",
         meta=f"{len(candidates)} 组 · {human_bytes(total)}" if candidates else "",

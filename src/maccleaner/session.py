@@ -225,24 +225,44 @@ class InteractiveSession:
                 scanner = self.deps.rescan if (force and self.deps.rescan) else self.deps.audit
                 report = scanner()
                 payload = review_payload(report)
-                self._serve("review", pages.render_review_html(payload))
+                notice = ""
+                selected: list[dict[str, Any]] = []
+                while True:
+                    self._serve("review", pages.render_review_html(payload, notice=notice))
+                    action = self._wait_or_nav(
+                        ("approval", "rescan", "cancel"), timeout or self.ACTION_TIMEOUT_SECONDS
+                    )
+                    if action is not None and "nav" in action:
+                        return None          # 用户切到别的入口，交回主循环
+                    if action is None:
+                        return None
+                    if action["action"] == "cancel":
+                        return self._finish("cancelled", pages.render_cancelled_html({}))
+                    if action["action"] == "rescan":
+                        force = True         # 用户点【重新扫描】→ 必须绕过缓存
+                        break
+                    # 只认用户在页面上勾选的那几组：全不勾不等于全部。
+                    chosen = {
+                        str(value) for value in (action.get("payload") or {}).get("approved_ids") or []
+                    }
+                    selected = [
+                        candidate
+                        for candidate in (payload.get("candidates") or [])
+                        if str(candidate.get("target_id") or "") in chosen
+                    ]
+                    if not selected:
+                        notice = "至少勾选一组再清理；也可以点【取消】退出"
+                        continue
+                    break
+                if not selected:
+                    continue                 # 重新扫描分支：回到外层重扫
+                break                        # 有勾选 → 结束扫描循环，进入确认（少了这句会重扫、把确认页盖掉）
 
-                action = self._wait_or_nav(("approval", "rescan", "cancel"), timeout or self.ACTION_TIMEOUT_SECONDS)
-                if action is not None and "nav" in action:
-                    return None          # 用户切到别的入口，交回主循环
-                if action is None:
-                    return None
-                if action["action"] == "cancel":
-                    return self._finish("cancelled", pages.render_cancelled_html({}))
-                if action["action"] == "rescan":
-                    force = True         # 用户点【重新扫描】→ 必须绕过缓存
-                    continue
-                break
-
-            self._serve("confirming", pages.render_confirmation_html({
-                "selected_count": payload.get("count", 0),
-                "selected_bytes": payload.get("total_bytes", 0),
-            }))
+            _html = pages.render_confirmation_html({
+                "selected_count": len(selected),
+                "selected_bytes": sum(int(item.get("allocated_bytes") or 0) for item in selected),
+            })
+            self._serve("confirming", _html)
             decision = self._wait_or_nav(("confirm", "back", "cancel"), timeout or self.ACTION_TIMEOUT_SECONDS)
             if decision is not None and "nav" in decision:
                 return None
@@ -260,7 +280,7 @@ class InteractiveSession:
             # 没有这份清单，内核会按 dry-run 处理并回一份空计划（页面却显示完成）。
             approved_ids = [
                 str(candidate.get("target_id") or "")
-                for candidate in (payload.get("candidates") or [])
+                for candidate in selected
                 if str(candidate.get("target_id") or "")
             ]
             cleaned = (

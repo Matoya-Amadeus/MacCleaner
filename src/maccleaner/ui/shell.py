@@ -100,8 +100,15 @@ _RUNTIME_JS = """
     return result;
   };
   const ids = (selector) => Array.from(document.querySelectorAll(selector))
-      .filter(node => node.checked).map(node => node.dataset.itemId || node.dataset.updateId);
+      .filter(node => node.checked)
+      .map(node => node.dataset.itemId || node.dataset.updateId || node.dataset.targetId);
   document.addEventListener('click', async (event) => {
+    // 全选框：只是前端联动，不产生动作（审阅页/更新页都可能用到）。
+    const selectAll = event.target.closest('[data-select-all]');
+    if (selectAll) {
+      document.querySelectorAll('[data-target-id]').forEach((node) => { node.checked = selectAll.checked; });
+      return;
+    }
     // 两种按钮都要接：正文动作（data-bridge-action）与侧栏导航（data-nav-action）。
     // 2026-10-18 真机发现：原来只监听前者，于是**四个侧栏入口点了完全没反应**。
     const button = event.target.closest('[data-bridge-action],[data-nav-action]');
@@ -110,6 +117,8 @@ _RUNTIME_JS = """
     const action = button.dataset.bridgeAction || button.dataset.navAction;
     let payload = {};
     try { payload = button.dataset.bridgePayload ? JSON.parse(button.dataset.bridgePayload) : {}; } catch (e) {}
+    // 清理的批准必须带**用户勾选的那几组**：不带就是"全部"，与界面上"我取消了几项"不符。
+    if (action === 'approval') { payload.approved_ids = ids('[data-target-id]'); }
     if (action === 'uninstall-apply') { payload.selected_ids = ids('[data-item-id]'); }
     if (action === 'updates-apply') { payload.ids = ids('[data-update-id]'); }
     button.disabled = true;

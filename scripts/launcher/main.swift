@@ -240,7 +240,8 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
              "document.querySelectorAll('.row').length"),
             ("skills", "skills-open", "", "document.querySelectorAll('.row').length"),
             // 扫描优化后（26.5s → 0.7s）这一步可以要求**真的到审阅页**，而不只是"有反应"。
-            ("review", "start", "", "document.querySelectorAll('.row').length"),
+            // 审阅页现在是勾选行：按勾选框计数（`.row` 也会匹配到 label，但语义不直接）
+            ("review", "start", "", "document.querySelectorAll('[data-target-id]').length"),
             // 后面两步是**破坏性路径**：真点【开始清理】→【确认清理】。自测的 home 是临时目录，
             // 所以真的会移动文件——这正是"验收要自己操作一遍"的意思。
             ("confirming", "approval", "", "document.querySelectorAll('.button').length"),
@@ -300,9 +301,12 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
 
             currentStage { before in
                 self.webView?.evaluateJavaScript(
-                    "(function(){window.maccleanerAction('\(action)', {}); return 'ok'})()"
-                ) { _, error in
-                    if let error = error { self.log("smoke click \(action) failed: \(error.localizedDescription)") }
+                    // 点按钮而不是直接调 API：按钮的点击处理器会收集当前勾选的 id
+                    // （清理的批准必须带 approved_ids，直接传 {} 等于"一组都没选"）。
+                    "var __b=document.querySelector('[data-bridge-action=\"\(action)\"]')"
+    + " || document.querySelector('[data-nav-action=\"\(action)\"]'); if(__b){__b.click();'clicked'}else{'missing'}"
+                    ) { value, _ in
+                    if let flag = value as? String, flag == "missing" { self.log("smoke click \(action): button not found") }
                     waitForChange(previous: before, attempt: 0)
                 }
             }
