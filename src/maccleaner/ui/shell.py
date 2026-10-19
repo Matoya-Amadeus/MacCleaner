@@ -146,6 +146,8 @@ def state_page(
     actions: str = "",
     current: str = "clean",
     with_nav: bool = True,
+    subtitle: str = "",
+    meta: str = "",
 ) -> str:
     """拼一页：顶栏 + 侧栏 + 标题区 + 动作插槽 + 内联脚本。
 
@@ -166,7 +168,14 @@ def state_page(
 {NAV_SLOT}
 <main class="app">
   <header class="topbar">
-    <div class="brand"><span class="mark">M</span><h1>{html.escape(title)}</h1></div>
+    <div class="brand">
+      <span class="mark">M</span>
+      <div>
+        <h1>{html.escape(title)}</h1>
+        {f'<p class="subtitle">{html.escape(subtitle)}</p>' if subtitle else ''}
+      </div>
+    </div>
+    {f'<div class="topmeta">{html.escape(meta)}</div>' if meta else ''}
   </header>
   <section class="state card">
     <p class="state-head">{html.escape(body)}</p>

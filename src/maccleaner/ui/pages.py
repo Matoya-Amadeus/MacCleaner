@@ -173,14 +173,25 @@ def render_review_html(payload: dict[str, Any], *, interactive: bool = True) -> 
 
         stamp = _time.strftime("%H:%M", _time.localtime(cached_at))
         detail += f" 数据来自 {stamp} 的扫描（点【重新扫描】可强制刷新）。"
-    actions = _actions(_button("取消", "cancel"), _button("开始清理", "approval", primary=True)) if (interactive and candidates) else _actions(_button("重新扫描", "rescan", primary=interactive))
+    # 有候选时也要能【重新扫描】：只给"开始清理"会把人锁死在一次结果上。
+    actions = (
+        _actions(
+            _button("取消", "cancel"),
+            _button("重新扫描", "rescan"),
+            _button("开始清理", "approval", primary=True),
+        )
+        if (interactive and candidates)
+        else _actions(_button("退出", "cancel"), _button("重新扫描", "rescan", primary=interactive))
+    )
     return state_page(
-        {"message": f"扫描完成：{len(candidates)} 组候选，{human_bytes(total)}", "detail": detail},
+        {"message": "逐组核对下面的清单，确认无误再开始清理", "detail": detail},
         stage="review",
         title="审阅清单",
         body=body,
-        actions=actions + _rows(candidates),
+        actions=_rows(candidates) + actions,
         current="clean",
+        subtitle="只读预览：点【开始清理】之前不会动任何文件",
+        meta=f"{len(candidates)} 组 · {human_bytes(total)}" if candidates else "",
     )
 
 
@@ -276,36 +287,37 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
     rows = []
     for app in apps:
         size = int(app.get("allocated_bytes") or 0)
-        size_text = human_bytes(size) if size else "—"
+        # 体积未知时**整段不渲染**：50 行都挂一个 "—" 是纯噪声（列表页默认不算体积）。
+        size_text = f'<span class="meta value">{human_bytes(size)}</span>' if size else ""
+        button = (
+            _button(
+                "卸载",
+                "uninstall-plan",
+                payload={"bundle_id": app.get("bundle_id", ""), "path": app.get("path", "")},
+            )
+            if interactive
+            else ""
+        )
         rows.append(
             '<div class="row"><div style="min-width:0">'
             f'<strong>{html.escape(str(app.get("name", "")))}</strong>'
             f'<div class="meta">{html.escape(str(app.get("bundle_id", "")))}</div>'
             f'</div><div style="display:flex;align-items:center;gap:10px;flex:none">'
-            f'<span class="meta">{size_text}</span>'
-            + (
-                _button(
-                    "卸载",
-                    "uninstall-plan",
-                    payload={"bundle_id": app.get("bundle_id", ""), "path": app.get("path", "")},
-                )
-                if interactive
-                else ""
-            )
-            + "</div></div>"
+            f"{size_text}{button}</div></div>"
         )
     actions = ""
     return state_page(
         {
-            "message": f"共 {len(apps)} 个应用",
-            "detail": "卸载会先列出残留清单，确认后才移入废纸篓；系统级残留需要管理员权限。"
-                      "（体积在点开某个应用后计算——一次算 50 个要好几秒，不值得让你等）",
+            "message": "点右侧【卸载】查看它留下的文件，确认后才移入废纸篓",
+            "detail": "系统级残留需要一次管理员授权；体积在点开应用后计算。",
         },
         stage="uninstall-list",
         title="软件卸载（彻底）",
         body="选择一个应用",
         actions="".join(rows),
         current="uninstall",
+        subtitle="先看残留清单，确认后才移入废纸篓（可恢复）",
+        meta=f"{len(apps)} 个应用" if apps else "",
     )
 
 
