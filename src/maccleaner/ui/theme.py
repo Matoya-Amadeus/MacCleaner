@@ -108,6 +108,31 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:1
   box-shadow:0 0 0 8px var(--accent-soft)}
 .button.round:hover{color:var(--accent)}
 
+/* 三级按钮的第三级：用于"退出/稍后"这类不该抢注意力的动作 */
+.button.ghost{background:transparent;border-color:transparent;color:var(--text-2)}
+.button.ghost:hover{background:var(--surface-2);color:var(--text);border-color:transparent}
+.button[disabled]{opacity:.55;cursor:not-allowed}
+
+/* 空状态：一句结论 + 一句下一步；不要只留一行灰字 */
+.empty{display:flex;flex-direction:column;align-items:center;gap:10px;padding:36px 12px 8px;text-align:center}
+.empty svg{width:44px;height:44px;color:var(--muted);opacity:.9}
+.empty .empty-title{font-size:var(--fs-title-m);font-weight:600;margin:0}
+.empty .empty-text{color:var(--muted);font-size:var(--fs-meta);margin:0;max-width:44ch}
+
+/* 完成页的三格数据（可恢复/失败/跳过） */
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--sp-2);margin-top:var(--sp-4)}
+.stat{background:var(--surface-2);border-radius:var(--r-row);padding:10px 12px}
+.stat .k{color:var(--muted);font-size:var(--fs-label)}
+.stat .v{font-size:var(--fs-title-m);font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px}
+
+/* Toast：替代 alert()——原生弹窗会打断操作、也不跟随主题 */
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(8px);opacity:0;
+  background:var(--surface-2);border:1px solid var(--line-strong);border-radius:10px;
+  padding:10px 14px;font-size:var(--fs-body);box-shadow:var(--e2);z-index:50;max-width:72vw;
+  transition:opacity .18s ease,transform .18s ease;pointer-events:none}
+.toast.is-on{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.is-error{border-color:var(--danger);color:var(--danger)}
+
 /* ---- 列表行：44px、hover 有反馈、数值用等宽数字 ---- */
 .row{display:flex;justify-content:space-between;gap:var(--sp-3);align-items:center;
   min-height:44px;padding:8px 0;border-top:1px solid var(--line)}

@@ -77,6 +77,38 @@ def _rows(items: Iterable[dict[str, Any]], *, note_key: str = "reason") -> str:
 # --------------------------------------------------------------------------- 清理链路
 
 
+
+_ICON_CHECK = (
+    '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" '
+    'stroke-linecap="round" stroke-linejoin="round"><circle cx="24" cy="24" r="17"/>'
+    '<path d="M16 25l6 6 11-13"/></svg>'
+)
+_ICON_WARN = (
+    '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" '
+    'stroke-linecap="round" stroke-linejoin="round"><circle cx="24" cy="24" r="17"/>'
+    '<path d="M24 15v12"/><path d="M24 33h.01"/></svg>'
+)
+
+
+def empty_block(icon: str, title: str, text: str) -> str:
+    """空状态/提示块：图标 + 结论 + 下一步。
+
+    为什么单独做组件：原来空结果只剩一行灰字（"没有找到可清理的内容"），
+    用户看不出"这是好消息"还是"坏了"，也不知道下一步能做什么。
+    """
+    glyph = _ICON_WARN if icon == "warn" else _ICON_CHECK
+    return (
+        '<div class="empty">'
+        + glyph
+        + f'<p class="empty-title">{html.escape(title)}</p>'
+        + f'<p class="empty-text">{html.escape(text)}</p>'
+        + "</div>"
+    )
+
+
+
+
+
 def render_landing_html(payload: dict[str, Any], *, interactive: bool = True) -> str:
     """落地页：**打开不扫**，点【开始扫描】才扫。
 
@@ -160,12 +192,14 @@ def render_review_html(payload: dict[str, Any], *, interactive: bool = True) -> 
     """
     candidates = [item for item in (payload.get("candidates") or []) if isinstance(item, dict)]
     total = sum(int(item.get("allocated_bytes", 0) or 0) for item in candidates)
-    body = "找到可清理的内容" if candidates else "没有找到可清理的内容"
+    # 空结果时不写 state-head/state-msg：结论交给下面的 empty 块，否则同一句话说三遍
+    # （2026-10-19 截图里一眼看到三处重复）。
+    body = "找到可清理的内容" if candidates else ""
     detail = (
         f"共 {len(candidates)} 组候选，可恢复 {human_bytes(total)}；"
         "点【开始清理】前会再让你确认一次，文件一律移入废纸篓（可恢复）。"
         if candidates
-        else "你的 Mac 现在很干净。可以调大扫描范围或稍后再试。"
+        else ""   # 空结果时这句交给 empty 块，避免同一屏说两遍
     )
     cached_at = float(payload.get("scan_cached_at") or 0)
     if cached_at:
@@ -183,14 +217,19 @@ def render_review_html(payload: dict[str, Any], *, interactive: bool = True) -> 
         if (interactive and candidates)
         else _actions(_button("退出", "cancel"), _button("重新扫描", "rescan", primary=interactive))
     )
+    empty = (
+        empty_block("check", "没有找到可清理的内容", "你的 Mac 现在挺干净。可以稍后再扫一次，或先去看看卸载残留。")
+        if not candidates
+        else ""
+    )
     return state_page(
-        {"message": "逐组核对下面的清单，确认无误再开始清理", "detail": detail},
+        {"message": "逐组核对下面的清单，确认无误再开始清理" if candidates else "", "detail": detail},
         stage="review",
         title="审阅清单",
         body=body,
-        actions=_rows(candidates) + actions,
+        actions=empty + _rows(candidates) + actions,
         current="clean",
-        subtitle="只读预览：点【开始清理】之前不会动任何文件",
+        subtitle="只读预览：点【开始清理】之前不会动任何文件" if candidates else "",
         meta=f"{len(candidates)} 组 · {human_bytes(total)}" if candidates else "",
     )
 
@@ -241,9 +280,19 @@ def render_completion_html(payload: dict[str, Any], *, interactive: bool = True)
         actions=actions,
         current="clean",
     )
+    stats = (
+        '<div class="stats">'
+        f'<div class="stat"><div class="k">{"可恢复" if via_trash else "实际释放"}</div>'
+        f'<div class="v">{html.escape(hero)}</div></div>'
+        f'<div class="stat"><div class="k">失败</div>'
+        f'<div class="v">{int(payload.get("failed_count", 0) or 0)}</div></div>'
+        f'<div class="stat"><div class="k">跳过</div>'
+        f'<div class="v">{int(payload.get("skipped_count", 0) or 0)}</div></div>'
+        "</div>"
+    )
     return page.replace(
         '<p class="state-head">清理完成</p>',
-        f'<p class="state-head">清理完成</p><p class="hero">{html.escape(hero)}</p>',
+        f'<p class="state-head">清理完成</p><p class="hero">{html.escape(hero)}</p>{stats}',
     )
 
 
@@ -262,17 +311,20 @@ def render_cancelled_html(payload: dict[str, Any], *, interactive: bool = True) 
 def render_recovery_html(payload: dict[str, Any], *, interactive: bool = True) -> str:
     """出错后的恢复页：**说明原因 + 可重试**，不是一张死掉的失败页。"""
     reason = str(payload.get("detail", "") or "")
-    actions = _actions(_button("退出", "cancel"), _button("重试", "start", primary=True)) if interactive else ""
+    buttons = _actions(_button("退出", "cancel"), _button("重试", "start", primary=True)) if interactive else ""
+    # 警示图标 + 承诺句放在同一块里：出错时用户第一眼要看到"没有删除任何东西"。
+    block = empty_block("warn", "这次没有完成，但没有删除任何东西", reason or "点【重试】重新开始；也可以退出后再打开。")
     return state_page(
         {
-            "message": "这次没有完成，但没有删除任何东西。",
-            "detail": (f"原因：{reason} · " if reason else "") + "点【重试】重新开始；也可以退出后再打开。",
+            "message": "",
+            "detail": "",
         },
         stage="error",
         title="可以重试",
         body="这次没有完成",
-        actions=actions,
+        actions=block + buttons,
         current="clean",
+        subtitle="失败不是终点：重试会从这一步重新开始",
     )
 
 

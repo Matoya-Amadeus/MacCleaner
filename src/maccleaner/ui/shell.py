@@ -59,6 +59,15 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
 _RUNTIME_JS = """
 <script>
 (function(){
+  // 页面内 toast 取代 alert()：原生弹窗会打断操作，而且不跟随深色主题。
+  function toast(message){
+    let el = document.getElementById('mc-toast');
+    if (!el) { el = document.createElement('div'); el.id = 'mc-toast'; document.body.appendChild(el); }
+    el.className = 'toast is-error is-on';
+    el.textContent = message;
+    clearTimeout(window.__mcToastTimer);
+    window.__mcToastTimer = setTimeout(() => el.classList.remove('is-on'), 3200);
+  }
   const csrf = () => {
     const m = document.cookie.match(/(?:^|;\\s*)mc_csrf=([^;]+)/);
     return m ? decodeURIComponent(m[1]) : "";
@@ -106,7 +115,7 @@ _RUNTIME_JS = """
     button.disabled = true;
     button.classList.add('is-busy');   // 立刻有反馈：转圈，而不是等下一次刷新
     try { await window.maccleanerAction(action, payload); }
-    catch (error) { button.disabled = false; alert(error.message); }
+    catch (error) { button.disabled = false; toast(error.message); }
   });
   setInterval(() => fetch('/ready', {credentials:'same-origin',cache:'no-store'}).catch(()=>{}), 15000);
   addEventListener('pagehide', () => fetch('/closed', {credentials:'same-origin',keepalive:true}).catch(()=>{}));
@@ -178,9 +187,9 @@ def state_page(
     {f'<div class="topmeta">{html.escape(meta)}</div>' if meta else ''}
   </header>
   <section class="state card">
-    <p class="state-head">{html.escape(body)}</p>
-    <p class="state-msg">{message}</p>
-    <p class="state-detail">{detail}</p>
+    {f'<p class="state-head">{html.escape(body)}</p>' if body else ''}
+    {f'<p class="state-msg">{message}</p>' if message else ''}
+    {f'<p class="state-detail">{detail}</p>' if detail else ''}
     {ACTIONS_SLOT}
   </section>
 </main>

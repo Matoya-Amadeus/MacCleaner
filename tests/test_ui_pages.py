@@ -62,6 +62,61 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn("justify-content:flex-start", segment)
         self.assertIn("flex:1", STYLE, "文字块要占满剩余宽度")
 
+    def test_progress_page_has_a_loading_animation(self) -> None:
+        """进度页要有加载动画与骨架（2026-10-19 用户要求），且对读屏/减动效友好。"""
+        from maccleaner.ui.pages import render_progress_html
+        from maccleaner.ui.theme import STYLE
+
+        page = render_progress_html({"message": "正在读取应用列表"})
+        self.assertIn('class="loader lg"', page, "要有转圈")
+        self.assertIn('role="status"', page, "读屏要知道正在忙")
+        self.assertIn('aria-live="polite"', page)
+        self.assertGreaterEqual(page.count("skeleton"), 3, "骨架行告诉用户内容在路上")
+        self.assertIn("@keyframes mc-spin", STYLE)
+        self.assertIn("prefers-reduced-motion", STYLE, "要尊重系统减少动效的设置")
+
+    def test_empty_review_uses_empty_state_block(self) -> None:
+        """空结果不能只剩一行灰字：要有结论 + 下一步（2026-10-19 组件精修）。"""
+        from maccleaner.ui.pages import render_review_html
+
+        page = render_review_html({"candidates": []})
+        self.assertIn('class="empty"', page)
+        self.assertIn("没有找到可清理的内容", page)
+        self.assertIn("data-bridge-action=\"rescan\"", page, "空结果要给下一步")
+
+    def test_completion_shows_three_stats(self) -> None:
+        from maccleaner.ui.pages import render_completion_html
+
+        page = render_completion_html(
+            {"recoverable_bytes": 4096, "actual_freed_bytes": 0, "failed_count": 1, "skipped_count": 2}
+        )
+        self.assertEqual(page.count('class="stat"'), 3, "可恢复/失败/跳过三格")
+        self.assertIn("4.00 KiB", page)
+        self.assertIn(">1<", page)
+        self.assertIn(">2<", page)
+
+    def test_recovery_keeps_the_promise_visible(self) -> None:
+        from maccleaner.ui.pages import render_recovery_html
+
+        page = render_recovery_html({"detail": "ValueError: boom"})
+        self.assertIn('class="empty"', page)
+        self.assertIn("没有删除任何东西", page, "出错时第一眼要看到这句承诺")
+        self.assertIn("boom", page, "原因要可见")
+
+    def test_runtime_uses_toast_not_alert(self) -> None:
+        from maccleaner.ui.pages import render_landing_html
+
+        page = render_landing_html({})
+        self.assertIn("function toast", page, "用页面内 toast 代替原生弹窗")
+        self.assertNotIn("alert(error", page, "不该再走 alert()")
+        self.assertIn(".toast{", __import__("maccleaner.ui.theme", fromlist=["STYLE"]).STYLE)
+
+    def test_button_has_ghost_and_disabled_states(self) -> None:
+        from maccleaner.ui.theme import STYLE
+
+        self.assertIn(".button.ghost{", STYLE)
+        self.assertIn(".button[disabled]{", STYLE)
+
 
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
