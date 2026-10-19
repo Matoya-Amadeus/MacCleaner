@@ -222,6 +222,33 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn('data-stage="uninstall-batch-done"', done)
         self.assertIn("已移入废纸篓 3 项", done)
 
+    def test_lists_are_sortable_by_size_and_name(self) -> None:
+        """列表可排序（2026-10-19）：行要带排序键、页面上要有排序条、运行时要有重排逻辑。
+
+        为什么用前端排序：排序是纯展示，不该为一次点击重发页面或重扫磁盘。
+        """
+        from maccleaner.ui.pages import render_disk_html, render_review_html, render_uninstall_list_html
+
+        uninstall = render_uninstall_list_html({"apps": [
+            {"name": "Z", "bundle_id": "z", "path": "/Z", "allocated_bytes": 10},
+            {"name": "A", "bundle_id": "a", "path": "/A", "allocated_bytes": 900},
+        ]})
+        self.assertIn('data-sort="bytes"', uninstall)
+        self.assertIn("data-sortable", uninstall)
+        self.assertEqual(uninstall.count("data-sort-bytes"), 2, "每行都要有排序键")
+
+        review = render_review_html({"candidates": [
+            {"name": "Big", "path": "~/x", "kind": "cache", "allocated_bytes": 500, "target_id": "t1"},
+        ]})
+        self.assertIn("data-sort-bytes", review)
+
+        disk = render_disk_html({"total": 100, "used": 50, "free": 50, "percent": 50.0,
+                                 "sections": [{"name": "Downloads", "bytes": 40}]})
+        self.assertIn("data-sort-bytes", disk)
+
+        self.assertIn("data-sort", uninstall)  # 排序条按钮
+        self.assertIn("localeCompare", uninstall, "名称排序要走本地化比较")
+
 
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:

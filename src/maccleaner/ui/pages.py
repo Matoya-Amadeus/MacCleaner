@@ -102,6 +102,10 @@ def _rows(
         size = human_bytes(int(item.get("allocated_bytes", 0) or item.get("bytes", 0) or 0))
         label = _category_label(kind)
         meta = " · ".join(part for part in (label, _display_path(path), note) if part)
+        sort_attrs = (
+            f' data-sort-text="{html.escape(name.lower())}"'
+            f' data-sort-bytes="{int(item.get("allocated_bytes", 0) or item.get("bytes", 0) or 0)}"'
+        )
         body = (
             f"<strong>{html.escape(name)}</strong>"
             f'<div class="meta">{html.escape(meta)}</div>'
@@ -119,12 +123,12 @@ def _rows(
                 '<span class="pill risk">高风险 · 确认页单独确认</span>' if risky else ""
             )
             rows.append(
-                f'<label class="row opt">{box}<div>{body}{risk_note}</div>'
+                f'<label class="row opt"{sort_attrs}>{box}<div>{body}{risk_note}</div>'
                 f'<span class="meta value">{size}</span></label>'
             )
         else:
             rows.append(
-                f'<div class="row"><div>{body}</div><span class="meta value">{size}</span></div>'
+                f'<div class="row"{sort_attrs}><div>{body}</div><span class="meta value">{size}</span></div>'
             )
     return "".join(rows)
 
@@ -294,7 +298,8 @@ def render_review_html(
                 if candidates and interactive
                 else ""
             )
-            + _rows(candidates, selectable=interactive and bool(candidates))
+            + sort_bar()
+            + f'<div class="rows" data-sortable>{_rows(candidates, selectable=interactive and bool(candidates))}</div>'
             + actions
         ),
         current="clean",
@@ -456,7 +461,8 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
             else ""
         )
         rows.append(
-            '<label class="row opt">'
+            f'<label class="row opt" data-sort-text="{html.escape(str(app.get("name", "")).lower())}"'
+            f' data-sort-bytes="{size}">'
             + checkbox
             + '<div style="min-width:0;flex:1">'
             f'<strong>{html.escape(str(app.get("name", "")))}</strong>'
@@ -485,7 +491,7 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
         stage="uninstall-list",
         title="软件卸载",
         body="选择一个应用",
-        actions=batch + "".join(rows),
+        actions=batch + sort_bar() + f'<div class="rows" data-sortable>{"".join(rows)}</div>',
         current="uninstall",
         subtitle="先看残留清单，确认后才移入废纸篓（可恢复）",
         meta=f"{len(apps)} 个应用" if apps else "",
@@ -794,6 +800,21 @@ def _meter(percent: float, *, tone: str = "accent") -> str:
     return f'<div class="meter"><span style="width:{width:.1f}%;background:var(--{tone})"></span></div>'
 
 
+
+def sort_bar(*, default: str = "bytes") -> str:
+    """排序条：按体积（默认，降序）/ 按名称（升序）。
+
+    为什么放前端：排序是纯展示，不该为一次点击重新扫盘或重发页面。
+    """
+    return (
+        '<div class="sortbar"><span class="meta">排序</span>'
+        f'<button type="button" class="sortbtn{" is-on" if default == "bytes" else ""}" '
+        'data-sort="bytes" data-dir="desc">体积</button>'
+        f'<button type="button" class="sortbtn{" is-on" if default == "text" else ""}" '
+        'data-sort="text" data-dir="asc">名称</button></div>'
+    )
+
+
 def render_disk_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
     """磁盘概览（2026-10-19，对齐 Mole 的"磁盘一眼看清"）。
 
@@ -812,7 +833,8 @@ def render_disk_html(payload: dict[str, Any] | None = None, *, interactive: bool
         size = int(item.get("bytes", 0) or 0)
         share = size / biggest * 100 if biggest else 0
         rows.append(
-            '<div class="row"><div style="min-width:0;flex:1">'
+            f'<div class="row" data-sort-text="{html.escape(str(item.get("name", "")).lower())}"'
+            f' data-sort-bytes="{size}"><div style="min-width:0;flex:1">'
             f'<strong>{html.escape(str(item.get("name", "")))}</strong>'
             f'<div class="meta">{_meter(share)}</div></div>'
             f'<span class="meta value">{human_bytes(size)}</span></div>'
@@ -827,7 +849,9 @@ def render_disk_html(payload: dict[str, Any] | None = None, *, interactive: bool
         title="磁盘",
         body="",
         hero=f"{percent:.0f}%",
-        actions=_meter(percent, tone="warn") + "".join(rows)
+        actions=_meter(percent, tone="warn") + sort_bar()
+        + f'<div class="rows" data-sortable>{"".join(rows)}</div>'
+
         + (_actions(_button("刷新", "disk-open")) if interactive else ""),
         current="disk",
         subtitle="整机容量与常用目录占用（只读）",

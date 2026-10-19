@@ -133,6 +133,33 @@ _RUNTIME_JS = """
       .filter(node => node.checked)
       .map(node => node.dataset.itemId || node.dataset.updateId || node.dataset.targetId);
   document.addEventListener('click', async (event) => {
+    // 排序：纯前端重排（不重新扫盘、不发页面），再点一次反向。
+    const sortBtn = event.target.closest('[data-sort]');
+    if (sortBtn) {
+      const container = document.querySelector('[data-sortable]');
+      if (!container) return;
+      const key = sortBtn.dataset.sort;
+      // 首次点击用按钮上声明的方向（体积=降序、名称=升序），再点才翻转。
+      // 之前写成"和当前方向取反"，结果首次点"体积"变成了升序。
+      const dir = sortBtn.dataset.dir || (key === 'bytes' ? 'desc' : 'asc');
+      const desc = dir === 'desc';
+      sortBtn.dataset.dir = desc ? 'asc' : 'desc';
+      document.querySelectorAll('[data-sort]').forEach(btn => btn.classList.remove('is-on'));
+      sortBtn.classList.add('is-on');
+      const rows = Array.from(container.children).filter(el => el.hasAttribute('data-sort-text'));
+      rows.sort((a, b) => {
+        if (key === 'bytes') {
+          const av = Number(a.dataset.sortBytes || 0), bv = Number(b.dataset.sortBytes || 0);
+          return desc ? bv - av : av - bv;
+        }
+        const av = (a.dataset.sortText || ''), bv = (b.dataset.sortText || '');
+        const cmp = av.localeCompare(bv, 'zh-CN');
+        return desc ? -cmp : cmp;
+      });
+      rows.forEach(row => container.appendChild(row));
+      return;
+    }
+
     // 复选框：处理连选与批量计数，不产生动作。
     const box = event.target.closest('input[type="checkbox"]');
     if (box && box.matches(CHECKBOXES)) {

@@ -125,7 +125,7 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:1
 /* 三级按钮的第三级：用于"退出/稍后"这类不该抢注意力的动作 */
 .button.ghost{background:transparent;border-color:transparent;color:var(--text-2)}
 .button.ghost:hover{background:var(--surface-2);color:var(--text);border-color:transparent}
-.button[disabled]{opacity:.55;cursor:not-allowed}
+.button[disabled]{opacity:.45;cursor:not-allowed;box-shadow:none;filter:saturate(.6)}
 
 /* 空状态：一句结论 + 一句下一步；不要只留一行灰字 */
 .empty{display:flex;flex-direction:column;align-items:center;gap:10px;padding:36px 12px 8px;text-align:center}
@@ -146,6 +146,13 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:1
   transition:opacity .18s ease,transform .18s ease;pointer-events:none}
 .toast.is-on{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.is-error{border-color:var(--danger);color:var(--danger)}
+
+/* 排序条：小、安静，不抢主操作。 */
+.sortbar{display:flex;align-items:center;gap:6px;padding:8px 0 2px}
+.sortbtn{appearance:none;border:1px solid transparent;background:transparent;color:var(--muted);
+  font:inherit;font-size:var(--fs-meta);padding:3px 8px;border-radius:var(--r-control);cursor:pointer}
+.sortbtn:hover{background:var(--surface-2);color:var(--text)}
+.sortbtn.is-on{background:var(--accent-soft);color:var(--accent);font-weight:600}
 
 /* 批量条：固定在列表顶部，勾选数实时更新（原生表格那种"选了才出现操作"的替代）。 */
 .batchbar{display:flex;align-items:center;justify-content:space-between;gap:12px;
