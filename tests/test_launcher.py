@@ -102,3 +102,34 @@ class LauncherBundleTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IconAssetTests(unittest.TestCase):
+    """图标必须是**多尺寸真 icns**（2026-10-19 重做：原来只有一个占位方块）。"""
+
+    def test_icns_carries_every_size(self) -> None:
+        import subprocess
+        import tempfile
+
+        icns = REPO_ROOT / "assets" / "AppIcon.icns"
+        self.assertTrue(icns.is_file(), "缺少图标资产")
+        self.assertGreater(icns.stat().st_size, 100_000, "过小的 icns 通常只有一种尺寸")
+        with tempfile.TemporaryDirectory(prefix="icns-") as tmp:
+            out = Path(tmp) / "AppIcon.iconset"
+            result = subprocess.run(
+                ["/usr/bin/iconutil", "-c", "iconset", str(icns), "-o", str(out)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            names = {item.name for item in out.iterdir()}
+        for expected in ("icon_16x16.png", "icon_32x32.png", "icon_128x128.png",
+                         "icon_256x256.png", "icon_512x512.png", "icon_512x512@2x.png"):
+            self.assertIn(expected, names, f"icns 缺尺寸 {expected}")
+
+    def test_generator_script_is_reproducible(self) -> None:
+        """图标要能重跑生成——否则下次换色只能靠"谁手里有那张 png"。"""
+        script = REPO_ROOT / "assets" / "icon" / "build_icon.py"
+        self.assertTrue(script.is_file())
+        text = script.read_text(encoding="utf-8")
+        self.assertIn("superellipse", text, "超椭圆几何要写在脚本里，不是手画个圆角矩形")
+        self.assertIn("AppIcon-1024.png", text)
