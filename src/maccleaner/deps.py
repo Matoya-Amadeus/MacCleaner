@@ -221,6 +221,142 @@ def _open_trash(home: Path) -> None:
     target = candidate if candidate.is_dir() else Path.home() / ".Trash"
     subprocess.run(["/usr/bin/open", str(target)], check=False)
 
+DISK_SECTIONS: tuple[str, ...] = (
+    "Desktop",
+    "Documents",
+    "Downloads",
+    "Movies",
+    "Music",
+    "Pictures",
+    "Library/Caches",
+)
+
+
+def _du_sizes(paths: list[Path], *, timeout: float = 8.0) -> dict[str, int]:
+    """一次 `du -sk` 批量取体积；超时就用已经拿到的部分（不让页面卡住）。
+
+    逐个 `os.walk` 在 Downloads/Pictures 这种目录上会卡十几秒（2026-10-19 实测），
+    而 `du` 是系统实现；超时时 `TimeoutExpired.stdout` 里仍有已完成行。
+    """
+    existing = [str(path) for path in paths if path.exists()]
+    if not existing:
+        return {}
+    argv = ["/usr/bin/du", "-sk", *existing]
+    stdout = ""
+    try:
+        completed = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        stdout = completed.stdout or ""
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", "replace")
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    sizes: dict[str, int] = {}
+    for line in stdout.splitlines():
+        parts = line.split("\t", 1)
+        if len(parts) == 2 and parts[0].strip().isdigit():
+            sizes[parts[1]] = int(parts[0]) * 1024
+    return sizes
+
+
+def disk_report(*, home: Path) -> dict[str, Any]:
+    """磁盘概览：整体容量 + 常用目录体积（只读）。"""
+    import shutil as _shutil
+
+    usage = _shutil.disk_usage(str(home))
+    paths = [Path(home) / name for name in DISK_SECTIONS]
+    sizes = _du_sizes(paths)
+    sections = [
+        {"name": name, "bytes": sizes.get(str(Path(home) / name), 0)}
+        for name in DISK_SECTIONS
+    ]
+    sections.sort(key=lambda item: -int(item["bytes"]))
+    return {
+        "total": int(usage.total),
+        "used": int(usage.used),
+        "free": int(usage.free),
+        "percent": round(usage.used / usage.total * 100, 1) if usage.total else 0.0,
+        "sections": sections,
+    }
+
+
+def _memory_bytes() -> tuple[int, int]:
+    """(总量, 已用) 字节。用 `sysctl hw.memsize` + `vm_stat`，不依赖 psutil。"""
+    total = 0
+    try:
+        total = int(
+            subprocess.run(["/usr/sbin/sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=5)
+            .stdout.strip() or 0
+        )
+    except (OSError, subprocess.SubprocessError, ValueError):
+        total = 0
+    used = 0
+    try:
+        out = subprocess.run(["/usr/bin/vm_stat"], capture_output=True, text=True, timeout=5).stdout
+        page = 4096
+        stats: dict[str, int] = {}
+        for line in out.splitlines():
+            if "page size of" in line:
+                digits = "".join(ch for ch in line if ch.isdigit())
+                page = int(digits) if digits else page
+                continue
+            if ":" not in line:
+                continue
+            key, _, value = line.partition(":")
+            number = value.strip().rstrip(".").replace(".", "")
+            if number.isdigit():
+                stats[key.strip()] = int(number)
+        # 已用 ≈ 活跃 + 有线 + 压缩（够用了；精确口径要 host_statistics64）
+        active = stats.get("Pages active", 0)
+        wired = stats.get("Pages wired down", 0)
+        compressed = stats.get("Pages occupied by compressor", 0)
+        used = (active + wired + compressed) * page
+    except (OSError, subprocess.SubprocessError, ValueError):
+        used = 0
+    return total, used
+
+
+def system_report() -> dict[str, Any]:
+    """系统快照：负载 / 内存 / 磁盘 / CPU 核数 / 占用最高的进程（只读）。
+
+    **不做温度与风扇**：那需要 `powermetrics`（每次 sudo），不适合一个"打开就看"的页面。
+    """
+    import shutil as _shutil
+
+    load1 = load5 = load15 = 0.0
+    try:
+        load1, load5, load15 = os.getloadavg()
+    except OSError:
+        pass
+    mem_total, mem_used = _memory_bytes()
+    disk = _shutil.disk_usage(str(Path.home()))
+    processes: list[dict[str, Any]] = []
+    try:
+        out = subprocess.run(
+            ["/bin/ps", "-A", "-o", "%cpu=,rss=,comm=", "-r"],
+            capture_output=True, text=True, timeout=6,
+        ).stdout
+        for line in out.splitlines()[:6]:
+            parts = line.split(None, 2)
+            if len(parts) == 3 and parts[0].replace(".", "", 1).isdigit():
+                processes.append(
+                    {"cpu": float(parts[0]), "rss": int(parts[1]) * 1024,
+                     "name": parts[2].rsplit("/", 1)[-1][:40]}
+                )
+    except (OSError, subprocess.SubprocessError, ValueError):
+        processes = []
+    return {
+        "load": [round(load1, 2), round(load5, 2), round(load15, 2)],
+        "cpu_count": os.cpu_count() or 0,
+        "memory_total": mem_total,
+        "memory_used": mem_used,
+        "disk_total": int(disk.total),
+        "disk_used": int(disk.used),
+        "processes": processes,
+    }
+
+
 def build_deps(
     *,
     home: Path | None = None,
@@ -357,6 +493,8 @@ def build_deps(
         history=lambda: history_summary(state_root=state_path),
         apps=lambda: list_applications(home=home_path),
         skills=list_skills,
+        disk=lambda: disk_report(home=home_path),
+        system=system_report,
         uninstall_plan=uninstall_plan,
         uninstall_apply=uninstall_apply,
         updates_check=updates_check,

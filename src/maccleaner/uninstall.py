@@ -27,6 +27,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
+from .leftover_rules import rule_candidates
 from .core import _allocated_bytes, _protected_session_reason
 
 TRASH_DIRNAME = ".Trash"
@@ -124,6 +125,9 @@ def discover_related_paths(*, home: Path, bundle_id: str, app_name: str = "") ->
         add(library / "HTTPStorages" / f"{bundle_id}.binarycookies", "http-storages-cookies", "exact")
         for item in _point_bounded_files(library / "LaunchAgents", bundle_id):
             add(item, "launch-agent", "exact")
+        # 变体规则（Sparkle 的 .ShipIt、自带更新器缓存等）：来自真实采样，不是拍脑袋。
+        for hit in rule_candidates(home, bundle_id):
+            add(Path(hit["path"]), hit["kind"], hit["confidence"])
 
     name = (app_name or "").strip()
     if len(name) >= _MIN_NAME_LENGTH:

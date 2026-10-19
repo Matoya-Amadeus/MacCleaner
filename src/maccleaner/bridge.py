@@ -43,6 +43,8 @@ ACTIONS = frozenset(
         "updates-apply",
         "updates-refresh",
         "skills-open",
+        "disk-open",
+        "system-open",
     }
 )
 

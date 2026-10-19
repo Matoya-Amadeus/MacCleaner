@@ -341,3 +341,29 @@ class FlutterDiscoveryScopeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="flutter-root-") as tmp:
             manager = StorageManager(StorageContext(home=Path(tmp), root=Path(tmp), flutter_search_root=Path(tmp)))
             self.assertEqual(manager._flutter_roots(), [Path(tmp)])
+
+class DiskAndSystemTests(unittest.TestCase):
+    """磁盘 / 系统快照（只读，不依赖 psutil）。"""
+
+    def test_disk_report_has_sane_numbers(self) -> None:
+        import shutil as _shutil
+
+        from maccleaner.deps import disk_report
+
+        with tempfile.TemporaryDirectory(prefix="disk-") as tmp:
+            report = disk_report(home=Path(tmp))
+            usage = _shutil.disk_usage(str(Path(tmp)))   # 要在目录还存在时取，否则 statvfs 失败
+        self.assertGreater(report["total"], 0)
+        self.assertLessEqual(report["used"], report["total"])
+        self.assertTrue(0 <= report["percent"] <= 100)
+        self.assertIsInstance(report["sections"], list)
+
+    def test_system_report_reads_load_and_memory(self) -> None:
+        from maccleaner.deps import system_report
+
+        report = system_report()
+        self.assertEqual(len(report["load"]), 3)
+        self.assertGreater(report["cpu_count"], 0)
+        self.assertGreaterEqual(report["memory_used"], 0)
+        self.assertLessEqual(report["memory_used"], report["memory_total"] or report["memory_used"] + 1)
+

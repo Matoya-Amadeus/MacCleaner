@@ -35,7 +35,7 @@ TERMINAL_STAGES = frozenset({"complete", "cancelled"})
 
 # 侧栏在任何页面都可见 ⇒ 任何等待都必须能接住它们，否则用户在子流程里点侧栏会"没反应"
 # （2026-10-18 真浏览器实测：点了更新页后再点卸载，队列里的动作没人取）。
-NAV_ACTIONS: tuple[str, ...] = ("home", "uninstall-list", "updates-open", "skills-open")
+NAV_ACTIONS: tuple[str, ...] = ("home", "uninstall-list", "updates-open", "skills-open", "disk-open", "system-open")
 
 
 class SessionBusy(RuntimeError):
@@ -53,6 +53,9 @@ class SessionDeps:
     clean_approved: Callable[[list[str], list[str]], dict[str, Any]] | None = None
     # 打开废纸篓（完成页的按钮）。默认不做事，真实实现由 deps 注入。
     open_trash: Callable[[], None] | None = None
+    # 只读的"看一眼"页面（磁盘/系统）。
+    disk: Callable[[], dict[str, Any]] = lambda: {}
+    system: Callable[[], dict[str, Any]] = lambda: {}
     history: Callable[[], dict[str, Any]] = lambda: {}
     apps: Callable[[], list[dict[str, Any]]] = lambda: []
     skills: Callable[[], list[dict[str, Any]]] = lambda: []
@@ -171,7 +174,8 @@ class InteractiveSession:
             while True:
                 if pending is None:
                     action = self.bridge.wait_for_action(
-                        ("start", "home", "cancel", "uninstall-list", "updates-open", "skills-open"),
+                        ("start", "home", "cancel", "uninstall-list", "updates-open", "skills-open",
+                         "disk-open", "system-open"),
                         timeout=timeout or self.IDLE_TIMEOUT_SECONDS,
                     )
                     if action is None:
@@ -185,6 +189,19 @@ class InteractiveSession:
                     continue
                 if kind == "cancel":
                     return self._finish("cancelled", pages.render_cancelled_html({}))
+
+                if kind in ("disk-open", "system-open"):
+                    readout = self._safe(self.deps.disk if kind == "disk-open" else self.deps.system, default={})
+                    renderer = pages.render_disk_html if kind == "disk-open" else pages.render_system_html
+                    self._serve("disk" if kind == "disk-open" else "system", renderer(readout))
+                    back = self._wait_or_nav(("cancel",), self.ACTION_TIMEOUT_SECONDS)
+                    if back is not None and "nav" in back:
+                        pending = back["nav"]
+                        continue
+                    if back is not None and back["action"] == "cancel":
+                        return self._finish("cancelled", pages.render_cancelled_html({}))
+                    self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
+                    continue
 
                 if kind == "skills-open":
                     self._serve("skills", pages.render_skills_html(

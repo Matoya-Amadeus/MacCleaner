@@ -50,6 +50,13 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
             NavItem("updates", "软件更新", "updates-open"),
         ),
     ),
+    NavGroup(
+        "系统",
+        (
+            NavItem("disk", "磁盘", "disk-open"),
+            NavItem("system", "系统状态", "system-open"),
+        ),
+    ),
     NavGroup("技能", (NavItem("skills", "可调用的 Skill", "skills-open"),)),
 )
 

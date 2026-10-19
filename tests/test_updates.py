@@ -17,7 +17,11 @@ from maccleaner.updates import (
     build_upgrade_plan,
     discover_updates,
     parse_brew_outdated,
+    parse_gem_outdated,
     parse_mas_outdated,
+    parse_npm_outdated,
+    parse_pip_outdated,
+    parse_rustup_check,
     select_updates,
 )
 
@@ -106,7 +110,7 @@ class DiscoverTests(unittest.TestCase):
         finally:
             mod._resolve = original  # type: ignore[assignment]
         self.assertEqual(result["items"], [])
-        self.assertEqual(len(result["notes"]), 2)
+        self.assertGreaterEqual(len(result["notes"]), 2, "每个缺工具的源各一条，源变多了不要写死条数")
         self.assertTrue(all("未安装" in note for note in result["notes"]))
 
     def test_one_source_failing_keeps_the_other(self) -> None:
@@ -246,3 +250,84 @@ class SelectionTests(unittest.TestCase):
 
     def test_unknown_name_selects_nothing(self) -> None:
         self.assertEqual(select_updates(self._items(), {"nope"}), [])
+
+class ExtraSourceParsingTests(unittest.TestCase):
+    """额外更新源（npm/pip/gem/rustup）的解析（2026-10-19 对齐 Topgrade 的思路）。"""
+
+    def test_npm_outdated_json(self) -> None:
+        items = parse_npm_outdated('{"typescript": {"current": "5.3.0", "latest": "5.6.3"}}')
+        self.assertEqual(items[0]["manager"], "npm")
+        self.assertEqual(items[0]["name"], "typescript")
+        self.assertEqual(items[0]["available"], "5.6.3")
+
+    def test_npm_ignores_non_object_values(self) -> None:
+        self.assertEqual(parse_npm_outdated('{"x": "junk"}'), [])
+        self.assertEqual(parse_npm_outdated("not json"), [])
+
+    def test_pip_outdated_json(self) -> None:
+        items = parse_pip_outdated('[{"name": "requests", "version": "2.28.0", "latest_version": "2.32.0"}]')
+        self.assertEqual([(i["name"], i["installed"], i["available"]) for i in items],
+                         [("requests", "2.28.0", "2.32.0")])
+
+    def test_gem_outdated_text(self) -> None:
+        items = parse_gem_outdated("rails (7.0.1 < 7.1.3)\nrake (13.0.6)")
+        self.assertEqual(items[0]["name"], "rails")
+        self.assertEqual(items[0]["available"], "7.1.3")
+        self.assertEqual(items[1]["available"], "")
+
+    def test_rustup_check_only_update_lines(self) -> None:
+        payload = (
+            "stable-aarch64-apple-darwin - Up to date : 1.90.0\n"
+            "nightly-aarch64-apple-darwin - Update available : 1.92.0-nightly -> 1.93.0-nightly\n"
+        )
+        items = parse_rustup_check(payload)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["installed"], "1.92.0-nightly")
+        self.assertEqual(items[0]["available"], "1.93.0-nightly")
+
+
+class ExtraSourcePlanTests(unittest.TestCase):
+    def test_each_manager_gets_its_own_command(self) -> None:
+        plan = build_upgrade_plan([
+            {"manager": "npm", "kind": "npm-global", "name": "typescript"},
+            {"manager": "pip", "kind": "pip", "name": "requests"},
+            {"manager": "gem", "kind": "gem", "name": "rails"},
+            {"manager": "rustup", "kind": "toolchain", "name": "stable-aarch64-apple-darwin"},
+        ])
+        commands = {group["manager"]: group["command"] for group in plan["groups"]}
+        self.assertIn("npm install -g typescript@latest", commands["npm"])
+        self.assertIn("pip3 install --upgrade requests", commands["pip"])
+        self.assertIn("gem update rails", commands["gem"])
+        self.assertEqual(commands["rustup"], "rustup update")
+
+    def test_unknown_manager_is_ignored_not_executed(self) -> None:
+        plan = build_upgrade_plan([{"manager": "weird", "kind": "x", "name": "thing"}])
+        self.assertEqual(plan["groups"], [])
+        self.assertEqual(plan["ignored"], ["thing"])
+
+
+class SourceSelectionTests(unittest.TestCase):
+    """pip/gem 要联网（实测 20s+），默认关闭；可用环境变量显式打开。"""
+
+    def test_slow_sources_are_off_by_default(self) -> None:
+        from unittest.mock import patch
+
+        from maccleaner.updates import _enabled_sources
+
+        with patch.dict("os.environ", {}, clear=True):
+            tools = [source["tool"] for source in _enabled_sources()]
+        self.assertIn("brew", tools)
+        self.assertIn("npm", tools)
+        self.assertNotIn("pip3", tools)
+        self.assertNotIn("gem", tools)
+
+    def test_env_can_enable_them(self) -> None:
+        from unittest.mock import patch
+
+        from maccleaner.updates import _enabled_sources
+
+        with patch.dict("os.environ", {"MACCLEANER_UPDATE_SOURCES": "brew,pip,gem"}, clear=True):
+            tools = [source["tool"] for source in _enabled_sources()]
+        self.assertIn("pip3", tools, "pip 是别名，要能选中 pip3")
+        self.assertIn("gem", tools)
+        self.assertNotIn("npm", tools)

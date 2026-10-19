@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -28,18 +29,32 @@ MAS_CANDIDATES = ("/opt/homebrew/bin/mas", "/usr/local/bin/mas")
 SCOPE_NOTE = "third-party only (brew + mas); macOS system updates are out of scope"
 
 
+# 额外更新源（对齐 Topgrade 的思路：常见包管理器都覆盖）。
+# App 从 Finder 启动时 PATH 很窄（/usr/bin:/bin:...），所以**每个都要给候选绝对路径**。
+EXTRA_CANDIDATES: dict[str, tuple[str, ...]] = {
+    "npm": ("~/.local/bin/npm", "/opt/homebrew/bin/npm", "/usr/local/bin/npm"),
+    "pip3": ("~/.local/bin/pip3", "/opt/homebrew/bin/pip3", "/usr/local/bin/pip3"),
+    "gem": ("/usr/bin/gem", "/opt/homebrew/bin/gem"),
+    "rustup": ("~/.cargo/bin/rustup", "/opt/homebrew/bin/rustup"),
+}
+
+CANDIDATES: dict[str, tuple[str, ...]] = {
+    "brew": BREW_CANDIDATES,
+    "mas": MAS_CANDIDATES,
+    **EXTRA_CANDIDATES,
+}
+
+
 def _resolve(name: str) -> str:
-    """优先固定路径（PATH 里常常没有 `/opt/homebrew/bin`），再退回 PATH 查找。"""
-    if name == "brew":
-        for candidate in BREW_CANDIDATES:
-            if Path(candidate).exists() or shutil.which(candidate):
-                return candidate
-        return ""
-    if name == "mas":
-        for candidate in MAS_CANDIDATES:
-            if Path(candidate).exists():
-                return candidate
-        return shutil.which("mas") or ""
+    """优先固定路径（PATH 里常常没有 `/opt/homebrew/bin`、`~/.local/bin`），再退回 PATH。"""
+    for candidate in CANDIDATES.get(name, ()):
+        expanded = Path(os.path.expanduser(candidate))
+        if expanded.exists():
+            return str(expanded)
+        found = shutil.which(candidate)
+        if found:
+            return found
+    return shutil.which(name) or ""
     return shutil.which(name) or ""
 
 
@@ -150,34 +165,165 @@ def parse_mas_outdated(payload: str) -> list[dict[str, Any]]:
     return items
 
 
+
+def parse_npm_outdated(payload: str) -> list[dict[str, Any]]:
+    """`npm outdated -g --json`：`{name: {current, wanted, latest}}`。
+
+    注意：**有更新时 npm 的退出码是 1**（不是错误），所以调用方按 0/1 都算成功。
+    """
+    try:
+        data = json.loads(payload or "{}")
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, dict):
+        return []
+    items: list[dict[str, Any]] = []
+    for name, info in data.items():
+        if not isinstance(info, dict):
+            continue
+        latest = str(info.get("latest") or "")
+        current = str(info.get("current") or info.get("wanted") or "")
+        if not latest or latest == current:
+            continue
+        items.append(
+            {"manager": "npm", "kind": "npm-global", "name": str(name),
+             "installed": current, "available": latest}
+        )
+    return items
+
+
+def parse_pip_outdated(payload: str) -> list[dict[str, Any]]:
+    """`pip list --outdated --format=json`：[{name, version, latest_version}]。"""
+    try:
+        data = json.loads(payload or "[]")
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    items: list[dict[str, Any]] = []
+    for entry in data:
+        if not isinstance(entry, dict) or not entry.get("name"):
+            continue
+        items.append(
+            {"manager": "pip", "kind": "pip", "name": str(entry["name"]),
+             "installed": str(entry.get("version") or ""),
+             "available": str(entry.get("latest_version") or "")}
+        )
+    return items
+
+
+GEM_LINE = re.compile(r"^(?P<name>[^\s(]+)\s+\((?P<installed>[^<)\s]+)(?:\s*<\s*(?P<available>[^)]+))?\)")
+
+
+def parse_gem_outdated(payload: str) -> list[dict[str, Any]]:
+    """`gem outdated`：`name (current < latest)` 每行一条。"""
+    items: list[dict[str, Any]] = []
+    for line in (payload or "").splitlines():
+        match = GEM_LINE.match(line.strip())
+        if not match:
+            continue
+        items.append(
+            {"manager": "gem", "kind": "gem", "name": match.group("name"),
+             "installed": match.group("installed").strip(),
+             "available": (match.group("available") or "").strip()}
+        )
+    return items
+
+
+RUSTUP_UPDATE = re.compile(
+    r"(?P<name>[\w.-]+)\s*-\s*Update available\s*:\s*(?P<installed>[\w.\-]+)\s*->\s*(?P<available>[\w.\-]+)"
+)
+
+
+def parse_rustup_check(payload: str) -> list[dict[str, Any]]:
+    """`rustup check` 的更新行：`stable-aarch64-apple-darwin - Update available : 1.89 -> 1.90`。"""
+    items: list[dict[str, Any]] = []
+    for line in (payload or "").splitlines():
+        match = RUSTUP_UPDATE.search(line)
+        if match:
+            items.append(
+                {"manager": "rustup", "kind": "toolchain", "name": match.group("name"),
+                 "installed": match.group("installed"), "available": match.group("available")}
+            )
+    return items
+
+
 def available_managers() -> dict[str, str]:
     """两个来源是否可用（名称 → 可执行路径，空串表示没有）。"""
-    return {"brew": _resolve("brew"), "mas": _resolve("mas")}
+    managers = {"brew": _resolve("brew"), "mas": _resolve("mas")}
+    for extra in ("npm", "pip3", "gem", "rustup"):
+        managers[extra] = _resolve(extra)
+    return managers
+
+
+SOURCES: tuple[dict[str, Any], ...] = (
+    {"tool": "brew", "argv": ["outdated", "--json=v2"], "parser": "parse_brew_outdated",
+     "label": "Homebrew", "timeout": 60.0, "ok_codes": (0,), "default": True},
+    {"tool": "mas", "argv": ["outdated"], "parser": "parse_mas_outdated",
+     "label": "App Store（mas）", "timeout": 25.0, "ok_codes": (0,), "default": True},
+    {"tool": "npm", "argv": ["outdated", "-g", "--json"], "parser": "parse_npm_outdated",
+     "label": "npm 全局包", "timeout": 25.0, "ok_codes": (0, 1), "default": True},
+    {"tool": "rustup", "argv": ["check"], "parser": "parse_rustup_check",
+     "label": "Rust 工具链", "timeout": 20.0, "ok_codes": (0,), "default": True},
+    # pip / gem 要联网到 PyPI / rubygems，实测各要 20s+（国内网络常常超时）；
+    # 默认关闭，用 MACCLEANER_UPDATE_SOURCES=brew,mas,npm,pip,gem 显式打开。
+    {"tool": "pip3", "argv": ["list", "--outdated", "--format=json", "--disable-pip-version-check"],
+     "parser": "parse_pip_outdated", "label": "Python 包", "timeout": 25.0,
+     "ok_codes": (0,), "default": False},
+    {"tool": "gem", "argv": ["outdated"], "parser": "parse_gem_outdated",
+     "label": "Ruby gem", "timeout": 25.0, "ok_codes": (0,), "default": False},
+)
+
+
+def _enabled_sources() -> list[dict[str, Any]]:
+    """按 `MACCLEANER_UPDATE_SOURCES`（逗号分隔）挑源；未设置时用各自的 default。"""
+    raw = os.environ.get("MACCLEANER_UPDATE_SOURCES", "").strip()
+    if not raw:
+        return [dict(source) for source in SOURCES if source.get("default")]
+    wanted = {part.strip().lower() for part in raw.split(",") if part.strip()}
+    picked = []
+    for source in SOURCES:
+        tool = source["tool"].lower()
+        # pip3 与 pip 视为同一个源（用户可能写 pip，也可能写 pip3）。
+        names = {tool, tool.removesuffix("3"), f"{tool}3" if not tool.endswith("3") else tool}
+        if names & wanted:
+            picked.append(dict(source))
+    return picked
 
 
 def discover_updates(*, runner: Any | None = None) -> dict[str, Any]:
-    """只读发现：`{items, count, managers, notes, scope}`；任何一步失败只记 note，不抛出。"""
+    """只读发现：`{items, count, managers, notes, scope}`；任何一步失败只记 note，不抛出。
+
+    六个源**并行**查：串行时 `pip`/`gem` 各自超时会拖到 4 分钟（2026-10-19 实测 241s）。
+    并行的总耗时约等于最慢的那个源（默认最慢 25s），且每源有独立超时，一个卡住不影响别人。
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
     managers = available_managers()
     notes: list[str] = []
     items: list[dict[str, Any]] = []
+    sources = _enabled_sources()
 
-    if managers["brew"]:
-        code, out, err = _run([managers["brew"], "outdated", "--json=v2"], runner=runner)
-        if code == 0:
-            items.extend(parse_brew_outdated(out))
-        else:
-            notes.append(f"Homebrew 查询失败（exit {code}）：{(err or out).strip()[:200]}")
-    else:
-        notes.append("未安装 Homebrew：跳过 formula/cask 检查")
+    def probe(source: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
+        tool = str(source["tool"])
+        binary = managers.get(tool) or ""
+        if not binary:
+            return [], f"未安装 {tool}：跳过{source['label']}检查"
+        code, out, err = _run([binary, *source["argv"]], runner=runner, timeout=float(source["timeout"]))
+        if code in source["ok_codes"]:
+            parser = globals().get(str(source["parser"]))
+            return (parser(out) if callable(parser) else []), ""
+        detail = (err or out).strip()[:160]
+        if code == 1 and "Timeout" in detail:
+            return [], f"{source['label']} 超时（{int(source['timeout'])}s，多半是网络）：{detail[:80]}"
+        return [], f"{source['label']} 查询失败（exit {code}）：{detail}"
 
-    if managers["mas"]:
-        code, out, err = _run([managers["mas"], "outdated"], runner=runner)
-        if code == 0:
-            items.extend(parse_mas_outdated(out))
-        else:
-            notes.append(f"App Store（mas）查询失败（exit {code}）：{(err or out).strip()[:200]}")
-    else:
-        notes.append("未安装 mas：跳过 App Store 检查")
+    if sources:
+        with ThreadPoolExecutor(max_workers=min(6, len(sources))) as pool:
+            for parsed, note in pool.map(probe, sources):
+                items.extend(parsed)
+                if note:
+                    notes.append(note)
 
     items.sort(key=lambda item: (str(item.get("manager")), str(item.get("name")).lower()))
     return {"items": items, "count": len(items), "managers": managers, "notes": notes, "scope": SCOPE_NOTE}
@@ -212,7 +358,11 @@ def build_upgrade_plan(items: Sequence[dict[str, Any]], *, brew: str = "", mas: 
         str(i.get("name")) for i in items if i.get("manager") == "brew" and i.get("kind") == "cask" and i.get("name")
     ]
     mas_ids = [str(i.get("app_id")) for i in items if i.get("manager") == "mas" and i.get("app_id")]
-    ignored = [str(i.get("name") or i.get("app_id") or "") for i in items if i.get("manager") not in ("brew", "mas")]
+    ignored = [
+        str(i.get("name") or i.get("app_id") or "")
+        for i in items
+        if i.get("manager") not in ("brew", "mas", "npm", "pip", "gem", "rustup")
+    ]
 
     groups: list[dict[str, Any]] = []
     if formulae:
@@ -245,6 +395,32 @@ def build_upgrade_plan(items: Sequence[dict[str, Any]], *, brew: str = "", mas: 
                 "command": "mas upgrade " + " ".join(mas_ids),
             }
         )
+    # 额外源：按 manager 分组；都只升级**点名的**那些。
+    npm_names = [str(i.get("name")) for i in items if i.get("manager") == "npm" and i.get("name")]
+    pip_names = [str(i.get("name")) for i in items if i.get("manager") == "pip" and i.get("name")]
+    gem_names = [str(i.get("name")) for i in items if i.get("manager") == "gem" and i.get("name")]
+    rustup_names = [str(i.get("name")) for i in items if i.get("manager") == "rustup" and i.get("name")]
+    if npm_names:
+        binary = _resolve("npm") or "npm"
+        specs = [f"{name}@latest" for name in npm_names]
+        groups.append({"manager": "npm", "kind": "npm-global", "targets": npm_names,
+                       "argv": [binary, "install", "-g", *specs],
+                       "command": "npm install -g " + " ".join(specs)})
+    if pip_names:
+        binary = _resolve("pip3") or "pip3"
+        groups.append({"manager": "pip", "kind": "pip", "targets": pip_names,
+                       "argv": [binary, "install", "--upgrade", *pip_names],
+                       "command": "pip3 install --upgrade " + " ".join(pip_names)})
+    if gem_names:
+        binary = _resolve("gem") or "gem"
+        groups.append({"manager": "gem", "kind": "gem", "targets": gem_names,
+                       "argv": [binary, "update", *gem_names],
+                       "command": "gem update " + " ".join(gem_names)})
+    if rustup_names:
+        binary = _resolve("rustup") or "rustup"
+        groups.append({"manager": "rustup", "kind": "toolchain", "targets": rustup_names,
+                       "argv": [binary, "update"], "command": "rustup update"})
+
     return {"groups": groups, "count": sum(len(g["targets"]) for g in groups), "ignored": ignored}
 
 

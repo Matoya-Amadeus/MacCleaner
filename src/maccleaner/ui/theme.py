@@ -147,6 +147,10 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:1
 .toast.is-on{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.is-error{border-color:var(--danger);color:var(--danger)}
 
+/* 容量条：磁盘/内存共用。宽度由内联 style 给，这里只管外观。 */
+.meter{height:8px;border-radius:999px;background:var(--surface-muted);overflow:hidden}
+.meter > span{display:block;height:100%;border-radius:999px;transition:width 240ms ease}
+
 /* ---- 列表行：44px、hover 有反馈、数值用等宽数字 ---- */
 .row{display:flex;justify-content:space-between;gap:var(--sp-3);align-items:center;
   min-height:44px;padding:8px 0;border-top:1px solid var(--line)}

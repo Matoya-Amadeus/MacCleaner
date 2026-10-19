@@ -158,11 +158,46 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn("home", actions)
         self.assertNotIn("start", actions, "侧栏不该直接等于\"开始扫描\"")
 
+    def test_disk_page_shows_capacity_and_sections(self) -> None:
+        """磁盘页：整体占比 + 每个目录一条容量条（2026-10-19 对齐 Mole 的磁盘概览）。"""
+        from maccleaner.ui.pages import render_disk_html
+
+        page = render_disk_html({
+            "total": 1000, "used": 230, "free": 770, "percent": 23.0,
+            "sections": [{"name": "Downloads", "bytes": 500}, {"name": "Music", "bytes": 100}],
+        })
+        self.assertIn('data-stage="disk"', page)
+        self.assertIn("23%", page)
+        self.assertEqual(page.count('class="meter"'), 3, "整体一条 + 每个目录一条")
+        self.assertIn("Downloads", page)
+        self.assertIn("data-bridge-action=\"disk-open\"", page, "要有刷新")
+
+    def test_system_page_shows_load_memory_and_processes(self) -> None:
+        from maccleaner.ui.pages import render_system_html
+
+        page = render_system_html({
+            "load": [1.5, 1.2, 0.9], "cpu_count": 10,
+            "memory_total": 8589934592, "memory_used": 4294967296,
+            "processes": [{"cpu": 12.5, "rss": 1024, "name": "python3"}],
+        })
+        self.assertIn('data-stage="system"', page)
+        self.assertEqual(page.count('class="stat"'), 3)
+        self.assertIn("12.5%", page)
+        self.assertIn("python3", page)
+        self.assertIn("powermetrics", page, "要说明为什么没有温度/风扇")
+
+    def test_sidebar_has_disk_and_system_entries(self) -> None:
+        from maccleaner.ui.shell import NAV_GROUPS
+
+        actions = [item.action for group in NAV_GROUPS for item in group.items]
+        self.assertIn("disk-open", actions)
+        self.assertIn("system-open", actions)
+
 
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")
-        self.assertEqual(nav.count('data-nav-action="'), 4, "四个真实入口")
+        self.assertEqual(nav.count('data-nav-action="'), 6, "六个真实入口（清理/卸载/更新/磁盘/系统/技能）")
         self.assertNotIn("待实现", nav, "四项都已实现，不该再有待实现徽标")
         self.assertNotIn("Protection", nav, "不出现我们没有的分类")
         self.assertIn('class="side-item is-current"', nav, "当前项要有选中态")
@@ -170,7 +205,7 @@ class ShellTests(unittest.TestCase):
 
     def test_nav_groups_are_explicit(self) -> None:
         titles = [group.title for group in NAV_GROUPS]
-        self.assertEqual(titles, ["清理", "应用", "技能"])
+        self.assertEqual(titles, ["清理", "应用", "系统", "技能"])
 
     def test_state_page_replaces_both_slots(self) -> None:
         page = state_page(

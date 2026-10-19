@@ -700,7 +700,104 @@ def render_skills_html(payload: dict[str, Any] | None = None, *, interactive: bo
     )
 
 
+def _meter(percent: float, *, tone: str = "accent") -> str:
+    """一条容量条。`percent` 会被夹到 0–100，避免离谱数据把宽度撑出页面。"""
+    width = max(0.0, min(100.0, float(percent or 0)))
+    return f'<div class="meter"><span style="width:{width:.1f}%;background:var(--{tone})"></span></div>'
+
+
+def render_disk_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
+    """磁盘概览（2026-10-19，对齐 Mole 的"磁盘一眼看清"）。
+
+    只读：容量来自 `shutil.disk_usage`，目录体积来自一次 `du -sk`（8 秒超时，拿多少算多少）。
+    """
+    data = payload or {}
+    total = int(data.get("total", 0) or 0)
+    used = int(data.get("used", 0) or 0)
+    free = int(data.get("free", 0) or 0)
+    percent = float(data.get("percent", 0) or 0)
+    sections = [item for item in (data.get("sections") or []) if isinstance(item, dict)]
+    biggest = max([int(item.get("bytes", 0) or 0) for item in sections] + [1])
+
+    rows: list[str] = []
+    for item in sections:
+        size = int(item.get("bytes", 0) or 0)
+        share = size / biggest * 100 if biggest else 0
+        rows.append(
+            '<div class="row"><div style="min-width:0;flex:1">'
+            f'<strong>{html.escape(str(item.get("name", "")))}</strong>'
+            f'<div class="meta">{_meter(share)}</div></div>'
+            f'<span class="meta value">{human_bytes(size)}</span></div>'
+        )
+
+    return state_page(
+        {
+            "message": f"已用 {human_bytes(used)}，可用 {human_bytes(free)}",
+            "detail": "目录体积是当前占用（不是“可清理”的量）；清理请回「Mac 清理」看候选。",
+        },
+        stage="disk",
+        title="磁盘",
+        body="",
+        hero=f"{percent:.0f}%",
+        actions=_meter(percent, tone="warn") + "".join(rows)
+        + (_actions(_button("刷新", "disk-open")) if interactive else ""),
+        current="disk",
+        subtitle="整机容量与常用目录占用（只读）",
+        meta=f"{human_bytes(total)} 总容量",
+    )
+
+
+def render_system_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
+    """系统状态：负载 / 内存 / 进程（只读）。
+
+    **不做温度与风扇**：需要 `powermetrics`（每次 sudo），不适合"打开就看"的页面。
+    """
+    data = payload or {}
+    load = list(data.get("load") or [0, 0, 0])
+    cpu_count = int(data.get("cpu_count", 0) or 0)
+    mem_total = int(data.get("memory_total", 0) or 0)
+    mem_used = int(data.get("memory_used", 0) or 0)
+    processes = [item for item in (data.get("processes") or []) if isinstance(item, dict)]
+    mem_percent = (mem_used / mem_total * 100) if mem_total else 0.0
+    load_percent = (float(load[0] or 0) / max(1, cpu_count) * 100) if cpu_count else 0.0
+
+    stats = (
+        '<div class="stats">'
+        f'<div class="stat"><div class="k">1/5/15 分钟负载</div>'
+        f'<div class="v">{" / ".join(str(x) for x in load)}</div></div>'
+        f'<div class="stat"><div class="k">内存</div>'
+        f'<div class="v">{human_bytes(mem_used)} / {human_bytes(mem_total)}</div></div>'
+        f'<div class="stat"><div class="k">CPU 核数</div><div class="v">{cpu_count}</div></div>'
+        "</div>"
+    )
+    rows = "".join(
+        '<div class="row"><div style="min-width:0">'
+        f'<strong>{html.escape(str(item.get("name", "")))}</strong>'
+        f'<div class="meta">{human_bytes(int(item.get("rss", 0) or 0))} 内存</div></div>'
+        f'<span class="meta value">{float(item.get("cpu", 0) or 0):.1f}%</span></div>'
+        for item in processes
+    )
+    return state_page(
+        {
+            "message": f"内存占用 {mem_percent:.0f}%，1 分钟负载 {load[0] if load else 0}",
+            "detail": "温度与风扇需要 sudo（powermetrics），这里不采集；进程按 CPU 排序。",
+        },
+        stage="system",
+        title="系统状态",
+        body="",
+        actions=stats + '<div class="group-title">负载</div>' + _meter(load_percent, tone="warn")
+        + '<div class="group-title">内存</div>' + _meter(mem_percent)
+        + '<div class="group-title">占用最高的进程</div>' + rows
+        + (_actions(_button("刷新", "system-open")) if interactive else ""),
+        current="system",
+        subtitle="负载 / 内存 / 进程（只读）",
+        meta="",
+    )
+
+
 __all__ = [
+    "render_disk_html",
+    "render_system_html",
     "human_bytes",
     "render_cancelled_html",
     "render_completion_html",
