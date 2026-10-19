@@ -54,6 +54,24 @@ For a source checkout, `python3 scripts/mac_storage_manager.py ...` and the shel
 6. Apply only through `maccleaner clean --apply --yes --require-explicit-plan --approved-targets <ids> ...`; `scripts/safe_clean.sh` is a deprecated compatibility shim.
 7. Re-audit after apply and use `--require-zero-hit <pattern>` when the task was keyword/path based.
 
+## Capabilities beyond cleanup
+
+Four surfaces share one set of protection rules (protected paths stay blocked; no bypass flag exists):
+
+- **Uninstall** — `maccleaner uninstall --app-path <app>` lists leftovers only (bundle item, sandbox
+  container, exact/name matches, system-level). `--apply` moves the selected user-scope items to Trash;
+  `--ids` restricts to plan item ids, so the caller cannot swap paths. System-level leftovers require
+  `--accept-admin` (one admin prompt) and are never touched implicitly.
+- **Updates** — `maccleaner updates` lists third-party updates (Homebrew formulae/casks + App Store via
+  `mas`) and never touches macOS system updates. Default is read-only; `--apply [--only a,b]` upgrades the
+  named items only, and each executable group reports its own exit code.
+- **Local UI** — `maccleaner ui` serves a temporary page on `127.0.0.1` and prints a one-time
+  `/bootstrap/<secret>` link (invalid after first use). Every action needs a cookie + header credential
+  pair plus an Origin check; only one session may run at a time (flock).
+- **MCP** — `uninstall_plan`, `updates_check`, `updates_apply` join the existing tools. `apply_storage_plan`
+  accepts `plan_digest`; a mismatch between the approved plan and the plan being applied is refused before
+  anything is touched.
+
 ## Confirmation semantics
 
 - Generic `--yes` can approve only low-risk targets.
@@ -64,6 +82,8 @@ For a source checkout, `python3 scripts/mac_storage_manager.py ...` and the shel
 - Apply wrappers must not add targets, change profile, or broaden scope.
 - MCP `apply_storage_plan` requires the live `plan_id` returned by MCP `plan_storage`, non-empty exact `approved_targets`, and required `confirm_targets`; it cannot accept new scan-scope parameters.
 - A MCP plan token expires after 15 minutes and is consumed before execution. Unapproved low-risk targets are blocked as strictly as high-risk targets.
+- Uninstall apply takes `selected_ids` from the rendered plan; ids that are not in the frozen plan are ignored,
+  and an empty selection is refused rather than treated as "all".
 
 ## Source layers and protections
 

@@ -26,7 +26,14 @@ Use this stdio command in an MCP client configuration:
 - `audit_storage`: read-only storage audit.
 - `plan_storage`: read-only plan; returns `plan_id`, `plan_expires_at`, and `applicable_target_ids`.
 - `trace_storage`: read-only source tracing for directories that reappear.
-- `apply_storage_plan`: the only mutating tool.
+- `apply_storage_plan`: the only mutating tool for cleanup. Pass `plan_digest` (returned by
+  `plan_storage`) to prove the plan being applied is the plan you showed the user; a mismatch is
+  refused before anything is touched.
+- `uninstall_plan`: read-only. Lists an app's leftovers (bundle id, container, name matches, system-level).
+- `updates_check`: read-only. Lists third-party updates (Homebrew + App Store). macOS system updates are
+  explicitly out of scope.
+- `updates_apply`: upgrades the named packages (empty = all). Each group reports its own exit code, so one
+  failing group does not hide the others.
 
 ## Calling tools
 

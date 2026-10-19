@@ -119,6 +119,22 @@ PyPI 首发前，直接从 GitHub 安装：
 pipx install "git+https://github.com/Matoya-Amadeus/MacCleaner.git"
 ```
 
+除 `audit / plan / clean / trace` 之外，还有四个常用入口：
+
+```bash
+maccleaner ui                                                  # 本地界面（临时端口 + 一次性入口链接）
+maccleaner ui --no-open                                        # 只打印入口 URL（交给浏览器或 agent）
+
+maccleaner uninstall --app-path /Applications/Foo.app          # 只列出残留（只读）
+maccleaner uninstall --app-path /Applications/Foo.app --apply   # 移入废纸篓（可恢复）
+
+maccleaner updates                                             # 第三方更新，默认只读
+maccleaner updates --apply --only aom,cmake                    # 只升点名的
+```
+
+- `uninstall` 只动**用户域**；系统级残留要显式加 `--accept-admin`（一次管理员授权）。
+- `updates` **不碰 macOS 系统更新**；`brew` 与 `mas` 各自独立，一组失败不拖累另一组。
+
 ### MCP
 
 ```bash
@@ -132,7 +148,22 @@ PyPI 首发前使用 GitHub 版本：
 pipx install "git+https://github.com/Matoya-Amadeus/MacCleaner.git#egg=maccleaner[mcp]"
 ```
 
-`maccleaner-mcp` 只使用 stdio。客户端配置和 plan token apply 示例见 [MCP 使用说明](docs/mcp.md)。
+`maccleaner-mcp` 只使用 stdio。除审计/计划/追踪/执行外，还暴露三个入口：
+`uninstall_plan`（只读）、`updates_check`（只读）、`updates_apply`。
+`apply_storage_plan` 可以回传 `plan_digest` —— 用来证明"执行的就是给人看的那份计划"，
+摘要不符会在动手之前拒绝。客户端配置与示例见 [MCP 使用说明](docs/mcp.md)。
+
+### 本地界面（双击图标或 `maccleaner ui`）
+
+```bash
+bash scripts/install_launcher.sh     # 生成 ~/Applications/MacCleaner.app（原生窗口，不开浏览器）
+```
+
+界面里能做：清理（扫描 → 审阅 → 确认 → 完成）、软件卸载（残留清单 → 勾选 → 移入废纸篓）、
+软件更新（Homebrew / App Store）、查看本机可调用的 Skill。
+
+安全口径：只绑 `127.0.0.1`；入口是**一次性链接**（`/bootstrap/<secret>` 换完 cookie 立即作废）；
+每个动作都要 cookie + 请求头双凭据并校验 Origin；同一时间只允许一个会话（flock）。
 
 ### Codex Skill
 

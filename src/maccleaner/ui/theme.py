@@ -33,15 +33,15 @@ STYLE = """
 
   /* 字阶 */
   --fs-title-xl:28px; --fs-title-l:22px; --fs-title-m:17px;
-  --fs-body:14px; --fs-meta:12px; --fs-label:11px;
+  --fs-body:14px; --fs-meta:12px; --fs-label:11px; --fs-hero:34px; --fs-summary:13px;
   --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",system-ui,sans-serif;
 }
 @media(prefers-color-scheme:light){
   :root{
     --bg:#F6F8F7; --surface:#FFFFFF; --surface-2:#F1F5F2;
     --line:rgba(16,24,20,.08); --line-strong:rgba(16,24,20,.16);
-    --text:#101815; --text-2:#3D4B45; --muted:#6B7C74;
-    --accent:#0E8A62; --accent-soft:rgba(14,138,98,.10);
+    --text:#101815; --text-2:#3D4B45; --muted:#5A6B63;
+    --accent:#0C7C58; --accent-soft:rgba(12,124,88,.10);
     --on-accent:#FFFFFF; --warn:#9A6500; --danger:#B42318;
     --e1:0 1px 0 rgba(16,24,20,.06);
     --e2:0 8px 24px rgba(16,24,20,.08);
@@ -88,7 +88,7 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:1
   margin-bottom:var(--sp-4)}
 .topbar .brand{display:flex;align-items:center;gap:10px;min-width:0}
 .mark{width:26px;height:26px;border-radius:8px;background:var(--accent-soft);color:var(--accent);
-  display:grid;place-items:center;font-weight:700;font-size:13px;flex:none}
+  display:grid;place-items:center;font-weight:700;font-size:var(--fs-summary);flex:none}
 .topbar h1{font-size:var(--fs-title-l);font-weight:600;letter-spacing:-.01em;margin:0;line-height:1.25}
 .topbar .subtitle{color:var(--muted);font-size:var(--fs-meta);margin:2px 0 0}
 .topbar .topmeta{color:var(--muted);font-size:var(--fs-meta);white-space:nowrap;padding-top:2px}
@@ -101,7 +101,7 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:1
 .state-head{font-size:var(--fs-title-m);font-weight:600;line-height:1.3;margin:0 0 6px}
 .state-msg{color:var(--text-2);margin:0}
 .state-detail{color:var(--muted);font-size:var(--fs-meta);margin:8px 0 0}
-.hero{font-size:34px;font-weight:700;letter-spacing:-.02em;margin:6px 0 0;color:var(--accent);
+.hero{font-size:var(--fs-hero);font-weight:700;letter-spacing:-.02em;margin:6px 0 0;color:var(--accent);
   font-variant-numeric:tabular-nums}
 
 /* ---- 按钮：三级（primary / 默认 secondary / ghost 由透明底表达） ---- */
@@ -168,7 +168,7 @@ label.row.opt input{margin:0;flex:0 0 auto;accent-color:var(--accent)}
 .muted{color:var(--muted);font-size:var(--fs-meta)}
 .group-title{margin:var(--sp-4) 0 var(--sp-1);font-size:var(--fs-label);font-weight:600;
   letter-spacing:.02em;color:var(--muted)}
-details summary{cursor:pointer;color:var(--muted);font-size:13px}
+details summary{cursor:pointer;color:var(--muted);font-size:var(--fs-summary)}
 
 /* ---- 加载态 ---- */
 /* 用 conic-gradient + mask 画旋转环：不引入图片、不改布局、任何尺寸都能复用。 */
