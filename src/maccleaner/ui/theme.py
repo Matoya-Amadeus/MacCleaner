@@ -49,13 +49,24 @@ STYLE = """
 }
 
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);
-  font:400 var(--fs-body)/1.5 var(--font);-webkit-font-smoothing:antialiased}
+/* 底色上叠两团极淡光晕：玻璃侧栏需要有"背后有东西"才看得出层次，
+   纯色背景下的 backdrop-filter 等于没有效果（2026-10-19 决定这么做）。 */
+body{margin:0;color:var(--text);font:400 var(--fs-body)/1.5 var(--font);-webkit-font-smoothing:antialiased;
+  background:
+    radial-gradient(1100px 560px at 64% -14%, var(--accent-soft), transparent 60%),
+    radial-gradient(760px 420px at 100% 6%, rgba(124,199,255,.06), transparent 58%),
+    var(--bg)}
 body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:100vh}
 
 /* ---- 侧栏：玻璃层，只放真能点的入口 ---- */
+/* 玻璃层：半透明 + 模糊 + 内侧一道高光（Liquid Glass 的基本三件套）。
+   `-webkit-` 前缀为 Safari/WKWebView 保留。 */
 .side{border-right:1px solid var(--line);padding:var(--sp-4) var(--sp-3);
-  display:flex;flex-direction:column;gap:2px;background:var(--surface)}
+  display:flex;flex-direction:column;gap:2px;
+  background:color-mix(in srgb, var(--surface) 76%, transparent);
+  -webkit-backdrop-filter:blur(22px) saturate(1.35);
+  backdrop-filter:blur(22px) saturate(1.35);
+  box-shadow:inset -1px 0 0 rgba(255,255,255,.03)}
 .side-group{margin:var(--sp-4) var(--sp-2) var(--sp-1);font-size:var(--fs-label);font-weight:600;
   letter-spacing:.02em;color:var(--muted)}
 .side-item{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-2);
@@ -63,7 +74,8 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:1
   background:transparent;color:var(--text-2);font:inherit;text-align:left;cursor:pointer;
   transition:background 120ms ease,color 120ms ease}
 .side-item:hover{background:var(--surface-2);color:var(--text)}
-.side-item.is-current{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.side-item.is-current{background:var(--accent-soft);color:var(--accent);font-weight:600;
+  box-shadow:inset 2px 0 0 var(--accent)}
 .side-item[disabled]{color:var(--muted);cursor:not-allowed;opacity:.6}
 .side-badge{font-size:var(--fs-label);border-radius:999px;padding:1px 7px;
   background:var(--surface-2);color:var(--muted)}
@@ -82,7 +94,9 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:1
 .topbar .topmeta{color:var(--muted);font-size:var(--fs-meta);white-space:nowrap;padding-top:2px}
 
 /* ---- 卡片与状态区 ---- */
-.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--e1)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
+  box-shadow:var(--e1);transition:box-shadow 180ms ease,border-color 180ms ease}
+.card:hover{box-shadow:var(--e2);border-color:var(--line-strong)}
 .state{padding:var(--sp-5)}
 .state-head{font-size:var(--fs-title-m);font-weight:600;line-height:1.3;margin:0 0 6px}
 .state-msg{color:var(--text-2);margin:0}

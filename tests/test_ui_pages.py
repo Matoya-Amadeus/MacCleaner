@@ -117,6 +117,18 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn(".button.ghost{", STYLE)
         self.assertIn(".button[disabled]{", STYLE)
 
+    def test_sidebar_is_a_glass_layer(self) -> None:
+        """侧栏用 backdrop-filter 做玻璃层（2026-10-19 P4）。
+
+        注意：玻璃需要有"背后有东西"，所以 body 上必须同时有光晕，
+        否则 blur 在纯色背景上等于没有效果——两件事要一起存在。
+        """
+        from maccleaner.ui.theme import STYLE
+
+        self.assertIn("backdrop-filter:blur(", STYLE)
+        self.assertIn("-webkit-backdrop-filter:blur(", STYLE, "WKWebView 需要前缀")
+        self.assertIn("radial-gradient", STYLE, "没有背景层，玻璃看不出层次")
+
 
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
