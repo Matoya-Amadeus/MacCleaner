@@ -39,7 +39,9 @@ REVEAL_PATH = re.compile(r'data-reveal-path="([^"]+)"')
 
 # 侧栏在任何页面都可见 ⇒ 任何等待都必须能接住它们，否则用户在子流程里点侧栏会"没反应"
 # （2026-10-18 真浏览器实测：点了更新页后再点卸载，队列里的动作没人取）。
-NAV_ACTIONS: tuple[str, ...] = ("home", "uninstall-list", "updates-open", "skills-open", "disk-open", "system-open")
+NAV_ACTIONS: tuple[str, ...] = (
+    "home", "uninstall-list", "updates-open", "skills-open", "disk-open", "system-open", "history-open"
+)
 
 
 class SessionBusy(RuntimeError):
@@ -62,6 +64,8 @@ class SessionDeps:
     # 只读的"看一眼"页面（磁盘/系统）。
     disk: Callable[[], dict[str, Any]] = lambda: {}
     system: Callable[[], dict[str, Any]] = lambda: {}
+    # 清理历史（读回执文件）。
+    history_report: Callable[[], dict[str, Any]] = lambda: {}
     history: Callable[[], dict[str, Any]] = lambda: {}
     apps: Callable[[], list[dict[str, Any]]] = lambda: []
     skills: Callable[[], list[dict[str, Any]]] = lambda: []
@@ -181,7 +185,7 @@ class InteractiveSession:
                 if pending is None:
                     action = self.bridge.wait_for_action(
                         ("start", "home", "cancel", "uninstall-list", "updates-open", "skills-open",
-                         "disk-open", "system-open"),
+                         "disk-open", "system-open", "history-open"),
                         timeout=timeout or self.IDLE_TIMEOUT_SECONDS,
                     )
                     if action is None:
@@ -195,6 +199,18 @@ class InteractiveSession:
                     continue
                 if kind == "cancel":
                     return self._finish("cancelled", pages.render_cancelled_html({}))
+
+                if kind == "history-open":
+                    readout = self._safe(self.deps.history_report, default={})
+                    self._serve("history", pages.render_history_html(readout))
+                    back = self._wait_or_nav(("cancel",), self.ACTION_TIMEOUT_SECONDS)
+                    if back is not None and "nav" in back:
+                        pending = back["nav"]
+                        continue
+                    if back is not None and back["action"] == "cancel":
+                        return self._finish("cancelled", pages.render_cancelled_html({}))
+                    self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
+                    continue
 
                 if kind in ("disk-open", "system-open"):
                     readout = self._safe(self.deps.disk if kind == "disk-open" else self.deps.system, default={})

@@ -290,6 +290,7 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
             // 只读页面：磁盘概览与系统状态（2026-10-19 新增，对齐 Mole 的两项能力）
             ("disk", "disk-open", "", "document.querySelectorAll('.meter').length"),
             ("system", "system-open", "", "document.querySelectorAll('.stat').length"),
+            ("history", "history-open", "", "document.querySelectorAll('.stat').length"),
             // 侧栏"Mac 清理"现在只是**回落地页**（不再触发扫描）；扫描必须点落地页的按钮。
             ("idle", "home", "", "document.querySelectorAll('.side-item').length"),
             // 扫描优化后（26.5s → 0.7s）这一步可以要求**真的到审阅页**，而不只是"有反应"。

@@ -283,7 +283,10 @@ class LandingPageTests(unittest.TestCase):
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")
-        self.assertEqual(nav.count('data-nav-action="'), 6, "六个真实入口（清理/卸载/更新/磁盘/系统/技能）")
+        self.assertEqual(
+            nav.count('data-nav-action="'), 7,
+            "七个真实入口（清理/卸载/更新/磁盘/系统/历史/技能）",
+        )
         self.assertNotIn("待实现", nav, "四项都已实现，不该再有待实现徽标")
         self.assertNotIn("Protection", nav, "不出现我们没有的分类")
         self.assertIn('class="side-item is-current"', nav, "当前项要有选中态")

@@ -113,6 +113,60 @@ def history_summary(*, state_root: Path | None = None) -> dict[str, Any]:
     }
 
 
+def history_report(
+    *, home: Path, state_root: Path | None = None, limit: int = 20
+) -> dict[str, Any]:
+    """最近的清理回执（只读）。
+
+    为什么读回执而不是另写 `history.json`：回执是**执行时**就落盘的证据，
+    再造一份计数状态就有两个真相源，迟早对不上（`history.json` 现在根本没人写）。
+
+    回执目录有两处：状态目录下的 `receipts/`，以及内核默认的 `~/.mac-storage-manager/receipts/`。
+    """
+    home = Path(home)
+    directories = [home / ".mac-storage-manager" / "receipts"]
+    if state_root is not None:
+        directories.insert(0, Path(state_root) / "receipts")
+
+    entries: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for directory in directories:
+        if not directory.is_dir():
+            continue
+        for path in directory.glob("cleanup-receipt-*.json"):
+            if path.name in seen:
+                continue
+            seen.add(path.name)
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(data, dict):
+                continue
+            items = [item for item in (data.get("plan_items") or []) if isinstance(item, dict)]
+            cleaned = [item for item in items if str(item.get("status")) == "cleaned"]
+            entries.append(
+                {
+                    "created_at": str(data.get("created_at") or ""),
+                    "mode": str(data.get("mode") or ""),
+                    "dry_run": bool(data.get("dry_run")),
+                    "items": len(cleaned),
+                    "bytes": int(data.get("actual_reclaimed_bytes") or 0),
+                    "estimated": int(data.get("estimated_reclaimed_bytes") or 0),
+                    "file": str(path),
+                }
+            )
+
+    entries.sort(key=lambda item: item["created_at"], reverse=True)
+    kept = entries[: max(1, limit)]
+    return {
+        "entries": kept,
+        "runs": len(entries),
+        "total_bytes": sum(int(item["bytes"]) for item in kept),
+        "total_items": sum(int(item["items"]) for item in kept),
+    }
+
+
 SCAN_CACHE_SECONDS = 300
 
 

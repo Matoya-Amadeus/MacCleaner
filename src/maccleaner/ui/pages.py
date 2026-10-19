@@ -814,7 +814,60 @@ def sort_bar(*, default: str = "bytes") -> str:
         f'<button type="button" class="sortbtn{" is-on" if default == "text" else ""}" '
         'data-sort="text" data-dir="asc">名称</button></div>'
     )
+def render_history_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
+    """清理历史：直接读回执文件（时间/模式/条目/字节），只读。"""
+    data = payload or {}
+    entries = [item for item in (data.get("entries") or []) if isinstance(item, dict)]
+    runs = int(data.get("runs", len(entries)) or 0)
+    total_bytes = int(data.get("total_bytes", 0) or 0)
+    total_items = int(data.get("total_items", 0) or 0)
 
+    rows = []
+    for item in entries:
+        created = str(item.get("created_at") or "").replace("T", " ")[:16]
+        mode = "清理" if item.get("mode") == "clean" else str(item.get("mode") or "")
+        if item.get("dry_run"):
+            mode += " · 预演"
+        moved = int(item.get("items", 0) or 0)
+        freed = int(item.get("bytes", 0) or 0)
+        estimated = int(item.get("estimated", 0) or 0)
+        # 走废纸篓的记录"实际释放"是 0（空间还在废纸篓里），这时显示可恢复量——
+        # 否则历史页每条都是 "—"，看着像什么都没清（2026-10-19 截图发现）。
+        if freed:
+            size_text = human_bytes(freed)
+        elif estimated:
+            size_text = "可恢复 " + human_bytes(estimated)
+        else:
+            size_text = "—"
+        rows.append(
+            '<div class="row"><div style="min-width:0">'
+            f"<strong>{html.escape(created or '(无时间)')}</strong>"
+            f'<div class="meta">{html.escape(mode)} · {moved} 项</div></div>'
+            f'<span class="meta value">{size_text}</span></div>'
+        )
+
+    stats = (
+        '<div class="stats">'
+        f'<div class="stat"><div class="k">清理次数</div><div class="v">{runs}</div></div>'
+        f'<div class="stat"><div class="k">最近释放</div><div class="v">{human_bytes(total_bytes)}</div></div>'
+        f'<div class="stat"><div class="k">条目</div><div class="v">{total_items}</div></div>'
+        "</div>"
+    )
+    body = "".join(rows) or empty_block("check", "还没有清理记录", "第一次清理完成后，这里会出现可核对的时间、条目与字节。")
+    return state_page(
+        {
+            "message": "每次清理都会留下回执文件；这里只读它们，不做任何修改。",
+            "detail": "走废纸篓的记录`实际释放`为 0，字节数在移入时记的是可恢复量。",
+        },
+        stage="history",
+        title="清理历史",
+        body="",
+        actions=stats + '<div class="rows">' + body + "</div>"
+        + (_actions(_button("刷新", "history-open")) if interactive else ""),
+        current="history",
+        subtitle="来自回执文件（~/.mac-storage-manager/receipts）",
+        meta=f"最近 {len(entries)} 条" if entries else "",
+    )
 
 def render_disk_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
     """磁盘概览（2026-10-19，对齐 Mole 的"磁盘一眼看清"）。
@@ -910,6 +963,7 @@ def render_system_html(payload: dict[str, Any] | None = None, *, interactive: bo
 
 __all__ = [
     "render_disk_html",
+    "render_history_html",
     "render_system_html",
     "human_bytes",
     "render_cancelled_html",

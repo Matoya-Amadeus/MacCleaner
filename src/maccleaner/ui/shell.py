@@ -55,6 +55,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         (
             NavItem("disk", "磁盘", "disk-open"),
             NavItem("system", "系统状态", "system-open"),
+            NavItem("history", "清理历史", "history-open"),
         ),
     ),
     NavGroup("技能", (NavItem("skills", "可调用的 Skill", "skills-open"),)),

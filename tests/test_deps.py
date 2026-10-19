@@ -367,3 +367,45 @@ class DiskAndSystemTests(unittest.TestCase):
         self.assertGreaterEqual(report["memory_used"], 0)
         self.assertLessEqual(report["memory_used"], report["memory_total"] or report["memory_used"] + 1)
 
+class HistoryReportTests(unittest.TestCase):
+    """清理历史直接读回执文件（2026-10-19），不另造状态源。"""
+
+    def _receipt(self, home: Path, name: str, when: str, cleaned: int, freed: int) -> None:
+        directory = home / ".mac-storage-manager" / "receipts"
+        directory.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "created_at": when,
+            "mode": "clean",
+            "dry_run": False,
+            "actual_reclaimed_bytes": freed,
+            "plan_items": [{"status": "cleaned"} for _ in range(cleaned)],
+        }
+        (directory / name).write_text(json.dumps(payload), encoding="utf-8")
+
+    def test_reads_receipts_newest_first(self) -> None:
+        from maccleaner.deps import history_report
+
+        with tempfile.TemporaryDirectory(prefix="history-") as tmp:
+            home = Path(tmp)
+            self._receipt(home, "cleanup-receipt-20261001-100000.json", "2026-10-01T10:00:00", 2, 4096)
+            self._receipt(home, "cleanup-receipt-20261002-100000.json", "2026-10-02T10:00:00", 3, 8192)
+            report = history_report(home=home)
+
+        self.assertEqual(report["runs"], 2)
+        self.assertEqual(report["entries"][0]["created_at"][:10], "2026-10-02", "新的在前")
+        self.assertEqual(report["entries"][0]["items"], 3)
+        self.assertEqual(report["total_bytes"], 4096 + 8192)
+        self.assertEqual(report["total_items"], 5)
+
+    def test_missing_or_broken_receipts_are_skipped(self) -> None:
+        from maccleaner.deps import history_report
+
+        with tempfile.TemporaryDirectory(prefix="history-bad-") as tmp:
+            home = Path(tmp)
+            directory = home / ".mac-storage-manager" / "receipts"
+            directory.mkdir(parents=True)
+            (directory / "cleanup-receipt-broken.json").write_text("{not json", encoding="utf-8")
+            report = history_report(home=home)
+        self.assertEqual(report["runs"], 0, "坏文件不能让整页失败")
+        self.assertEqual(report["entries"], [])
+
