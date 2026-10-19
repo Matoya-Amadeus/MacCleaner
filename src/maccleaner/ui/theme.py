@@ -147,6 +147,13 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:1
 .toast.is-on{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.is-error{border-color:var(--danger);color:var(--danger)}
 
+/* 批量条：固定在列表顶部，勾选数实时更新（原生表格那种"选了才出现操作"的替代）。 */
+.batchbar{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:6px 0 10px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+.batchbar .row{padding:2px 0}
+.batchbar-actions{display:flex;align-items:center;gap:10px;flex:none}
+.batchbar .button[disabled]{opacity:.5}
+
 /* 容量条：磁盘/内存共用。宽度由内联 style 给，这里只管外观。 */
 .meter{height:8px;border-radius:999px;background:var(--surface-muted);overflow:hidden}
 .meter > span{display:block;height:100%;border-radius:999px;transition:width 240ms ease}

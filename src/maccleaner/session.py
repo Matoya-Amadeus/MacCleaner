@@ -364,7 +364,10 @@ class InteractiveSession:
             apps = self._safe(self.deps.apps, default=[])
             self._serve("uninstalling", pages.render_uninstall_list_html({"apps": apps}))
             while True:
-                action = self._wait_or_nav(("uninstall-plan", "uninstall-list", "cancel"), self.ACTION_TIMEOUT_SECONDS)
+                action = self._wait_or_nav(
+                    ("uninstall-plan", "uninstall-batch", "uninstall-list", "cancel"),
+                    self.ACTION_TIMEOUT_SECONDS,
+                )
                 if action is not None and "nav" in action:
                     self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
                     return action["nav"]
@@ -373,6 +376,16 @@ class InteractiveSession:
                 if action is None or action["action"] in {"start", "uninstall-list"}:
                     self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
                     return None
+                if action["action"] == "uninstall-batch":
+                    outcome = self._run_uninstall_batch(action.get("payload") or {}, apps)
+                    if outcome == "reload":
+                        self._serve("uninstalling", pages.render_uninstall_list_html({"apps": apps}))
+                        continue
+                    if isinstance(outcome, dict):
+                        return outcome          # 终态（cancelled）
+                    self._serve("uninstalling", pages.render_uninstall_list_html({"apps": apps}))
+                    continue
+
                 payload = dict(action.get("payload") or {})
                 plan = self.deps.uninstall_plan(
                     app_path=str(payload.get("path", "")),
@@ -426,6 +439,70 @@ class InteractiveSession:
             if terminal is not None:
                 return terminal
             return self._run_uninstall()
+
+    def _run_uninstall_batch(self, payload: dict[str, Any], apps: list[dict[str, Any]]) -> Any:
+        """批量卸载：先给**一页确认**，确认后逐个应用执行，最后给汇总。
+
+        为什么不是"选中即执行"：用户选 5 个应用时，真实残留项可能有 20+ 个，
+        不给一次总览就执行，等于把 5 次确认压成 0 次（2026-10-19 设计）。
+        """
+        entries = [item for item in (payload.get("apps") or []) if isinstance(item, dict)]
+        plans: list[dict[str, Any]] = []
+        for entry in entries:
+            plan = self.deps.uninstall_plan(
+                app_path=str(entry.get("path", "")),
+                bundle_id=str(entry.get("bundle_id", "")),
+                app_name=str(entry.get("name", "")),
+            )
+            user_items = [item for item in (plan.get("items") or []) if not item.get("requires_admin")]
+            plans.append(
+                {
+                    "name": str(entry.get("name") or (plan.get("app") or {}).get("name") or ""),
+                    "bundle_id": str(entry.get("bundle_id") or (plan.get("app") or {}).get("bundle_id") or ""),
+                    "plan": plan,
+                    "count": len(user_items),
+                    "bytes": sum(int(item.get("allocated_bytes", 0) or 0) for item in user_items),
+                }
+            )
+        if not plans:
+            return "reload"
+
+        summary = {
+            "apps": [
+                {"name": item["name"], "bundle_id": item["bundle_id"], "count": item["count"], "bytes": item["bytes"]}
+                for item in plans
+            ],
+            "total_items": sum(item["count"] for item in plans),
+            "total_bytes": sum(item["bytes"] for item in plans),
+        }
+        self._serve("uninstalling", pages.render_uninstall_batch_confirm_html(summary))
+
+        decision = self._wait_or_nav(
+            ("uninstall-batch-apply", "uninstall-list", "cancel"), self.ACTION_TIMEOUT_SECONDS
+        )
+        if decision is not None and "nav" in decision:
+            self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
+            return {"stage": "cancelled", "active": False}
+        if decision is None or decision["action"] in {"cancel", "uninstall-list"}:
+            if decision is not None and decision["action"] == "cancel":
+                return self._finish("cancelled", pages.render_cancelled_html({}))
+            return "reload"
+
+        results = []
+        for item in plans:
+            applied = self.deps.uninstall_apply(plan=item["plan"], ids=None)
+            moved = int(applied.get("moved_count", 0) or 0)
+            results.append({"name": item["name"], "moved": moved, "bytes": item["bytes"] if moved else 0})
+        self._serve("uninstalling", pages.render_uninstall_batch_done_html({"apps": results}))
+
+        follow = self._wait_or_nav(("uninstall-list", "cancel"), self.ACTION_TIMEOUT_SECONDS)
+        if follow is not None and "nav" in follow:
+            self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
+            return {"stage": "cancelled", "active": False}
+        if follow is not None and follow["action"] == "cancel":
+            return self._finish("cancelled", pages.render_cancelled_html({}))
+        return "reload"
+
 
     def _remaining_for(self, plan: dict[str, Any]) -> dict[str, Any]:
         """卸载后重扫：**只有还剩系统级项**时才让界面显示管理员按钮。"""

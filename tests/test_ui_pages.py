@@ -193,6 +193,35 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn("disk-open", actions)
         self.assertIn("system-open", actions)
 
+    def test_uninstall_list_has_batch_selection(self) -> None:
+        from maccleaner.ui.pages import render_uninstall_list_html
+
+        page = render_uninstall_list_html({"apps": [
+            {"name": "A", "bundle_id": "com.a", "path": "/Applications/A.app"},
+        ]})
+        self.assertIn("data-app-path", page, "每行要有勾选框")
+        self.assertIn('data-bridge-action="uninstall-batch"', page)
+        self.assertIn("mc-selected-count", page, "要有\"已选 N 个\"")
+
+    def test_batch_confirm_and_done_pages(self) -> None:
+        from maccleaner.ui.pages import (
+            render_uninstall_batch_confirm_html,
+            render_uninstall_batch_done_html,
+        )
+
+        confirm = render_uninstall_batch_confirm_html({
+            "apps": [{"name": "A", "bundle_id": "com.a", "count": 3, "bytes": 2048}],
+            "total_items": 3, "total_bytes": 2048,
+        })
+        self.assertIn('data-stage="uninstall-batch-confirm"', confirm)
+        self.assertIn("1 个应用", confirm)
+        self.assertIn("3 项残留", confirm)
+        self.assertIn('data-bridge-action="uninstall-batch-apply"', confirm)
+
+        done = render_uninstall_batch_done_html({"apps": [{"name": "A", "moved": 3, "bytes": 2048}]})
+        self.assertIn('data-stage="uninstall-batch-done"', done)
+        self.assertIn("已移入废纸篓 3 项", done)
+
 
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:

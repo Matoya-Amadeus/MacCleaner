@@ -38,6 +38,8 @@ ACTIONS = frozenset(
         "uninstall-plan",     # 点某一行的"卸载" → 生成残留计划（2026-10-19 发现漏了，按钮会 400）
         "uninstall-back",
         "uninstall-apply",
+        "uninstall-batch",
+        "uninstall-batch-apply",
         "uninstall-system",
         "updates-open",
         "updates-apply",

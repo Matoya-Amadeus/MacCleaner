@@ -351,6 +351,49 @@ class UpdatesFlowTests(unittest.TestCase):
             driver.join()
 
 
+
+    def test_batch_uninstall_confirms_once_then_applies_each_app(self) -> None:
+        """批量卸载：一页确认 → 逐个应用执行（2026-10-19 补的原生批量操作缺口）。"""
+        applied: list[object] = []
+
+        def plan(**kwargs):
+            return {
+                "app": {"name": kwargs.get("app_name", ""), "bundle_id": kwargs.get("bundle_id", "")},
+                "items": [
+                    {"id": "i1", "path": "/tmp/x", "kind": "caches", "confidence": "exact",
+                     "allocated_bytes": 100},
+                ],
+                "system_items": [],
+            }
+
+        def apply(**kwargs):
+            applied.append(kwargs.get("ids"))
+            return {"status": "applied", "moved_count": 1, "moved": [], "skipped": []}
+
+        with tempfile.TemporaryDirectory(prefix="session-batch-", ignore_cleanup_errors=True) as tmp:
+            driver = _Driver(_deps(uninstall_plan=plan, uninstall_apply=apply), Path(tmp))
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+
+            self.assertEqual(driver.action("uninstall-list"), 202)
+            driver.wait_page('data-stage="uninstall-list"')
+            apps = [
+                {"path": "/Applications/A.app", "bundle_id": "com.a", "name": "A"},
+                {"path": "/Applications/B.app", "bundle_id": "com.b", "name": "B"},
+            ]
+            self.assertEqual(driver.action("uninstall-batch", {"apps": apps}), 202)
+            confirm = driver.wait_page('data-stage="uninstall-batch-confirm"')
+            self.assertIn("2 个应用", confirm)
+            self.assertIn("2 项残留", confirm, "确认页要给出总项数")
+
+            self.assertEqual(driver.action("uninstall-batch-apply"), 202)
+            done = driver.wait_page('data-stage="uninstall-batch-done"')
+            self.assertIn("已移入废纸篓", done)
+            self.assertEqual(applied, [None, None], "两个应用各执行一次，且都是\"全部用户域\"")
+
+            driver.action("cancel")
+            driver.join()
+
 class NavigationTests(unittest.TestCase):
     def test_uninstall_entry_lists_apps(self) -> None:
         with tempfile.TemporaryDirectory(prefix="session-unin-") as tmp:

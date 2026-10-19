@@ -444,26 +444,114 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
             if interactive
             else ""
         )
+        checkbox = (
+            '<input type="checkbox" data-app-path="'
+            + html.escape(str(app.get("path", "")))
+            + '" data-app-bundle="'
+            + html.escape(str(app.get("bundle_id", "")))
+            + '" data-app-name="'
+            + html.escape(str(app.get("name", "")))
+            + '">'
+            if interactive
+            else ""
+        )
         rows.append(
-            '<div class="row"><div style="min-width:0">'
+            '<label class="row opt">'
+            + checkbox
+            + '<div style="min-width:0;flex:1">'
             f'<strong>{html.escape(str(app.get("name", "")))}</strong>'
             f'<div class="meta">{html.escape(str(app.get("bundle_id", "")))}</div>'
             f'</div><div style="display:flex;align-items:center;gap:10px;flex:none">'
-            f"{size_text}{button}</div></div>"
+            f"{size_text}{button}</div></label>"
         )
-    actions = ""
+    # 批量条：勾一个或多个应用后可以"一次确认、一次执行"，
+    # 而不是点 5 次卸载、走 5 遍确认（2026-10-19 用户提出的原生批量操作缺口）。
+    batch = (
+        '<div class="batchbar"><label class="row opt" style="border-top:0">'
+        '<input type="checkbox" data-select-all-apps>'
+        f'<div><strong>全选</strong><div class="meta">共 {len(apps)} 个应用</div></div></label>'
+        '<div class="batchbar-actions"><span class="meta" id="mc-selected-count">已选 0 个</span>'
+        + _button("批量卸载所选", "uninstall-batch", primary=True)
+        + "</div></div>"
+        if (interactive and apps)
+        else ""
+    )
+    actions = batch
     return state_page(
         {
             "message": "点右侧【卸载】查看它留下的文件，确认后才移入废纸篓",
             "detail": "系统级残留需要一次管理员授权；体积在点开应用后计算。",
         },
         stage="uninstall-list",
-        title="软件卸载（彻底）",
+        title="软件卸载",
         body="选择一个应用",
-        actions="".join(rows),
+        actions=batch + "".join(rows),
         current="uninstall",
         subtitle="先看残留清单，确认后才移入废纸篓（可恢复）",
         meta=f"{len(apps)} 个应用" if apps else "",
+    )
+
+
+
+def render_uninstall_batch_confirm_html(batch: dict[str, Any], *, interactive: bool = True) -> str:
+    """批量卸载的**唯一一次确认**：按应用列残留数量与体积。
+
+    安全口径与单个卸载一致：只移用户域、一律进废纸篓；系统级残留只列出来、不在这里动。
+    """
+    apps = [item for item in (batch.get("apps") or []) if isinstance(item, dict)]
+    total_bytes = int(batch.get("total_bytes", 0) or 0)
+    total_items = int(batch.get("total_items", 0) or 0)
+    rows = "".join(
+        '<div class="row"><div style="min-width:0">'
+        f'<strong>{html.escape(str(item.get("name", "")))}</strong>'
+        f'<div class="meta">{html.escape(str(item.get("bundle_id", "")))}</div></div>'
+        f'<span class="meta value">{int(item.get("count", 0) or 0)} 项 · '
+        f'{human_bytes(int(item.get("bytes", 0) or 0))}</span></div>'
+        for item in apps
+    )
+    buttons = (
+        _actions(_button("返回列表", "uninstall-list"), _button("移入废纸篓", "uninstall-batch-apply", primary=True))
+        if interactive
+        else ""
+    )
+    return state_page(
+        {
+            "message": f"将卸载 {len(apps)} 个应用，共 {total_items} 项残留（{human_bytes(total_bytes)}）",
+            "detail": "全部移入废纸篓，可从废纸篓恢复；系统级残留不在这里处理，需要单独的管理员授权。",
+        },
+        stage="uninstall-batch-confirm",
+        title="确认批量卸载",
+        body="",
+        actions=rows + buttons,
+        current="uninstall",
+        subtitle="这一次确认，等于逐个个点【卸载】再确认一遍",
+        meta=f"{len(apps)} 个应用",
+    )
+
+
+def render_uninstall_batch_done_html(payload: dict[str, Any], *, interactive: bool = True) -> str:
+    apps = [item for item in (payload.get("apps") or []) if isinstance(item, dict)]
+    moved = sum(int(item.get("moved", 0) or 0) for item in apps)
+    bytes_total = sum(int(item.get("bytes", 0) or 0) for item in apps)
+    rows = "".join(
+        '<div class="row"><div style="min-width:0">'
+        f'<strong>{html.escape(str(item.get("name", "")))}</strong>'
+        f'<div class="meta">{int(item.get("moved", 0) or 0)} 项已移入废纸篓</div></div>'
+        f'<span class="meta value">{human_bytes(int(item.get("bytes", 0) or 0))}</span></div>'
+        for item in apps
+    )
+    buttons = _actions(_button("返回列表", "uninstall-list", primary=True)) if interactive else ""
+    return state_page(
+        {
+            "message": f"已移入废纸篓 {moved} 项，共 {human_bytes(bytes_total)}",
+            "detail": "清空废纸篓后才会真正释放空间；后悔了可以从废纸篓拖回来。",
+        },
+        stage="uninstall-batch-done",
+        title="批量卸载完成",
+        body="",
+        hero=human_bytes(bytes_total),
+        actions=rows + buttons,
+        current="uninstall",
     )
 
 

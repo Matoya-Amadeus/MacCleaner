@@ -66,6 +66,29 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
 _RUNTIME_JS = """
 <script>
 (function(){
+  // ---- 复选框多选（2026-10-19）：Web 视图里补回 macOS 表格的手感 ----
+  // Shift+点击 = 连选；Cmd/Ctrl+点击 = 加选（复选框本身行为）；批量条实时更新"已选 N 个"。
+  const CHECKBOXES = '[data-target-id],[data-item-id],[data-update-id],[data-app-path]';
+  let lastBox = null;
+
+  function refreshBatch(){
+    const boxes = Array.from(document.querySelectorAll('[data-app-path]'));
+    if (!boxes.length) return;
+    const picked = boxes.filter(box => box.checked).length;
+    const label = document.getElementById('mc-selected-count');
+    if (label) label.textContent = '已选 ' + picked + ' 个';
+    const button = document.querySelector('[data-bridge-action="uninstall-batch"]');
+    if (button) button.disabled = picked === 0;
+  }
+
+  function selectRange(from, to){
+    const boxes = Array.from(document.querySelectorAll(CHECKBOXES));
+    const a = boxes.indexOf(from), b = boxes.indexOf(to);
+    if (a < 0 || b < 0) return;
+    const [start, end] = a <= b ? [a, b] : [b, a];
+    for (let i = start; i <= end; i++) boxes[i].checked = to.checked;
+  }
+
   // 页面内 toast 取代 alert()：原生弹窗会打断操作，而且不跟随深色主题。
   function toast(message){
     let el = document.getElementById('mc-toast');
@@ -110,6 +133,22 @@ _RUNTIME_JS = """
       .filter(node => node.checked)
       .map(node => node.dataset.itemId || node.dataset.updateId || node.dataset.targetId);
   document.addEventListener('click', async (event) => {
+    // 复选框：处理连选与批量计数，不产生动作。
+    const box = event.target.closest('input[type="checkbox"]');
+    if (box && box.matches(CHECKBOXES)) {
+      if (event.shiftKey && lastBox && lastBox !== box && box.matches('[data-app-path]')) {
+        selectRange(lastBox, box);
+      }
+      lastBox = box;
+      refreshBatch();
+      return;
+    }
+    const selectApps = event.target.closest('[data-select-all-apps]');
+    if (selectApps) {
+      document.querySelectorAll('[data-app-path]').forEach(box => { box.checked = selectApps.checked; });
+      refreshBatch();
+      return;
+    }
     // 全选框：只是前端联动，不产生动作（审阅页/更新页都可能用到）。
     const selectAll = event.target.closest('[data-select-all]');
     if (selectAll) {
@@ -132,11 +171,19 @@ _RUNTIME_JS = """
     }
     if (action === 'uninstall-apply') { payload.selected_ids = ids('[data-item-id]'); }
     if (action === 'updates-apply') { payload.ids = ids('[data-update-id]'); }
+    // 批量卸载：把勾选的应用交出去（路径只用于定位，执行时内核自己再建计划）
+    if (action === 'uninstall-batch') {
+      payload.apps = Array.from(document.querySelectorAll('[data-app-path]'))
+        .filter(box => box.checked)
+        .map(box => ({ path: box.dataset.appPath, bundle_id: box.dataset.appBundle, name: box.dataset.appName }));
+      if (!payload.apps.length) { toast('先勾选要卸载的应用'); return; }
+    }
     button.disabled = true;
     button.classList.add('is-busy');   // 立刻有反馈：转圈，而不是等下一次刷新
     try { await window.maccleanerAction(action, payload); }
     catch (error) { button.disabled = false; toast(error.message); }
   });
+  refreshBatch();
   setInterval(() => fetch('/ready', {credentials:'same-origin',cache:'no-store'}).catch(()=>{}), 15000);
   addEventListener('pagehide', () => fetch('/closed', {credentials:'same-origin',keepalive:true}).catch(()=>{}));
 })();
