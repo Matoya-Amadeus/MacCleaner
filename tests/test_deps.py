@@ -321,3 +321,23 @@ def _fake_report() -> object:
             }
 
     return _Report()
+
+
+class FlutterDiscoveryScopeTests(unittest.TestCase):
+    """Flutter 工程发现的范围（2026-10-19 提速）：默认只扫常见工程目录。"""
+
+    def test_default_roots_are_candidate_dirs_not_the_whole_home(self) -> None:
+        from maccleaner.core import StorageContext, StorageManager
+
+        manager = StorageManager(StorageContext(home=Path.home(), root=Path.home()))
+        roots = manager._flutter_roots()
+        self.assertTrue(all(path != Path.home() for path in roots), "不该整个家目录地扫")
+        for path in roots:
+            self.assertTrue(str(path).startswith(str(Path.home())), "候选目录应在主目录下")
+
+    def test_configured_root_wins(self) -> None:
+        from maccleaner.core import StorageContext, StorageManager
+
+        with tempfile.TemporaryDirectory(prefix="flutter-root-") as tmp:
+            manager = StorageManager(StorageContext(home=Path(tmp), root=Path(tmp), flutter_search_root=Path(tmp)))
+            self.assertEqual(manager._flutter_roots(), [Path(tmp)])

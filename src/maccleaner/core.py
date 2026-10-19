@@ -1423,18 +1423,69 @@ class StorageManager:
             ),
         ]
 
+
+    def _walk_pubspecs(self, root: Path, pruned_names: set[str]) -> list[Path]:
+        """找出 `pubspec.yaml`，**剪掉**依赖目录与 `~/Library`。
+
+        为什么要剪：全盘遍历一个真实主目录要十几秒，其中绝大部分在 `node_modules`、`.git`、
+        `~/Library/Containers` 里——那些地方不可能有值得清理的 Flutter 工程。
+        顺序需保持稳定（原来靠 `sorted`），所以这里收集后统一排序。
+        """
+        found: list[Path] = []
+        for current, dirs, files in os.walk(root, onerror=lambda _exc: None):
+            here = Path(current)
+            depth = len(here.relative_to(root).parts)
+            if depth >= self.FLUTTER_MAX_DEPTH:
+                dirs[:] = []                # 太深了：不再往下走（工程根不会埋在这么深）
+            if here == root and "Library" in dirs:
+                dirs.remove("Library")      # 家目录下的 Library 整体跳过
+            dirs[:] = sorted(d for d in dirs if d not in pruned_names and not d.startswith("."))
+            if "pubspec.yaml" in files:
+                found.append(here / "pubspec.yaml")
+        return sorted(found)
+
+    # 常见工程目录：只在这些地方找 Flutter 工程。
+    # 理由（2026-10-19 实测）：为找 `pubspec.yaml` 遍历整个家目录要走 **9 万多个目录、10.7 秒**，
+    # 而 Flutter 工程几乎不会散落在任意角落。需要覆盖别处时设 `flutter_search_root` 即可。
+    FLUTTER_SEARCH_CANDIDATES = (
+        "~/Workspace",
+        "~/Projects",
+        "~/Developer",
+        "~/code",
+        "~/src",
+        "~/Documents",
+        "~/Desktop",
+    )
+    FLUTTER_MAX_DEPTH = 6
+
+    def _flutter_roots(self) -> list[Path]:
+        configured = self.context.flutter_search_root
+        if configured:
+            return [configured] if Path(configured).exists() else []
+        roots = []
+        for raw in self.FLUTTER_SEARCH_CANDIDATES:
+            candidate = Path(os.path.expanduser(raw))
+            if candidate.is_dir():
+                roots.append(candidate)
+        return roots
+
     def _discover_flutter_targets(self) -> list[CleanupTarget]:
-        root = self.context.flutter_search_root or self.context.root
-        if not root.exists():
+        roots = self._flutter_roots()
+        if not roots:
             return []
 
         make = self._target_factory()
         targets: list[CleanupTarget] = []
         seen: set[str] = set()
-        for pubspec in sorted(root.rglob("pubspec.yaml")):
-            parts = set(pubspec.parts)
-            if ".git" in parts or "node_modules" in parts:
-                continue
+        # 2026-10-19：原来用 `root.rglob("pubspec.yaml")` 遍历**整个主目录**，`.git`/`node_modules`
+        # 还是走完之后才过滤（已经白走了）。实测这是全盘扫描的大头（26s 里绝大部分），
+        # 而且会在 `~/Library/Containers/...` 里被信号打断抛 `InterruptedError` 直接崩掉。
+        # 改成带剪枝的遍历：不进入依赖目录、不进 `~/Library`，并忽略取不到的目录。
+        pruned_names = {".git", "node_modules", "Pods", ".dart_tool", "build", ".Trash"}
+        pubspecs: list[Path] = []
+        for root in roots:
+            pubspecs.extend(self._walk_pubspecs(root, pruned_names))
+        for pubspec in sorted(pubspecs):
             project_root = pubspec.parent
             target_id = f"flutter-cleanup:{project_root.name}"
             if target_id in seen:

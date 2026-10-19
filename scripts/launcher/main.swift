@@ -235,9 +235,8 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
             ("uninstall-list", "uninstall-list", "",
              "document.querySelectorAll('.row').length"),
             ("skills", "skills-open", "", "document.querySelectorAll('.row').length"),
-            // 第 5 步只验"点击后有反应"：真实主目录扫描要几十秒，等它到 review 会把自测拖成分钟级。
-            // 完整的 扫描→审阅→完成 链路由 python 层会话用例与临时 home 的浏览器验收覆盖。
-            ("scanning", "start", "", "document.querySelectorAll('.row').length"),
+            // 扫描优化后（26.5s → 0.7s）这一步可以要求**真的到审阅页**，而不只是"有反应"。
+            ("review", "start", "", "document.querySelectorAll('.row').length"),
         ]
         var index = 0
 
