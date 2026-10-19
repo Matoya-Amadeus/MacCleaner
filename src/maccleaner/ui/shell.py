@@ -201,7 +201,7 @@ _RUNTIME_JS = """
         selectRange(lastBox, box);
       }
       lastBox = box;
-      refreshSelection();
+          refreshSelection();
       return;
     }
     const selectApps = event.target.closest('[data-select-all-apps]');
@@ -362,6 +362,63 @@ _RUNTIME_JS = """
 
   document.addEventListener('click', closeMenu);
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenu(); });
+
+
+  // ---- 滚动位置记忆（2026-10-19）：从列表点进详情再返回，回到原位而不是顶部 ----
+  // 按 stage 分键：列表页、详情页各自记各自的，不会互相覆盖。
+  (function () {
+    const scroller = document.querySelector('.app');
+    if (!scroller) return;
+    const key = 'mc-scroll-' + (document.documentElement.dataset.stage || 'x');
+    const saved = Number(sessionStorage.getItem(key) || 0);
+    if (saved > 0) requestAnimationFrame(() => { scroller.scrollTop = saved; });
+    let pending = false;
+    scroller.addEventListener('scroll', () => {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(() => {
+        sessionStorage.setItem(key, String(scroller.scrollTop));
+        pending = false;
+        syncAlpha();
+      });
+    }, { passive: true });
+  })();
+
+  // A–Z 索引：点字母跳段；滚动时高亮当前段。
+  function syncAlpha() {
+    const nav = document.querySelector('.alpha');
+    if (!nav) return;
+    const groups = Array.from(document.querySelectorAll('[data-group]'));
+    if (!groups.length) return;
+    // 视口顶端往下 80px 视作"当前段"的分界（工具栏 + 组头吸顶的高度）。
+    const line = 80;
+    let active = groups[0];
+    groups.forEach((group) => {
+      if (group.getBoundingClientRect().top <= line) active = group;
+    });
+    nav.querySelectorAll('[data-jump]').forEach((btn) => {
+      btn.classList.toggle('is-on', btn.dataset.jump === active.dataset.letter);
+    });
+  }
+
+  document.addEventListener('click', (event) => {
+    const jump = event.target.closest('[data-jump]');
+    if (!jump) return;
+    const target = document.querySelector('[data-group][data-letter="' + jump.dataset.jump + '"]');
+    if (!target) return;
+    const scroller = document.querySelector('.app');
+    if (scroller) {
+      const top = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 56;
+      scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    }
+  });
+
+  // 离开进度页（stage 不再是 updating）时清掉计时起点，下次进进度页重新计。
+  if (document.documentElement.dataset.stage !== 'updating') {
+    sessionStorage.removeItem('mc-progress-start');
+  }
+  refreshSelection();
+  syncAlpha();
 
   setInterval(() => fetch('/ready', {credentials:'same-origin',cache:'no-store'}).catch(()=>{}), 15000);
   addEventListener('pagehide', () => fetch('/closed', {credentials:'same-origin',keepalive:true}).catch(()=>{}));

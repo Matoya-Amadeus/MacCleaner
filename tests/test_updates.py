@@ -9,7 +9,9 @@
 """
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
 from maccleaner.updates import (
     SCOPE_NOTE,
@@ -331,3 +333,44 @@ class SourceSelectionTests(unittest.TestCase):
         self.assertIn("pip3", tools, "pip 是别名，要能选中 pip3")
         self.assertIn("gem", tools)
         self.assertNotIn("npm", tools)
+
+class UpdatesCacheTests(unittest.TestCase):
+    """更新检查缓存（2026-10-19）：命中要真省时间，强制要真重查。"""
+
+    def _report(self):
+        return {"items": [{"name": "aom", "manager": "brew", "kind": "formula"}], "count": 1, "notes": []}
+
+    def test_second_call_hits_cache_and_reports_time(self) -> None:
+        from unittest.mock import patch
+
+        from maccleaner.updates import updates_report
+
+        with tempfile.TemporaryDirectory(prefix="upd-cache-") as tmp:
+            with patch("maccleaner.updates.discover_updates", return_value=self._report()) as spy:
+                first = updates_report(state_root=Path(tmp))
+                second = updates_report(state_root=Path(tmp))
+        self.assertEqual(spy.call_count, 1, "第二次应命中缓存")
+        self.assertFalse(first["cached"])
+        self.assertTrue(second["cached"])
+        self.assertGreater(second["checked_at"], 0, "要带回检查时间，页面才能标注")
+
+    def test_force_bypasses_cache(self) -> None:
+        from unittest.mock import patch
+
+        from maccleaner.updates import updates_report
+
+        with tempfile.TemporaryDirectory(prefix="upd-force-") as tmp:
+            with patch("maccleaner.updates.discover_updates", return_value=self._report()) as spy:
+                updates_report(state_root=Path(tmp))
+                forced = updates_report(state_root=Path(tmp), force=True)
+        self.assertEqual(spy.call_count, 2, "【重新检查】必须绕过缓存")
+        self.assertFalse(forced["cached"])
+
+    def test_tool_env_adds_tool_dirs_and_disables_brew_autoupdate(self) -> None:
+        """npm 是 `#!/usr/bin/env node`：PATH 里没有 node 所在目录就跑不起来（实测 exit 127）。"""
+        from maccleaner.updates import _tool_env
+
+        env = _tool_env()
+        self.assertEqual(env.get("HOMEBREW_NO_AUTO_UPDATE"), "1")
+        self.assertIn(str(Path.home() / ".local" / "bin"), env["PATH"])
+

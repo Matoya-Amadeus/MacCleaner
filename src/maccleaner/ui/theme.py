@@ -56,7 +56,11 @@ body{margin:0;color:var(--text);font:400 var(--fs-body)/1.5 var(--font);-webkit-
     radial-gradient(1100px 560px at 64% -14%, var(--accent-soft), transparent 60%),
     radial-gradient(760px 420px at 100% 6%, rgba(124,199,255,.06), transparent 58%),
     var(--bg)}
-body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:100vh}
+/* 侧栏与内容**各自滚动**：滚内容时侧栏纹丝不动（2026-10-19 用户反馈"左边跟着动"）。
+   两块都限高 100vh，overscroll-behavior 防止滚动"传染"到另一块。 */
+body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);height:100vh;overflow:hidden}
+.side{height:100vh;overflow-y:auto;overscroll-behavior:contain}
+.app{height:100vh;overflow-y:auto;overscroll-behavior:contain}
 
 /* ---- 侧栏：玻璃层，只放真能点的入口 ---- */
 /* 玻璃层：半透明 + 模糊 + 内侧一道高光（Liquid Glass 的基本三件套）。
@@ -181,6 +185,18 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:1
 /* 可点行：hover 给出"这行能点"的反馈（接近性 + 可供性）。 */
 .row.clickable{cursor:pointer}
 .row.clickable:hover{background:var(--surface-2);border-radius:var(--r-row)}
+
+/* A–Z 索引条：贴右边缘，只在长列表出现；当前段高亮。 */
+.alpha{position:sticky;top:0;align-self:flex-start;display:flex;flex-direction:column;
+  gap:1px;padding:6px 4px;margin-left:8px;flex:none}
+.alpha button{appearance:none;border:0;background:transparent;color:var(--muted);
+  font:inherit;font-size:var(--fs-label);line-height:1;padding:3px 5px;border-radius:5px;
+  cursor:pointer}
+.alpha button:hover{background:var(--surface-2);color:var(--text)}
+.alpha button.is-on{background:var(--accent-soft);color:var(--accent);font-weight:700}
+/* 列表 + 索引条并排 */
+.list-with-index{display:flex;align-items:flex-start;gap:4px}
+.list-with-index .groups{flex:1;min-width:0}
 
 /* 共同区域：每组一块，组头比行更"平"（图底关系：行是前景）。 */
 .group{margin:0 0 var(--sp-3)}

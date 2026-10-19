@@ -19,6 +19,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -75,12 +76,51 @@ def _exec(execute: Any, argv: Sequence[str], *, timeout: float | None = None) ->
         return method(argv)
 
 
-def _run(argv: Sequence[str], *, runner: Any | None = None, timeout: float = 120.0) -> tuple[int, str, str]:
-    execute = runner or subprocess.run
-    try:
-        completed = _exec(execute, list(argv), timeout=timeout)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return 1, "", f"{type(exc).__name__}: {exc}"
+def _tool_env(extra: dict[str, str] | None = None) -> dict[str, str]:
+    """子进程环境：补齐工具所在目录 + 关掉 brew 的自动更新。
+
+    两个真机 bug 的来源（2026-10-19）：
+    ① App 从 Finder 启动时 PATH 只有 `/usr/bin:/bin:...`，而 `npm` 是 `#!/usr/bin/env node`
+       的脚本 —— 找到了 npm 也跑不起来，报 `env: node: No such file or directory`。
+       所以把每个已解析工具的**父目录**加进 PATH。
+    ② `brew outdated` 默认会先自动更新仓库，实测 4.05s → 关掉后 1.60s；
+       检查更新不该顺手改 Homebrew 的元数据。
+    """
+    env = dict(os.environ)
+    parts = [env.get("PATH", "")]
+    for tool in ("brew", "mas", "npm", "pip3", "gem", "rustup"):
+        binary = _resolve(tool)
+        if binary:
+            parts.append(str(Path(binary).parent))
+    parts.extend(["/opt/homebrew/bin", "/usr/local/bin", str(Path.home() / ".local" / "bin")])
+    env["PATH"] = ":".join(dict.fromkeys(part for part in parts if part))
+    env.setdefault("HOMEBREW_NO_AUTO_UPDATE", "1")
+    env.setdefault("HOMEBREW_NO_INSTALL_CLEANUP", "1")
+    env.setdefault("HOMEBREW_NO_ENV_HINTS", "1")
+    if extra:
+        env.update({str(key): str(value) for key, value in extra.items()})
+    return env
+
+
+def _run(
+    argv: Sequence[str],
+    *,
+    runner: Any | None = None,
+    timeout: float = 120.0,
+    extra_env: dict[str, str] | None = None,
+) -> tuple[int, str, str]:
+    if runner is None:
+        try:
+            completed = subprocess.run(
+                list(argv), capture_output=True, text=True, timeout=timeout, env=_tool_env(extra_env)
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return 1, "", f"{type(exc).__name__}: {exc}"
+    else:
+        try:
+            completed = _exec(runner, list(argv), timeout=timeout)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return 1, "", f"{type(exc).__name__}: {exc}"
     return (
         int(getattr(completed, "returncode", 1) or 0),
         str(getattr(completed, "stdout", "") or ""),
@@ -260,9 +300,9 @@ SOURCES: tuple[dict[str, Any], ...] = (
     {"tool": "brew", "argv": ["outdated", "--json=v2"], "parser": "parse_brew_outdated",
      "label": "Homebrew", "timeout": 60.0, "ok_codes": (0,), "default": True},
     {"tool": "mas", "argv": ["outdated"], "parser": "parse_mas_outdated",
-     "label": "App Store（mas）", "timeout": 25.0, "ok_codes": (0,), "default": True},
+     "label": "App Store（mas）", "timeout": 15.0, "ok_codes": (0,), "default": True},
     {"tool": "npm", "argv": ["outdated", "-g", "--json"], "parser": "parse_npm_outdated",
-     "label": "npm 全局包", "timeout": 25.0, "ok_codes": (0, 1), "default": True},
+     "label": "npm 全局包", "timeout": 20.0, "ok_codes": (0, 1), "default": True},
     {"tool": "rustup", "argv": ["check"], "parser": "parse_rustup_check",
      "label": "Rust 工具链", "timeout": 20.0, "ok_codes": (0,), "default": True},
     # pip / gem 要联网到 PyPI / rubygems，实测各要 20s+（国内网络常常超时）；
@@ -273,6 +313,48 @@ SOURCES: tuple[dict[str, Any], ...] = (
     {"tool": "gem", "argv": ["outdated"], "parser": "parse_gem_outdated",
      "label": "Ruby gem", "timeout": 25.0, "ok_codes": (0,), "default": False},
 )
+
+
+UPDATES_CACHE_SECONDS = 120
+
+
+def _updates_cache_path(state_root: Path) -> Path:
+    return Path(state_root) / "updates-cache.json"
+
+
+def updates_report(
+    *, state_root: Path | None = None, force: bool = False, ttl: int = UPDATES_CACHE_SECONDS
+) -> dict[str, Any]:
+    """带缓存的更新检查。
+
+    为什么要缓存：一次检查要跑 brew/mas/npm 等外部命令（实测 1.6–6s），
+    用户来回切页签时不该每次都重跑；但**必须诚实**——返回 `checked_at`，
+    页面写明"数据来自 HH:MM"，【重新检查】强制绕过缓存。
+    """
+    cache_file = _updates_cache_path(state_root) if state_root is not None else None
+    if cache_file is not None and not force:
+        try:
+            entry = json.loads(cache_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            entry = None
+        if isinstance(entry, dict):
+            age = time.time() - float(entry.get("checked_at") or 0)
+            if 0 <= age <= ttl:
+                payload = entry.get("report") or {}
+                if isinstance(payload, dict):
+                    return {**payload, "checked_at": float(entry.get("checked_at") or 0), "cached": True}
+
+    report = discover_updates()
+    checked_at = time.time()
+    if cache_file is not None:
+        try:
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            tmp = cache_file.with_suffix(".tmp")
+            tmp.write_text(json.dumps({"checked_at": checked_at, "report": report}, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, cache_file)
+        except OSError:
+            pass
+    return {**report, "checked_at": checked_at, "cached": False}
 
 
 def _enabled_sources() -> list[dict[str, Any]]:
@@ -314,6 +396,10 @@ def discover_updates(*, runner: Any | None = None) -> dict[str, Any]:
             parser = globals().get(str(source["parser"]))
             return (parser(out) if callable(parser) else []), ""
         detail = (err or out).strip()[:160]
+        if tool == "mas" and ("NSURLError" in detail or code == 6):
+            # mas 走 App Store 的私有接口：未登录 / 网络受限时会 exit 6，
+            # 原始报错是一串 NSURLErrorDomain，用户看不懂，这里补人话。
+            return [], f"App Store（mas）查询失败：可能未登录 App Store 或网络受限（exit {code}）"
         if code == 1 and "Timeout" in detail:
             return [], f"{source['label']} 超时（{int(source['timeout'])}s，多半是网络）：{detail[:80]}"
         return [], f"{source['label']} 查询失败（exit {code}）：{detail}"
@@ -433,17 +519,10 @@ def apply_updates(plan: dict[str, Any], *, runner: Any | None = None, dry_run: b
     if dry_run:
         return {"status": "dry-run", "groups": groups, "commands": commands}
 
-    execute = runner or subprocess.run
     results: list[dict[str, Any]] = []
     for group in groups:
         argv = [str(part) for part in group["argv"]]
-        try:
-            completed = _exec(execute, argv, timeout=1800)
-            code = int(getattr(completed, "returncode", 1) or 0)
-            out = str(getattr(completed, "stdout", "") or "")
-            err = str(getattr(completed, "stderr", "") or "")
-        except (OSError, subprocess.SubprocessError) as exc:
-            code, out, err = 1, "", f"{type(exc).__name__}: {exc}"
+        code, out, err = _run(argv, runner=runner, timeout=1800)
         results.append(
             {
                 "manager": group.get("manager"),

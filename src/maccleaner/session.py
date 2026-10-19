@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import html
 import json
 import os
 import re
@@ -75,6 +76,8 @@ class SessionDeps:
     uninstall_apply: Callable[..., dict[str, Any]] = lambda **_kwargs: {"status": "refused"}
     updates_check: Callable[[], dict[str, Any]] = lambda: {"items": [], "count": 0, "notes": []}
     updates_apply: Callable[..., dict[str, Any]] = lambda **_kwargs: {"status": "refused", "groups": []}
+    # 强制重查（绕过 120s 缓存）；不传就退回 updates_check。
+    updates_refresh: Callable[[], dict[str, Any]] | None = None
     # 扫描可能很慢（实测全盘 24.7s），所以有缓存；`rescan` 必须能**绕过缓存**强制重扫。
     rescan: Callable[[], dict[str, Any]] | None = None
 
@@ -99,6 +102,18 @@ class SessionState:
             "error": self.error,
             "updated_at": self.updated_at,
         }
+
+
+def _log_reveal(message: str) -> None:
+    """把 reveal 结果写进日志 —— 否则"点了没反应"永远查不到原因。"""
+    try:
+        log_dir = Path.home() / "Library" / "Logs" / "MacCleaner"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+        with (log_dir / "reveal.log").open("a", encoding="utf-8") as handle:
+            handle.write(f"[{stamp}] {message}\n")
+    except OSError:
+        pass
 
 
 class InteractiveSession:
@@ -573,7 +588,9 @@ class InteractiveSession:
                     self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
                     return None
                 if action["action"] == "updates-refresh":
-                    found = self.deps.updates_check()
+                    # 【重新检查】必须绕过缓存（否则点了没反应，用户以为坏了）。
+                    refresh = getattr(self.deps, "updates_refresh", None) or self.deps.updates_check
+                    found = refresh()
                     notice = ""
                     continue
                 ids = [str(value) for value in (action.get("payload") or {}).get("ids") or []]
@@ -663,7 +680,11 @@ class InteractiveSession:
 
     def _serve(self, stage: str, page: str) -> None:
         # 记录本页出现过的路径：`reveal` 只允许打开这些，否则就成了任意路径后门。
-        self._visible_paths = {match.group(1) for match in REVEAL_PATH.finditer(page)}
+        # 必须 `html.unescape`：路径里带 `&`（如 "Foo & Bar.app"）时属性里是 `&amp;`，
+        # 浏览器 dataset 给的是解码后的值 —— 不反转义就永远对不上，右键会"点了没反应"。
+        self._visible_paths = {
+            html.unescape(match.group(1)) for match in REVEAL_PATH.finditer(page)
+        }
         self.state.stage = stage
         self.state.updated_at = time.time()
         self.bridge.set_page(page)
@@ -679,8 +700,10 @@ class InteractiveSession:
             return False
         try:
             opener(str(Path(os.path.expanduser(path))))
-        except Exception:  # noqa: BLE001 - 打不开不该把流程变成错误
+        except Exception as exc:  # noqa: BLE001 - 打不开不该把流程变成错误
+            _log_reveal(f"failed path={path!r} error={type(exc).__name__}: {exc}")
             return False
+        _log_reveal(f"ok path={path!r} exists={Path(os.path.expanduser(path)).exists()}")
         return True
 
     def _finish(self, stage: str, page: str) -> dict[str, Any]:

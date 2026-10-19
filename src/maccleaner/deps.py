@@ -270,8 +270,14 @@ def scan_report(
 
 
 def _reveal(path: str) -> None:
-    """在 Finder 中选中该路径（`open -R`）。"""
-    subprocess.run(["/usr/bin/open", "-R", path], check=False)
+    """在 Finder 中选中该路径，并把 Finder 带到前台。
+
+    只做 `open -R` 时，实测在某些上下文里 Finder 只在后台打开（前台仍是别的 app），
+    用户看到的就是"点了没反应"（2026-10-19 反馈）。补一次 `open -a Finder` 激活；
+    两条都是 `open`，不需要辅助功能/自动化授权（AppleScript 才需要）。
+    """
+    subprocess.run(["/usr/bin/open", "-R", path], check=False, timeout=10)
+    subprocess.run(["/usr/bin/open", "-a", "Finder"], check=False, timeout=10)
 
 
 def _open_trash(home: Path) -> None:
@@ -588,6 +594,9 @@ def build_deps(
         selected = None if ids is None else [str(item) for item in ids]
         return apply_plan(plan, home=home_path, selected_ids=selected, dry_run=dry_run)
 
+    def updates_refresh() -> dict[str, Any]:
+        return updates_report(state_root=state_path, force=True)
+
     def updates_check() -> dict[str, Any]:
         return discover_updates()
 
@@ -628,6 +637,7 @@ def build_deps(
         uninstall_plan=uninstall_plan,
         uninstall_apply=uninstall_apply,
         updates_check=updates_check,
+        updates_refresh=updates_refresh,
         updates_apply=updates_apply,
     )
 

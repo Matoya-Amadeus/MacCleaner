@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import html
+import time
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -239,7 +240,15 @@ def render_progress_html(payload: dict[str, Any] | None = None, *, stage: str = 
         # 进度页**自己轮询刷新**：慢操作（例如 brew outdated 要几秒）期间服务端不会发新页，
         # 不自刷的话用户就一直停在"正在…"（2026-10-18 真浏览器实测过的坑）。
         actions=loading + (
-            "<script>setTimeout(function(){location.reload()}, 1500)</script>"
+            "<p class=\"meta\" id=\"mc-elapsed\" aria-live=\"polite\"></p>"
+            "<script>(function(){"
+            "var t0=Number(sessionStorage.getItem('mc-progress-start')||0)||Date.now();"
+            "sessionStorage.setItem('mc-progress-start',t0);"
+            "function tick(){var el=document.getElementById('mc-elapsed');if(!el)return;"
+            "var s=Math.round((Date.now()-t0)/1000);"
+            "el.textContent='已用 '+s+' 秒'+(s>=20?'（比平时慢，可能在等 App Store 登录或网络）':'');}"
+            "tick();setInterval(tick,200);"
+            "setTimeout(function(){location.reload()}, 1500);})()</script>"
             if data.get("auto_refresh", True)
             else ""
         ),
@@ -482,7 +491,7 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
     for key in sorted(buckets, key=lambda item: (item == "#", item)):
         rows = buckets[key]
         groups.append(
-            '<details class="group" open data-group>'
+            f'<details class="group" open data-group data-letter="{html.escape(key)}">'
             f'<summary><span class="group-name">{key}</span>'
             f'<span class="meta">{len(rows)} 个</span></summary>'
             f'<div class="rows">{"".join(rows)}</div></details>'
@@ -503,9 +512,19 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
             + "</div>"
         )
 
-    body = "".join(groups) if groups else empty_block(
-        "check", "没有找到应用", "换一个入口，或稍后再来。"
-    )
+    if groups:
+        index = "".join(
+            f'<button type="button" data-jump="{html.escape(key)}" aria-label="跳到 {html.escape(key)}">'
+            f"{html.escape(key)}</button>"
+            for key in sorted(buckets, key=lambda item: (item == "#", item))
+        )
+        body = (
+            '<div class="list-with-index">'
+            f'<div class="groups">{"".join(groups)}</div>'
+            f'<nav class="alpha" aria-label="字母索引">{index}</nav></div>'
+        )
+    else:
+        body = empty_block("check", "没有找到应用", "换一个入口，或稍后再来。")
     return state_page(
         {
             "message": "点行尾【卸载】看它留下的文件；勾选多个可以批量处理",
@@ -771,7 +790,14 @@ def render_updates_list_html(
     )
     return state_page(
         {
-            "message": f"可升级 {len(items)} 项，按来源分了 {len(groups)} 组",
+            "message": f"可升级 {len(items)} 项，按来源分了 {len(groups)} 组"
+            + (
+                f'（数据来自 {time.strftime("%H:%M", time.localtime(float(payload.get("checked_at"))))}'
+                + ("，缓存" if payload.get("cached") else "")
+                + "）"
+                if payload.get("checked_at")
+                else ""
+            ),
             "detail": "只处理第三方来源；macOS 系统更新不在此列。升级不可逆，确认后逐组执行并记录输出。",
         },
         stage="updates",
