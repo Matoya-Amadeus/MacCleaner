@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -99,29 +100,51 @@ def parse_brew_outdated(payload: str) -> list[dict[str, Any]]:
     return items
 
 
+MAS_LINE = re.compile(r"^(?P<app_id>\d+)\s+(?P<name>.+?)\s*\((?P<versions>[^()]*)\)\s*$")
+
+
 def parse_mas_outdated(payload: str) -> list[dict[str, Any]]:
-    """`mas outdated` 的文本输出：`<id> <name> (<version>)` 每行一条。"""
+    """`mas outdated` 的文本输出：`<id> <name> (<old> -> <new>)`。
+
+    2026-10-19 真机抓到的 bug：原来用 `split(None, 2)` 取第二段当名字，
+    于是 **"Logic Pro" 被截成 "Logic"**、版本也丢成空——
+    按名字过滤（`--only "Logic Pro"`）根本匹配不到，用户只会看到"没有可升级项"。
+    这里改用正则：名字允许含空格，版本按 `->` 拆成 installed/available。
+    """
     items: list[dict[str, Any]] = []
     for line in (payload or "").splitlines():
         text = line.strip()
         if not text:
             continue
-        parts = text.split(None, 2)
-        if len(parts) < 2 or not parts[0].isdigit():
+        match = MAS_LINE.match(text)
+        if match:
+            versions = [part.strip() for part in match.group("versions").split("->")]
+            installed = versions[0] if versions else ""
+            available = versions[1] if len(versions) > 1 else (versions[0] if versions else "")
+            items.append(
+                {
+                    "manager": "mas",
+                    "kind": "app-store",
+                    "app_id": match.group("app_id"),
+                    "name": match.group("name").strip(),
+                    "installed": installed,
+                    "available": available,
+                }
+            )
             continue
-        available = ""
-        if len(parts) == 3 and parts[2].startswith("(") and parts[2].endswith(")"):
-            available = parts[2][1:-1].strip()
-        items.append(
-            {
-                "manager": "mas",
-                "kind": "app-store",
-                "app_id": parts[0],
-                "name": parts[1],
-                "installed": "",
-                "available": available,
-            }
-        )
+        # 没有版本括号的行：仍按 id + 名字收下（不要因为格式少一截就整条丢掉）
+        parts = text.split(None, 1)
+        if len(parts) == 2 and parts[0].isdigit():
+            items.append(
+                {
+                    "manager": "mas",
+                    "kind": "app-store",
+                    "app_id": parts[0],
+                    "name": parts[1].strip(),
+                    "installed": "",
+                    "available": "",
+                }
+            )
     return items
 
 
@@ -156,6 +179,24 @@ def discover_updates(*, runner: Any | None = None) -> dict[str, Any]:
 
     items.sort(key=lambda item: (str(item.get("manager")), str(item.get("name")).lower()))
     return {"items": items, "count": len(items), "managers": managers, "notes": notes, "scope": SCOPE_NOTE}
+
+
+def select_updates(items: list[dict[str, Any]], wanted: set[str]) -> list[dict[str, Any]]:
+    """按名字或 app id 筛选要升级的项；`wanted` 为空表示全选。
+
+    为什么单独抽出来：CLI 与 MCP 都要这套匹配规则，写两份必然漂移；
+    而且它得能被单测直接钉住（真机 bug 就出在这条规则上）。
+    """
+    if not wanted:
+        return list(items)
+    lowered = {name.strip().lower() for name in wanted if name.strip()}
+    picked: list[dict[str, Any]] = []
+    for item in items:
+        name = str(item.get("name") or "").strip().lower()
+        app_id = str(item.get("app_id") or "").strip()
+        if name in lowered or app_id in wanted:
+            picked.append(item)
+    return picked
 
 
 def build_upgrade_plan(items: Sequence[dict[str, Any]], *, brew: str = "", mas: str = "") -> dict[str, Any]:
@@ -278,5 +319,6 @@ __all__ = [
     "discover_updates",
     "parse_brew_outdated",
     "parse_mas_outdated",
+    "select_updates",
     "render_updates_text",
 ]

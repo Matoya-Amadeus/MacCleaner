@@ -18,6 +18,7 @@ from maccleaner.updates import (
     discover_updates,
     parse_brew_outdated,
     parse_mas_outdated,
+    select_updates,
 )
 
 BREW_JSON = """
@@ -203,3 +204,45 @@ class RunnerShapeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MasParsingTests(unittest.TestCase):
+    """mas 输出解析（2026-10-19 真机 bug）：名字可以含空格，版本要拆成 installed/available。"""
+
+    def test_name_with_spaces_is_kept_whole(self) -> None:
+        items = parse_mas_outdated("634148309  Logic Pro  (11.2 -> 12.4)")
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["name"], "Logic Pro", "不能被空格截成 Logic")
+        self.assertEqual(items[0]["installed"], "11.2")
+        self.assertEqual(items[0]["available"], "12.4")
+
+    def test_line_without_version_parentheses_is_still_listed(self) -> None:
+        items = parse_mas_outdated("497799835  Xcode")
+        self.assertEqual(items[0]["name"], "Xcode")
+        self.assertEqual(items[0]["available"], "")
+
+    def test_noise_lines_are_ignored(self) -> None:
+        items = parse_mas_outdated("Warning: something happened\n\n634148309  Logic Pro  (11.2 -> 12.4)")
+        self.assertEqual([item["name"] for item in items], ["Logic Pro"])
+
+
+class SelectionTests(unittest.TestCase):
+    """`--only` 的匹配规则（CLI 与 MCP 共用同一份）。"""
+
+    def _items(self) -> list[dict]:
+        return [
+            {"name": "Logic Pro", "app_id": "634148309"},
+            {"name": "aom", "app_id": ""},
+        ]
+
+    def test_select_by_name_with_space(self) -> None:
+        self.assertEqual([i["name"] for i in select_updates(self._items(), {"Logic Pro"})], ["Logic Pro"])
+
+    def test_select_by_app_id(self) -> None:
+        self.assertEqual([i["name"] for i in select_updates(self._items(), {"634148309"})], ["Logic Pro"])
+
+    def test_empty_wanted_means_all(self) -> None:
+        self.assertEqual(len(select_updates(self._items(), set())), 2)
+
+    def test_unknown_name_selects_nothing(self) -> None:
+        self.assertEqual(select_updates(self._items(), {"nope"}), [])

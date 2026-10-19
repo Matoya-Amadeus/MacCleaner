@@ -151,26 +151,36 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "updates":
-        from .updates import apply_updates, build_upgrade_plan, discover_updates, render_updates_text
+        from .updates import (
+            apply_updates,
+            build_upgrade_plan,
+            discover_updates,
+            render_updates_text,
+            select_updates,
+        )
 
         found = discover_updates()
         wanted = {part.strip() for part in str(getattr(args, "only", "") or "").split(",") if part.strip()}
-        selected = [
-            item for item in found["items"]
-            if not wanted
-            or str(item.get("name")) in wanted
-            or str(item.get("app_id")) in wanted
-        ]
+        selected = select_updates(found["items"], wanted)
+
+        # `--only` 一个都没匹配到：必须明确报错并退出非 0，而不是把**全量列表**打出来 ——
+        # 否则用户会以为"点了名的那些"就是屏幕上这些（2026-10-19 真机撞到过）。
+        if wanted and not selected:
+            print(f"没有匹配到：{', '.join(sorted(wanted))}", file=sys.stderr)
+            return 2
+
         plan = build_upgrade_plan(selected)
         applied = None
-        if getattr(args, "apply", False) and plan["groups"]:
+        if getattr(args, "apply", False):
+            if not plan["groups"]:
+                print("没有可升级项。", file=sys.stderr)
+                return 2
             applied = apply_updates(plan, dry_run=False)
-        elif getattr(args, "apply", False):
-            print("没有可升级项（或 --only 没匹配到）。", file=sys.stderr)
 
+        view = {**found, "items": selected, "count": len(selected)} if wanted else found
         if getattr(args, "json", False):
             payload = {
-                **found,
+                **view,
                 "selected": plan["count"],
                 "commands": [group["command"] for group in plan["groups"]],
             }
@@ -178,7 +188,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 payload["applied"] = applied
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
-            print(render_updates_text(found, applied=applied))
+            print(render_updates_text(view, applied=applied))
         return 0
 
     if args.command == "uninstall":
