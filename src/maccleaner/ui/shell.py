@@ -104,6 +104,7 @@ _RUNTIME_JS = """
     if (action === 'uninstall-apply') { payload.selected_ids = ids('[data-item-id]'); }
     if (action === 'updates-apply') { payload.ids = ids('[data-update-id]'); }
     button.disabled = true;
+    button.classList.add('is-busy');   // 立刻有反馈：转圈，而不是等下一次刷新
     try { await window.maccleanerAction(action, payload); }
     catch (error) { button.disabled = false; alert(error.message); }
   });

@@ -70,6 +70,42 @@ label.row.opt{display:flex;align-items:center;gap:10px;justify-content:flex-star
 label.row.opt > div{flex:1;min-width:0}
 label.row.opt input{margin:0;flex:0 0 auto}
 details summary{cursor:pointer;color:var(--muted);font-size:13px}
+
+/* ---- 加载态（2026-10-19）---- */
+/* 用 conic-gradient + mask 画旋转环：不引入图片、不改布局、任何尺寸都能复用。 */
+.loader{width:22px;height:22px;border-radius:999px;flex:none;
+  background:conic-gradient(from 0deg, transparent 0 25%, var(--accent) 75% 100%);
+  -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  mask:radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  animation:mc-spin 900ms linear infinite}
+.loader.lg{width:34px;height:34px}
+@keyframes mc-spin{to{transform:rotate(360deg)}}
+
+/* 加载头：转圈 + 两行说明，左对齐（不要复用 `.row`，那是 space-between）。 */
+.loading-head{display:flex;align-items:center;gap:14px;margin:6px 0 0}
+.loading-title{font-size:14px;font-weight:600}
+.skeleton-stack{margin:20px 0 2px}
+
+/* 骨架：告诉用户"内容在路上"，而不是让他盯着一行静止的字。 */
+.skeleton{height:12px;border-radius:6px;background:var(--surface-muted);position:relative;overflow:hidden}
+.skeleton + .skeleton{margin-top:10px}
+.skeleton::after{content:"";position:absolute;inset:0;transform:translateX(-100%);
+  background:linear-gradient(90deg, transparent, var(--line), transparent);animation:mc-sheen 1.2s ease-in-out infinite}
+.skeleton.row{height:44px;border-radius:10px}
+.skeleton.w40{width:40%} .skeleton.w65{width:65%} .skeleton.w85{width:85%}
+@keyframes mc-sheen{to{transform:translateX(100%)}}
+
+/* 按钮忙碌态：点击后立刻有反馈，不用等下一次刷新。 */
+.button.is-busy{position:relative;color:transparent}
+.button.is-busy::after{content:"";position:absolute;inset:0;margin:auto;width:14px;height:14px;
+  border-radius:999px;border:2px solid var(--line);border-top-color:var(--accent);
+  animation:mc-spin 700ms linear infinite}
+
+/* 尊重系统"减少动态效果"。 */
+@media (prefers-reduced-motion: reduce){
+  .loader,.skeleton::after,.button.is-busy::after{animation:none}
+  .skeleton::after{display:none}
+}
 """
 
 __all__ = ["STYLE"]

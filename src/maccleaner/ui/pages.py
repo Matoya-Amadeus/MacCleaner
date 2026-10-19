@@ -119,6 +119,20 @@ def render_progress_html(payload: dict[str, Any] | None = None, *, stage: str = 
     用户在扫描时就先看到一句错误结论（会话用例抓到的就是这个）。
     """
     data = payload or {}
+    # 加载动画 + 骨架：进度页可能停留 1–3 秒（扫描/检查更新），静止的标题看起来像"卡死"。
+    # `role="status"` + `aria-live` 让读屏软件也知道"正在忙"，而不是突然出现一堆内容。
+    # 注意：**不要复用 `.row`**——它是 `space-between`，会把提示文字甩到最右边
+    # （2026-10-19 截图里就是"转圈在左、文字在最右"）。加载头有自己的布局。
+    loading = (
+        '<div class="loading-head">'
+        '<span class="loader lg" role="status" aria-live="polite" aria-label="正在处理"></span>'
+        "<div>"
+        f'<div class="loading-title">{html.escape(str(data.get("hint") or "正在读取，请稍候…"))}</div>'
+        f'<div class="meta">{html.escape(str(data.get("subhint") or "只读操作，不会改动任何文件"))}</div>'
+        "</div></div>"
+        '<div class="skeleton-stack"><div class="skeleton row"></div>'
+        '<div class="skeleton w85"></div><div class="skeleton w65"></div></div>'
+    )
     return state_page(
         {
             "message": str(data.get("message") or "正在扫描，请稍候…"),
@@ -129,7 +143,7 @@ def render_progress_html(payload: dict[str, Any] | None = None, *, stage: str = 
         body=str(data.get("body") or "正在扫描"),
         # 进度页**自己轮询刷新**：慢操作（例如 brew outdated 要几秒）期间服务端不会发新页，
         # 不自刷的话用户就一直停在"正在…"（2026-10-18 真浏览器实测过的坑）。
-        actions=(
+        actions=loading + (
             "<script>setTimeout(function(){location.reload()}, 1500)</script>"
             if data.get("auto_refresh", True)
             else ""
