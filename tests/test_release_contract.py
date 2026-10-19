@@ -39,30 +39,39 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertIn("plan_id", skill)
         self.assertTrue((ROOT / "docs" / "mcp.md").is_file())
 
-    def test_readmes_put_copy_ready_ai_prompts_before_technical_guides(self) -> None:
+    def test_readmes_open_with_an_ai_section_then_install(self) -> None:
+        """README 的顺序：先给 AI 的短说明 → 安装 → 给人类（截图 + 一句话）。
+
+        2026-10-20 用户明确要求："安装之上的文本都能删掉；安装上加个标题给 AI 看的；
+        截图上加个标题给人类看的"。顺序本身就是契约，别再塞回营销文案。
+        """
         chinese = (ROOT / "README.md").read_text(encoding="utf-8")
         english = (ROOT / "README.en.md").read_text(encoding="utf-8")
 
-        self.assertIn('id="ai-prompt-quick-start"', chinese)
-        self.assertIn("给小白：连接 AI 后这样说", chinese)
-        self.assertIn("先只做审计和清单，不要删除、不要修改任何文件", chinese)
-        self.assertIn("只执行当前计划中我明确批准的这些 target_id", chinese)
-        self.assertLess(
-            chinese.index('id="ai-prompt-quick-start"'),
-            chinese.index('id="安装"'),
-        )
+        self.assertIn("# 给 AI 看的", chinese)
+        self.assertLess(chinese.index("# 给 AI 看的"), chinese.index('id="安装"'))
+        self.assertLess(chinese.index('id="安装"'), chinese.index("# 给人类看的"))
+        self.assertLess(chinese.index("# 给人类看的"), chinese.index("assets/screenshot.png"))
 
-        self.assertIn('id="ai-prompt-quick-start"', english)
-        self.assertIn("Beginner: tell your AI this", english)
-        self.assertIn("only audit and show me a list; do not delete or modify any files", english)
-        self.assertIn(
-            "only run the target_id values i explicitly approve from the current plan",
-            english.lower(),
-        )
-        self.assertLess(
-            english.index('id="ai-prompt-quick-start"'),
-            english.index('id="installation"'),
-        )
+        self.assertIn("# For AI", english)
+        self.assertLess(english.index("# For AI"), english.index('id="installation"'))
+        self.assertLess(english.index('id="installation"'), english.index("# For humans"))
+        self.assertLess(english.index("# For humans"), english.index("assets/screenshot.png"))
+
+    def test_readmes_carry_one_real_screenshot_and_one_plain_sentence(self) -> None:
+        """人类那半部分只要一张真实界面截图 + 一句大白话（用户原话）。"""
+        chinese = (ROOT / "README.md").read_text(encoding="utf-8")
+        english = (ROOT / "README.en.md").read_text(encoding="utf-8")
+
+        self.assertIn("![Mac Cleaner 审阅页](assets/screenshot.png)", chinese)
+        self.assertIn("EMM...就一般清理工具，AI能直接调用", chinese)
+        self.assertIn("![Mac Cleaner review page](assets/screenshot.png)", english)
+
+        # 只留一张真实截图，不再有 SVG 头图/流程图
+        for text in (chinese, english):
+            self.assertNotIn(".svg", text)
+            self.assertEqual(text.count("assets/screenshot.png"), 1)
+        self.assertTrue((ROOT / "assets" / "screenshot.png").is_file(), "截图文件必须在仓库里")
 
     def test_readmes_show_only_their_selected_language_in_the_footer(self) -> None:
         chinese = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -72,17 +81,6 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertNotIn("Maintained jointly by", chinese)
         self.assertTrue(english.endswith("Maintained jointly by **AI·Maho** and **Human·Matoya**\n"))
         self.assertNotIn("由 **AI·Maho** 和 **人类·Matoya** 共同维护", english)
-
-    def test_readmes_are_text_only(self) -> None:
-        """README 不再放头图/流程图（2026-10-19 用户要求"图片可以删了"）。
-
-        纯文字的好处：diff 可读、GitHub 深浅色都能看、不用维护两套语言版本的图。
-        """
-        for name in ("README.md", "README.en.md"):
-            text = (ROOT / name).read_text(encoding="utf-8")
-            self.assertNotIn("<img", text, f"{name} 不应再引用图片")
-            self.assertNotIn("assets/readme-header", text)
-            self.assertNotIn("assets/readme-workflow", text)
 
     def test_readmes_link_each_other_for_language_switching(self) -> None:
         """点中文显示中文、点英文显示英文：两页互相链接，且都在最上面。"""
