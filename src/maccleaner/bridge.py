@@ -47,6 +47,7 @@ ACTIONS = frozenset(
         "skills-open",
         "reveal",
         "disk-open",
+        "disk-back",
         "system-open",
         "history-open",
     }

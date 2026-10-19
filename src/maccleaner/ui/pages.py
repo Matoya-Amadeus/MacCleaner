@@ -814,6 +814,59 @@ def sort_bar(*, default: str = "bytes") -> str:
         f'<button type="button" class="sortbtn{" is-on" if default == "text" else ""}" '
         'data-sort="text" data-dir="asc">名称</button></div>'
     )
+def render_disk_browse_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
+    """磁盘钻取：一个目录的下一级，按体积降序；目录可以再点进去。"""
+    data = payload or {}
+    entries = [item for item in (data.get("entries") or []) if isinstance(item, dict)]
+    display = str(data.get("display") or data.get("path") or "")
+    parent = str(data.get("parent") or "")
+    total = int(data.get("total", 0) or 0)
+    biggest = max([int(item.get("bytes", 0) or 0) for item in entries] + [1])
+
+    rows: list[str] = []
+    for item in entries:
+        size = int(item.get("bytes", 0) or 0)
+        share = size / biggest * 100 if biggest else 0
+        name = str(item.get("name", ""))
+        path = str(item.get("path", ""))
+        is_dir = bool(item.get("is_dir"))
+        open_button = (
+            _button("进入", "disk-open", payload={"path": path}) if (interactive and is_dir) else ""
+        )
+        rows.append(
+            f'<div class="row" data-sort-text="{html.escape(name.lower())}"'
+            f' data-sort-bytes="{size}" data-reveal-path="{html.escape(path)}">'
+            '<div style="min-width:0;flex:1">'
+            f"<strong>{html.escape(name)}{'/' if is_dir else ''}</strong>"
+            f'<div class="meta">{_meter(share)}</div></div>'
+            f'<span class="meta value">{human_bytes(size)}</span>{open_button}</div>'
+        )
+
+    buttons = []
+    if interactive:
+        if parent:
+            buttons.append(_button("上一级", "disk-back"))
+        buttons.append(_button("回到总览", "disk-open", payload={}))
+    body = (
+        sort_bar() + '<div class="rows" data-sortable>' + "".join(rows) + "</div>"
+        if rows
+        else empty_block("check", "这个目录是空的", "换一个目录，或回到磁盘总览。")
+    )
+    return state_page(
+        {
+            "message": f"{display} 下一级共 {human_bytes(total)}",
+            "detail": "点【进入】看下一级；体积是当前占用，不是“可清理”的量。",
+        },
+        stage="disk",
+        title="磁盘",
+        body="",
+        actions=body + _actions(*buttons),
+        current="disk",
+        subtitle="逐层看谁最占地方",
+        meta=f"{len(entries)} 项",
+    )
+
+
 def render_history_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
     """清理历史：直接读回执文件（时间/模式/条目/字节），只读。"""
     data = payload or {}
@@ -886,12 +939,17 @@ def render_disk_html(payload: dict[str, Any] | None = None, *, interactive: bool
     for item in sections:
         size = int(item.get("bytes", 0) or 0)
         share = size / biggest * 100 if biggest else 0
+        path = str(item.get("path", "") or "")
+        enter = (
+            _button("进入", "disk-open", payload={"path": path}) if (interactive and path) else ""
+        )
         rows.append(
             f'<div class="row" data-sort-text="{html.escape(str(item.get("name", "")).lower())}"'
-            f' data-sort-bytes="{size}"><div style="min-width:0;flex:1">'
+            f' data-sort-bytes="{size}" data-reveal-path="{html.escape(path)}">'
+            '<div style="min-width:0;flex:1">'
             f'<strong>{html.escape(str(item.get("name", "")))}</strong>'
             f'<div class="meta">{_meter(share)}</div></div>'
-            f'<span class="meta value">{human_bytes(size)}</span></div>'
+            f'<span class="meta value">{human_bytes(size)}</span>{enter}</div>'
         )
 
     return state_page(
@@ -962,6 +1020,7 @@ def render_system_html(payload: dict[str, Any] | None = None, *, interactive: bo
 
 
 __all__ = [
+    "render_disk_browse_html",
     "render_disk_html",
     "render_history_html",
     "render_system_html",

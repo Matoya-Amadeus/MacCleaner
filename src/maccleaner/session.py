@@ -63,6 +63,8 @@ class SessionDeps:
     reveal: Callable[[str], None] | None = None
     # 只读的"看一眼"页面（磁盘/系统）。
     disk: Callable[[], dict[str, Any]] = lambda: {}
+    # 磁盘钻取：传目录路径，返回下一级条目。
+    disk_browse: Callable[..., dict[str, Any]] | None = None
     system: Callable[[], dict[str, Any]] = lambda: {}
     # 清理历史（读回执文件）。
     history_report: Callable[[], dict[str, Any]] = lambda: {}
@@ -181,6 +183,7 @@ class InteractiveSession:
             self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
 
             pending: str | None = None
+            pending_payload: dict[str, Any] = {}
             while True:
                 if pending is None:
                     action = self.bridge.wait_for_action(
@@ -191,8 +194,10 @@ class InteractiveSession:
                     if action is None:
                         return self._finish("cancelled", pages.render_cancelled_html({}))
                     pending = action["action"]
+                    pending_payload = dict(action.get("payload") or {})
 
                 kind, pending = pending, None
+                payload_now, pending_payload = pending_payload, {}
                 if kind == "home":
                     # 侧栏"Mac 清理"只是回落地页，**不触发扫描**（扫描必须由落地页按钮发起）。
                     self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
@@ -212,10 +217,16 @@ class InteractiveSession:
                     self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
                     continue
 
-                if kind in ("disk-open", "system-open"):
-                    readout = self._safe(self.deps.disk if kind == "disk-open" else self.deps.system, default={})
-                    renderer = pages.render_disk_html if kind == "disk-open" else pages.render_system_html
-                    self._serve("disk" if kind == "disk-open" else "system", renderer(readout))
+                if kind == "disk-open":
+                    # 钻取：进入目录后可以继续进入 / 上一级 / 回总览，全程只读。
+                    # 这里点侧栏要**交回主循环**（否则会停在落地页，用户以为没反应）。
+                    outcome = self._run_disk_browse(str(payload_now.get("path", "")))
+                    if outcome:
+                        pending = outcome
+                    continue
+
+                if kind == "system-open":
+                    self._serve("system", pages.render_system_html(self._safe(self.deps.system, default={})))
                     back = self._wait_or_nav(("cancel",), self.ACTION_TIMEOUT_SECONDS)
                     if back is not None and "nav" in back:
                         pending = back["nav"]
@@ -586,6 +597,31 @@ class InteractiveSession:
             if terminal is not None:
                 return terminal
             return self._run_updates()
+
+    def _run_disk_browse(self, target: str = "") -> str | None:
+        """磁盘钻取循环。只读。
+
+        返回：`None` = 用户退出/超时；`str` = 用户点了侧栏的某个入口（交回主循环处理）。
+        """
+        browse = getattr(self.deps, "disk_browse", None)
+        current = target
+        while True:
+            if not current or browse is None:
+                # 空目标 = 总览（刷新按钮也用它），**不要**退化成"主目录"。
+                self._serve("disk", pages.render_disk_html(self._safe(self.deps.disk, default={})))
+            else:
+                readout = self._safe(lambda: browse(current), default={})
+                self._serve("disk", pages.render_disk_browse_html(readout))
+            action = self._wait_or_nav(("disk-open", "disk-back", "cancel"), self.ACTION_TIMEOUT_SECONDS)
+            if action is not None and "nav" in action:
+                return str(action["nav"])
+            if action is None or action["action"] == "cancel":
+                self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
+                return None
+            if action["action"] == "disk-back":
+                current = ""
+                continue
+            current = str((action.get("payload") or {}).get("path", ""))
 
     # ---- 公共 ----
 

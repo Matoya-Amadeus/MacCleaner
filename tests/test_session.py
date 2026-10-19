@@ -419,6 +419,44 @@ class UpdatesFlowTests(unittest.TestCase):
             driver.action("cancel")
             driver.join()
 
+
+    def test_disk_drill_down_walks_into_directory_and_back(self) -> None:
+        """磁盘钻取：进入子目录 → 上一级；并且从磁盘页点侧栏能去系统页（不能被吞掉）。"""
+        targets: list[str] = []
+
+        def browse(target=None):
+            targets.append(str(target or ""))
+            return {
+                "path": "/home/Downloads", "display": "~/Downloads", "parent": "/home",
+                "total": 10,
+                "entries": [{"name": "big", "path": "/home/Downloads/big", "bytes": 10, "is_dir": True}],
+            }
+
+        with tempfile.TemporaryDirectory(prefix="session-drill-", ignore_cleanup_errors=True) as tmp:
+            driver = _Driver(_deps(disk_browse=browse), Path(tmp))
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+
+            self.assertEqual(driver.action("disk-open"), 202)
+            driver.wait_page('data-stage="disk"', timeout=5)
+            self.assertEqual(targets, [], "首次进磁盘只渲染总览，不该去钻目录")
+
+            self.assertEqual(driver.action("disk-open", {"path": "/home/Downloads"}), 202)
+            page = driver.wait_page("~/Downloads", timeout=5)
+            self.assertIn("/home/Downloads", targets[-1])
+
+            before = len(targets)
+            self.assertEqual(driver.action("disk-back"), 202)
+            driver.wait_page('data-stage="disk"', timeout=5)
+            self.assertEqual(len(targets), before, "上一级回总览，不该再钻目录")
+
+            # 关键回归：钻取页点侧栏"系统状态"必须真的切过去
+            self.assertEqual(driver.action("system-open"), 202)
+            driver.wait_page('data-stage="system"', timeout=5)
+
+            driver.action("cancel")
+            driver.join()
+
 class NavigationTests(unittest.TestCase):
     def test_uninstall_entry_lists_apps(self) -> None:
         with tempfile.TemporaryDirectory(prefix="session-unin-") as tmp:
