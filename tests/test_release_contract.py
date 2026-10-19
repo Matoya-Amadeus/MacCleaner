@@ -48,15 +48,18 @@ class ReleaseContractTests(unittest.TestCase):
         chinese = (ROOT / "README.md").read_text(encoding="utf-8")
         english = (ROOT / "README.en.md").read_text(encoding="utf-8")
 
+        # 2026-10-20 用户改口：人类那半部分放最前面，AI 段随后，安装在其下。
+        self.assertIn("# 给人类看的", chinese)
         self.assertIn("# 给 AI 看的", chinese)
-        self.assertLess(chinese.index("# 给 AI 看的"), chinese.index('id="安装"'))
-        self.assertLess(chinese.index('id="安装"'), chinese.index("# 给人类看的"))
         self.assertLess(chinese.index("# 给人类看的"), chinese.index("assets/screenshot.png"))
+        self.assertLess(chinese.index("assets/screenshot.png"), chinese.index("# 给 AI 看的"))
+        self.assertLess(chinese.index("# 给 AI 看的"), chinese.index('id="安装"'))
 
+        self.assertIn("# For humans", english)
         self.assertIn("# For AI", english)
-        self.assertLess(english.index("# For AI"), english.index('id="installation"'))
-        self.assertLess(english.index('id="installation"'), english.index("# For humans"))
         self.assertLess(english.index("# For humans"), english.index("assets/screenshot.png"))
+        self.assertLess(english.index("assets/screenshot.png"), english.index("# For AI"))
+        self.assertLess(english.index("# For AI"), english.index('id="installation"'))
 
     def test_readmes_carry_one_real_screenshot_and_one_plain_sentence(self) -> None:
         """人类那半部分只要一张真实界面截图 + 一句大白话（用户原话）。"""

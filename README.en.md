@@ -1,5 +1,11 @@
 [中文](README.md) · **English**
 
+# For humans
+
+![Mac Cleaner review page](assets/screenshot.png)
+
+EMM... just a plain cleanup tool, and AI can call it directly.
+
 # For AI
 
 A macOS cleanup / uninstall / update tool. Three entry points, one kernel:
@@ -14,7 +20,7 @@ Plan first, then apply: `plan_storage` returns a `plan_id`; `apply_storage_plan`
 (`~/Downloads`, Docker data) need an explicit confirmation. `~/.ssh`, Keychains and browser
 login data never show up in the list.
 
-<h2 id="installation">Install</h2>
+<h1 id="installation">Install</h1>
 
 macOS + Python 3.10+. The core CLI has no third-party dependencies.
 
@@ -39,11 +45,8 @@ python3 -m pip install wheel
 python3 -m build --no-isolation
 ```
 
-# For humans
 
-![Mac Cleaner review page](assets/screenshot.png)
-
-EMM... just a plain cleanup tool, and AI can call it directly.
+# Usage
 
 ## The window
 

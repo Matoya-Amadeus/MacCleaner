@@ -1,5 +1,11 @@
 **中文** · [English](README.en.md)
 
+# 给人类看的
+
+![Mac Cleaner 审阅页](assets/screenshot.png)
+
+EMM...就一般清理工具，AI能直接调用。
+
 # 给 AI 看的
 
 macOS 清理 / 卸载 / 更新工具。三个入口，同一套内核：**扫描只读，删除一律进废纸篓**。
@@ -12,7 +18,7 @@ macOS 清理 / 卸载 / 更新工具。三个入口，同一套内核：**扫描
 `approved_targets`；`plan_id` 15 分钟过期就作废。高风险目标（`~/Downloads`、Docker 数据）
 要显式确认，`~/.ssh`、钥匙串、浏览器登录数据永远不会出现在清单里。
 
-<h2 id="安装">安装</h2>
+<h1 id="安装">安装</h1>
 
 需要 macOS + Python 3.10 以上，核心 CLI 没有第三方依赖。
 
@@ -37,11 +43,8 @@ python3 -m pip install wheel
 python3 -m build --no-isolation
 ```
 
-# 给人类看的
 
-![Mac Cleaner 审阅页](assets/screenshot.png)
-
-EMM...就一般清理工具，AI能直接调用。
+# 用法
 
 ## 界面
 
