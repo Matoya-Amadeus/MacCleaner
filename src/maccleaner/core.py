@@ -1247,13 +1247,9 @@ class StorageManager:
                 ],
             ),
             make("jetbrains-cache", "JetBrains cache", "ide", "purge_tree", [home / "Library" / "Caches" / "JetBrains"]),
-            make(
-                "homebrew-cache",
-                "Homebrew cache",
-                "homebrew",
-                "purge_tree",
-                [home / "Library" / "Caches" / "Homebrew", home / "Library" / "Caches" / "Homebrew" / "downloads"],
-            ),
+            # 2026-10-19 合并：原来的 `homebrew-cache`（直接删 ~/Library/Caches/Homebrew 目录）
+            # 与 `brew-cleanup`（跑 brew cleanup）指向同一处，同时勾选会做两遍。按用户决定
+            # 只保留 `brew-cleanup`：交给 Homebrew 自己的清理逻辑，比我们硬删目录更稳。
             make(
                 "brew-cleanup",
                 "Homebrew cleanup",

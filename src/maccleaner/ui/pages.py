@@ -90,9 +90,8 @@ def _rows(
     `selectable=True` 时每行带勾选框（`data-target-id`）——审阅页要能"逐条决定清不清"，
     而不是只有"全部清理"一个按钮（2026-10-19 用户指出）。
 
-    标题优先用 target 的 **name**：以前取路径末级名，`homebrew-cache` 与 `brew-cleanup`
-    都显示成 "Homebrew"，看起来像重复项；现在显示 "Homebrew cache" / "Homebrew cleanup"，
-    副标题给出真实路径。
+    标题优先用 target 的 **name**：以前取路径末级名，不同目标会显示成同一个名字
+    （例如两个 Homebrew 目标都叫 "Homebrew"）；副标题给出真实路径。
     """
     rows: list[str] = []
     for item in items:

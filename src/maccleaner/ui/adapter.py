@@ -39,7 +39,7 @@ def review_payload(report: dict[str, Any]) -> dict[str, Any]:
             {
                 "path": _first_path(item),
                 # target 的**名字**要带上：页面以前拿路径末级名当标题，于是
-                # `homebrew-cache` 与 `brew-cleanup` 都显示成 "Homebrew"，看着像重复项。
+                # 以前只取路径末级名，多个 "Homebrew" 目标会显示成同一行。
                 "name": str(item.get("name") or ""),
                 "kind": str(item.get("category") or item.get("kind") or ""),
                 "allocated_bytes": estimated,
