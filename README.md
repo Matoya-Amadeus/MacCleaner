@@ -1,463 +1,198 @@
-# MacCleaner
+**中文** · [English](README.en.md)
 
-<p align="center">
-  <img src="assets/readme-header.zh.svg" alt="MacCleaner：安全的 Mac 存储审计与清理流程" width="100%" />
-</p>
+# Mac Cleaner
 
-> **先看清单，再决定删什么。**
->
-> MacCleaner 先审计空间、生成目标清单，再按安全门禁执行清理。
+一个能看、能选、能反悔的 Mac 清理工具。
 
-[中文](README.md) · [English](README.en.md)
+清理之前先把"要删什么"摆给你看，**删掉的东西一律进废纸篓**——点错了还能拖回来。
+不想用界面也行：它同时是一个命令行工具，也能让 AI（Claude / Codex / Cursor）直接调用。
 
-<details>
-<summary><strong>近期更新</strong></summary>
-
-更新时间：2026-07-12 00:28
-
-更新内容：新增可安装 CLI、可选 MCP stdio 服务和一次性 plan token 安全链。
-
-### 2026-05-19 21:20
-
-更新内容：新增 generic 默认 profile、repo-evidence opt-in、受保护会话阻断、receipt、backup 和清理后残留验证。
-
-</details>
-
-## 目录
-
-- [一眼看懂](#一眼看懂)
-- [给小白：连接 AI 后这样说](#ai-prompt-quick-start)
-- [解决什么问题](#解决什么问题)
-- [安装](#安装)
-- [三分钟上手](#三分钟上手)
-- [CLI 怎么用](#cli-怎么用)
-- [MCP 怎么用](#mcp-怎么用)
-- [常用场景](#常用场景)
-- [安全边界](#安全边界)
-- [配置与参数](#配置与参数)
-- [报告怎么看](#报告怎么看)
-- [结构与工作链路](#结构与工作链路)
-- [开发者说明](#开发者说明)
-- [常见问题](#常见问题)
-
-## 一眼看懂
-
-| 你是谁 | 从哪里开始 | 会发生什么 |
-| --- | --- | --- |
-| 已把 MCP 连到 AI 的小白 | 复制下面第一段提示词 | AI 先只给清单，不会清理 |
-| 想自己在终端操作 | [三分钟上手](#三分钟上手) | `audit → plan → apply` 三步走 |
-| 需要精细控制的人 | [CLI 怎么用](#cli-怎么用) / [MCP 怎么用](#mcp-怎么用) | 只执行你明确批准的精确目标 |
-
-> **只想安全开始？** 连接好 MCP 后，只复制下面的「第一步」给 AI。它会先列清单；不确认，不清理。
+---
 
 <details id="ai-prompt-quick-start" open>
 <summary><strong>给小白：连接 AI 后这样说</strong></summary>
 
-不需要懂命令或 `target_id`。如果还没有把 MacCleaner 连到 AI，先看 [安装 → MCP](#安装)；连好后，按顺序把下面的话发给 AI。
+把仓库接到你的 AI 客户端（配置见 [docs/mcp.md](docs/mcp.md)），然后原样粘这两句：
 
-### 第一步：只看，不删（建议先只发这一段）
-
-```text
-请使用 MacCleaner 帮我检查 Mac 存储。先只做审计和清单，不要删除、不要修改任何文件。
-请用简单的话告诉我：哪些可以安全清理、哪些需要我确认、哪些绝不会动，并按预计可释放空间排序。
-```
-
-你会先得到一份清单。浏览器登录、Cookie、会话、密码和 Keychain 不会被列成可执行清理项。
-
-### 第二步：让 AI 解释计划，仍然不执行
+**第一句（只看不动）**
 
 ```text
-根据刚才的检查，生成一个清理计划，但先不要执行。
-请把每一项分成「可安全清理」「需要我确认」「不会清理」三类；说明预计释放多少空间，并告诉我需要我选择哪些 target_id。
+先只做审计和清单，不要删除、不要修改任何文件。
+把每一项是什么、多大、能不能恢复，用大白话解释给我听。
 ```
 
-只选择你看得懂、愿意删除的项目。看不懂就让 AI 解释，不要确认。
-
-### 第三步：只执行你选中的项目
-
-从 AI 给出的**当前计划**里复制你要清理的真实 `target_id`，再发送：
+**第二句（只删你点头的）**
 
 ```text
-我确认只执行当前计划中我明确批准的这些 target_id：TARGET_ID_1、TARGET_ID_2。
-其他内容均不要动；如果其中任何项目需要二次确认，请先告诉我，不要执行。
+只执行当前计划中我明确批准的这些 target_id：home-caches、vscode-cache
+其他一律不要动。
 ```
 
-把示例中的 `TARGET_ID_1`、`TARGET_ID_2` 换成当前计划里真实显示的编号。没有选编号时，不要进入这一步。
-
-**记住这一条就够了：** 先让 AI 列清单；只用第三步批准你亲自选出的编号。
+这两句的意义：AI 再热情，也只能在你**点名**的范围内动手。
 
 </details>
 
-<details id="解决什么问题">
-<summary><strong>解决什么问题</strong></summary>
+<details id="功能" open>
+<summary><strong>它能干什么（大白话）</strong></summary>
 
-Mac 空间不足时，最容易出错的不是找不到大文件，而是把缓存、个人文件、浏览器登录状态和系统数据混在一起处理。
+| 你想干的事 | 它怎么做 |
+|---|---|
+| **磁盘快满了，想清点垃圾** | 扫一遍缓存、日志、Xcode 垃圾、包管理器缓存，列成清单给你看，**你不勾就不动** |
+| **删掉不用的软件，还要删干净** | 除了应用本体，把它留下的缓存、偏好、容器、后台项一起找出来（含 `.ShipIt` 这类更新残留） |
+| **软件该升级了** | Homebrew、App Store、npm 一起查；能应用内更新的（Sparkle）优先，商店应用再打开 App Store |
+| **想知道到底谁在占空间** | 磁盘页从"总览"一层层点进去，看到最里面的大文件 |
+| **想确认上次到底删了什么** | 清理历史页读每次的回执：时间、几项、多少体积、是否预演 |
+| **想让 AI 帮你清理** | 7 个 MCP 工具 + 一次性入口，AI 只能在你批准的范围内动 |
 
-工具流程固定为：
+几个刻意的"慢一点"：
 
-```text
-audit -> plan -> approve exact target IDs -> apply -> verify
-```
+- 扫描只是看，不动文件；要动手必须再点一次【开始清理】；
+- 删之前还有**一页确认**，写清几组、多少体积；
+- `~/Downloads`、Docker 数据这种高风险项**默认勾不上**，要在确认页单独再确认一次；
+- 删错不慌：全部进废纸篓。
 
 </details>
 
-<details id="安装">
+<details id="安装" open>
 <summary><strong>安装</strong></summary>
 
-要求：macOS、Python 3.10+。基础 CLI 没有第三方运行依赖；MCP 是可选 extra。
-
-### CLI
+需要 macOS + Python 3.10 以上。基础功能**没有第三方依赖**。
 
 ```bash
 pipx install maccleaner
 maccleaner --help
 ```
 
-PyPI 首发前，直接从 GitHub 安装：
+还没发到 PyPI，也可以直接从源码装：
 
 ```bash
 pipx install "git+https://github.com/Matoya-Amadeus/MacCleaner.git"
 ```
 
-也可以直接构建离线安装包（**已实测**：干净 venv `pip install --no-index` 装 wheel 后，
-两个入口与真实审计都正常）：
+想让 AI 客户端调用，装带 MCP 的版本：
+
+```bash
+pipx install "maccleaner[mcp]"
+```
+
+想用**原生窗口**（不在浏览器里）：装完跑一次
+
+```bash
+bash scripts/install_launcher.sh     # 生成 ~/Applications/MacCleaner.app，图标已就位
+```
+
+也可以自己构建离线包（干净环境 `pip install --no-index` 实测可用）：
 
 ```bash
 python3 -m pip install wheel        # 首次构建需要
 python3 -m build --no-isolation     # 产出 dist/*.whl 与 *.tar.gz
-pip install --no-index dist/maccleaner-0.1.0-py3-none-any.whl
 ```
-
-`bash tests/acceptance_package.sh` 会把这条链路完整跑一遍（构建 → 离线装 wheel →
-无 `mcp` extra 的报错路径 → 真实审计 → 离线装 sdist）。
-
-除 `audit / plan / clean / trace` 之外，还有三个常用入口：
-
-```bash
-maccleaner ui                                                  # 本地界面（临时端口 + 一次性入口链接）
-maccleaner ui --no-open                                        # 只打印入口 URL（交给浏览器或 agent）
-
-maccleaner uninstall --app-path /Applications/Foo.app          # 只列出残留（只读）
-maccleaner uninstall --app-path /Applications/Foo.app --apply   # 移入废纸篓（可恢复）
-
-maccleaner updates                                             # 第三方更新，默认只读
-maccleaner updates --apply --only aom,cmake                    # 只升点名的
-```
-
-- `uninstall` 只动**用户域**；系统级残留要显式加 `--accept-admin`（一次管理员授权）。
-- `updates` **不碰 macOS 系统更新**；六个来源（brew / mas / npm / rustup 默认开，pip / gem 默认关）
-  并行查、每个源单独超时，一组失败不拖累其它组。
-
-### MCP
-
-```bash
-pipx install "maccleaner[mcp]"
-maccleaner-mcp
-```
-
-PyPI 首发前使用 GitHub 版本：
-
-```bash
-pipx install "git+https://github.com/Matoya-Amadeus/MacCleaner.git#egg=maccleaner[mcp]"
-```
-
-`maccleaner-mcp` 只使用 stdio。除审计/计划/追踪/执行外，还暴露三个入口：
-`uninstall_plan`（只读）、`updates_check`（只读）、`updates_apply`。
-`apply_storage_plan` 可以回传 `plan_digest` —— 用来证明"执行的就是给人看的那份计划"，
-摘要不符会在动手之前拒绝。客户端配置与示例见 [MCP 使用说明](docs/mcp.md)。
-
-### 本地界面（双击图标或 `maccleaner ui`）
-
-```bash
-bash scripts/install_launcher.sh     # 生成 ~/Applications/MacCleaner.app（原生窗口，不开浏览器）
-```
-
-侧栏 7 个入口：
-
-| 入口 | 里面能做什么 |
-|---|---|
-| **Mac 清理** | 扫描 → 审阅（**逐条勾选**，默认不勾）→ 确认 → 完成；重复扫描 5 分钟内走缓存 |
-| **软件卸载** | 应用列表（行内「卸载」看残留）；也可**多选批量**（一页确认、一次执行）；残留含 bundle-id 精确项、名称匹配项与 `.ShipIt` 更新残留 |
-| **软件更新** | brew / mas / npm / rustup 默认开；`pip`、`gem` 要联网，默认关（`MACCLEANER_UPDATE_SOURCES` 打开）；6 个源并行查，本机实测 ~2s（有缓存则 0.001s）。**自带 Sparkle 的应用单独成组**：先点【在应用内更新】；没有 Sparkle 的再用【打开 App Store 更新页】 |
-| **磁盘** | 整机容量 + 常用目录占比；每个目录可**逐层点进去**看下一级谁最占地方 |
-| **系统状态** | 负载 / 内存 / CPU 占用 Top 进程（温度与风扇需 sudo，不做） |
-| **清理历史** | 直接读回执文件：每次的时间、条目数、可恢复字节；dry-run 会标「预演」 |
-| **可调用的 Skill** | 本机 `~/.codex/skills`、`~/.codebuddy/skills`、`~/.claude/skills` 下的全部 skill |
-
-交互（尽量贴近 macOS 原生表格）：行首勾选框、`⌘A` 全选（再按取消）、`Shift+点击` 连选、
-列头按**体积/名称**排序、右键「复制路径 / 在 Finder 中显示」、`Esc` 关菜单、`Enter` 触发主操作。
-
-两处刻意的安全默认值：
-
-- **审阅页默认不勾任何一组**；`~/Downloads`、Docker 数据这类高风险项在审阅页**不可勾选**，
-  要在确认页单独再确认一次（内核侧还会校验 `confirm_targets`）；
-- 「在 Finder 中显示」只接受**当前页面出现过的路径**（会话侧白名单），不是任意路径打开器。
-
-隐私：**不收集遥测、不上传文件与路径**；联网只发生在包管理器检查与 App Store 版本查询（只传 app id）。详见 [PRIVACY.md](PRIVACY.md)。
-
-安全口径：只绑 `127.0.0.1`；入口是**一次性链接**（`/bootstrap/<secret>` 换完 cookie 立即作废）；
-每个动作都要 cookie + 请求头双凭据并校验 Origin；同一时间只允许一个会话（flock）。
-
-验收脚本（人工运行，都不是 pytest 用例）：
-
-```bash
-bash tests/acceptance_native_smoke.sh          # 真窗口 11 步：7 个入口 + 清理链路 + 文件级判定
-bash tests/acceptance_uninstall_batch.py       # 批量卸载：多选 → 一页确认 → 文件真的进废纸篓
-bash tests/acceptance_quit.sh                  # 关闭 app 后：进程/端口/状态四项归零
-bash tests/acceptance_portability.sh           # 把仓库复制到别处 + 全新 HOME，验 CLI/测试/.app 都能跑
-bash tests/acceptance_package.sh               # 构建 sdist/wheel + 离线装 wheel → 两个入口 + 真实审计
-```
-
-### Codex Skill
-
-根目录 `SKILL.md` 保留为唯一 Skill 真相源。使用 Codex 的 GitHub Skill installer 时，指定 repo `Matoya-Amadeus/MacCleaner`、path `.`、安装名 `maccleaner`。
 
 </details>
 
-<details id="三分钟上手" open>
-<summary><strong>三分钟上手</strong></summary>
+<details id="界面" open>
+<summary><strong>打开界面</strong></summary>
 
-### 1. 审计：只读查看空间
+双击 `~/Applications/MacCleaner.app`，或命令行 `maccleaner ui`。侧栏 7 个入口：
 
-```bash
-maccleaner audit --markdown
-```
+| 入口 | 干什么 |
+|---|---|
+| **Mac 清理** | 扫描 → 逐条勾选 → 确认 → 完成 |
+| **软件卸载** | 应用列表；可以单个看残留，也可以多选批量卸 |
+| **软件更新** | 按来源分组（Homebrew / App Store / npm…）；Sparkle 应用单独一组 |
+| **磁盘** | 整机占比 + 常用目录，可逐层点进去 |
+| **系统状态** | 负载、内存、最吃 CPU 的进程 |
+| **清理历史** | 每次清理的回执（时间 / 项数 / 体积） |
+| **可调用的 Skill** | 本机装了哪些 agent 技能 |
 
-### 2. 计划：生成精确清单
+手感尽量贴近 macOS 原生列表：
 
-```bash
-maccleaner plan --markdown
-```
-
-重点看 `target_id`、`status`、`risk`、`protection` 和 `reason`。
-
-### 3. 执行：只清理低风险目标
-
-```bash
-maccleaner clean --apply --yes --require-explicit-plan --markdown
-```
-
-这条命令会实际修改文件。运行前先完成 `plan`；它默认只放行低风险、可重新生成的目标。
-
-高风险目标必须从当前计划复制真实 ID：
-
-```bash
-maccleaner plan --include-hidden-home --markdown
-maccleaner clean --apply --yes --require-explicit-plan --markdown \
-  --include-hidden-home \
-  --approved-targets TARGET_ID
-```
-
-如果目标显示 `exact_confirm`，还要同时加上 `--confirm-targets TARGET_ID`。
+- 左侧小方框改勾选，**点行其它地方 = 打开详情**（不会误勾）；
+- `⌘A` 全选（再按取消）／`Shift+点击` 连选／`Enter` 执行主操作／`Esc` 关菜单；
+- 列头按**体积 / 名称**排序；长列表右侧有 A–Z 索引条，点了直接跳；
+- 右键可以「复制路径」「在 Finder 中显示」；
+- 从列表点进详情再返回，**回到原来的滚动位置**。
 
 </details>
 
 <details id="cli-怎么用">
-<summary><strong>CLI 怎么用</strong></summary>
-
-CLI 适合终端、shell 脚本和 CI；始终按“审计 → 计划 → 执行”走，不要跳过 `plan`。
+<summary><strong>命令行怎么用</strong></summary>
 
 ```bash
-# 1. 只读：先看空间和候选目标。
-maccleaner audit --markdown
-maccleaner plan --json > maccleaner-plan.json
-
-# 2. 只清理当前可执行的低风险目标。
-# 若当前存在 medium/high-risk 候选但未精确批准，命令会拒绝执行，不会部分清理。
-maccleaner clean --apply --yes --require-explicit-plan --markdown
-
-# 3. 只在 plan 中确认真实 ID 后，才清理敏感范围。
-maccleaner clean --apply --yes --require-explicit-plan --markdown \
-  --include-hidden-home \
-  --approved-targets TARGET_ID \
-  --confirm-targets TARGET_ID
-
-# 4. 反复出现的目录：先找触发源，不删除文件。
-maccleaner trace --path "<TARGET_PATH>" --keyword "<KEYWORD>" --markdown
+maccleaner audit                      # 只看：哪能清、能清多少
+maccleaner plan                       # 列清单：每项的 target_id / 风险 / 为什么
+maccleaner clean --apply --yes        # 真删（默认只清低风险、可再生成的目标）
+maccleaner uninstall --app-path /Applications/Foo.app          # 只看残留
+maccleaner uninstall --app-path /Applications/Foo.app --apply   # 移入废纸篓
+maccleaner updates                    # 查更新（默认只读）
+maccleaner updates --apply --only aom,cmake                     # 只升点名的
+maccleaner trace <plan_id>            # 查某次计划到底做了什么
 ```
 
-- `audit`、`plan`、`trace` 永远只读。
-- `--json` 适合脚本读取；`--markdown` 适合人审阅。
-- 只有报告显示 `exact_confirm` 时才需要 `--confirm-targets`；不要把示例 `TARGET_ID` 当作真实 ID。
+`plan` 里重点看三样：`target_id`（要删谁）、`risk`（低/高）、`reason`（为什么进清单）。
 
 </details>
 
 <details id="mcp-怎么用">
-<summary><strong>MCP 怎么用</strong></summary>
+<summary><strong>让 AI 调用（MCP）</strong></summary>
 
-先在 MCP 客户端配置本地 stdio 服务，然后**重启或重新加载客户端**：
+`maccleaner-mcp` 只用 stdio，7 个工具：
 
-```json
-{
-  "mcpServers": {
-    "maccleaner": {
-      "command": "maccleaner-mcp",
-      "args": []
-    }
-  }
-}
-```
+| 工具 | 作用 |
+|---|---|
+| `audit_storage` | 只读：有什么可清 |
+| `plan_storage` | 生成计划，返回 `plan` + `plan_id` |
+| `apply_storage_plan` | 执行；要带 `approved_targets`，可选 `plan_digest` 证明"执行的就是给你看的那份" |
+| `uninstall_plan` / `uninstall_apply` | 卸载：先列残留，再执行 |
+| `updates_check` / `updates_apply` | 更新：先查，再升 |
 
-客户端显示的 UI 不同；下面 JSON 表示应调用的工具名与参数，不是要求手写 JSON-RPC：
+最小的一次只读对话：
 
 ```json
-{ "name": "audit_storage", "arguments": { "profile": "generic" } }
-
-{ "name": "plan_storage", "arguments": { "profile": "generic" } }
+{"name": "audit_storage", "arguments": {"profile": "generic"}}
+{"name": "plan_storage", "arguments": {"profile": "generic"}}
+{"name": "apply_storage_plan", "arguments": {
+  "plan_id": "<上一步返回的>",
+  "approved_targets": ["home-caches"]
+}}
 ```
 
-从 `plan_storage` 返回结果复制 `plan_id`，并只从 `applicable_target_ids` 选择真实 ID：
-
-```json
-{
-  "name": "apply_storage_plan",
-  "arguments": {
-    "plan_id": "PLAN_ID_FROM_PLAN",
-    "approved_targets": ["TARGET_ID_FROM_PLAN"],
-    "confirm_targets": ["TARGET_ID_FROM_PLAN"]
-  }
-}
-```
-
-四个工具分别是：`audit_storage`（只读审计）、`plan_storage`（只读计划与 token）、`trace_storage`（只读追查）和 `apply_storage_plan`（唯一会修改文件的工具）。
-
-- plan token 只在当前 MCP 服务进程内保存，15 分钟过期且只能使用一次；**plan 和 apply 之间不要重启 `maccleaner-mcp`**。
-- `apply_storage_plan` 不能传入新的扫描范围；它只执行同一 plan 中、你精确批准的 IDs。未批准的 low-risk 目标也不会执行。
-- 某个 ID 需要二次确认时才传入 `confirm_targets`；浏览器会话、Cookie、Token、Keychain 和凭据不会成为可执行候选。
-
-完整参数表和发布说明见 [MCP 使用说明](docs/mcp.md)。
+没有 `approved_targets` 或 `plan_id` 过期（15 分钟），它会**拒绝执行**。
+客户端配置（Codex / Cursor / Claude Desktop）见 [docs/mcp.md](docs/mcp.md)。
 
 </details>
 
-<details id="常用场景">
-<summary><strong>常用场景</strong></summary>
-
-只读输出：
+<details id="验证">
+<summary><strong>自己验证一遍</strong></summary>
 
 ```bash
-maccleaner audit --markdown
-maccleaner audit --json
+python3 -m unittest discover -s tests -v      # 262 条单测
 ```
 
-追查反复出现的目录：
+真机验收（都需要 GUI，人工跑）：
 
 ```bash
-maccleaner trace \
-  --path "<TARGET_PATH>" \
-  --keyword "<KEYWORD>" \
-  --markdown
+bash tests/acceptance_native_smoke.sh      # 真窗口走 11 步：7 个入口 + 清理链路 + 文件级判定
+bash tests/acceptance_uninstall_batch.py   # 批量卸载：多选 → 一次确认 → 文件真的进废纸篓
+bash tests/acceptance_quit.sh              # 关闭后进程/端口/状态四项归零
+bash tests/acceptance_portability.sh       # 复制到别处 + 全新 HOME 也能跑
+bash tests/acceptance_package.sh           # 构建 + 离线安装 + 真实审计
 ```
-
-聚焦某个 App 或 Flutter 工程：
-
-```bash
-maccleaner audit \
-  --app-path "/Applications/Example.app" --markdown
-maccleaner audit \
-  --flutter-search-root "$HOME/Projects" --markdown
-```
-
-`trace` 只读，不会删除文件。把示例路径和关键词替换成真实值。
-
-源码 checkout 仍可使用 `scripts/audit_storage.sh`、`scripts/plan_storage.sh`、`scripts/apply_storage_plan.sh`；它们是兼容入口。
 
 </details>
 
 <details id="安全边界">
-<summary><strong>安全边界</strong></summary>
+<summary><strong>安全与隐私</strong></summary>
 
-| 目标 | 默认行为 |
-| --- | --- |
-| 普通缓存、日志、临时文件 | 可以计划；apply 时由 `--yes` 放行 |
-| Downloads、Trash、Docker、hidden-home、App 残留、系统范围 | 默认不自动清理，需要精确批准 |
-| 浏览器登录、Cookie、Session、Token、Keychain、凭据 | 永久阻断 |
-| 不在当前计划中的目标 | 不执行 |
+- **不收集遥测**，不上传文件名、路径或使用数据；
+- 界面只监听 `127.0.0.1`，入口是一次性链接，每个动作要 cookie + 请求头双凭据；
+- 删除一律进废纸篓；`.ssh`、钥匙串、浏览器登录数据这类路径**永不出现**；
+- 会联网的地方只有：包管理器自己的检查、App Store 版本查询（只传 app id 和国家）。
 
-`audit`、`plan`、`trace` 都是只读命令。`apply_storage_plan.sh` 会修改文件；`safe_clean.sh` 只是旧入口的兼容 shim。
-
-MCP 的 `apply_storage_plan` 不接受新的扫描参数：它必须使用 `plan_storage` 返回的未过期 `plan_id`、非空 `approved_targets`，以及必要的 `confirm_targets`。每个 plan token 只能执行一次。
+细节见 [PRIVACY.md](PRIVACY.md)。许可证 MIT。
 
 </details>
 
-<details id="配置与参数">
-<summary><strong>配置与参数</strong></summary>
-
-- `--profile generic`：默认通用模式，不假定私有 repo 结构。
-- `--profile repo-evidence`：显式开启项目证据和历史索引追踪。
-- `--state-root PATH`：设置 receipt 和 backup 的默认根目录。
-- `--receipt-dir PATH` / `--backup-dir PATH`：单独指定目录，优先于 `--state-root`。
-- `--approved-targets ID1,ID2`：批准当前 plan 中的精确目标。
-- `--confirm-targets ID1,ID2`：为 `exact_confirm` 目标提供二次确认。
-- `--include-hidden-home` / `--include-system`：扩大扫描范围，默认关闭。
-- `--app-path PATH` / `--flutter-search-root PATH`：聚焦扫描范围。
-- `--json` / `--markdown`：选择输出格式。
-- `--apply` / `--dry-run` / `--yes`：控制 `clean` 模式的执行方式。
-
-默认状态目录是 `~/.mac-storage-manager/`。
-
-</details>
-
-<details id="报告怎么看">
-<summary><strong>报告怎么看</strong></summary>
-
-- `target_id`：目标编号，高风险 apply 必须从当前 plan 复制。
-- `status`：`planned`、`ready`、`blocked`、`skipped` 等状态。
-- `protection`：需要批准、二次确认或保持阻断的原因。
-- `backup_manifest`：需要备份时的备份和 SHA-256 清单。
-- `receipt`：apply 的 Markdown/JSON 清理记录路径。
-
-`empty` 表示没有可清理内容，属于正常结果。目标反复出现时，用 `trace` 查触发源。
-
-</details>
-
-<details id="结构与工作链路">
-<summary><strong>结构与工作链路</strong></summary>
-
-```text
-CLI/wrapper -> StorageContext -> profile discovery -> scan -> plan/gates
-            -> optional apply -> renderer/receipt/residual validation
-```
-
-- `src/maccleaner/`：唯一核心实现，以及 CLI 与 MCP adapter。
-- `scripts/mac_storage_manager.py`：旧 CLI 兼容 facade。
-- `scripts/_mac_storage_*.py`：旧 Python 导入路径兼容 shim。
-- `scripts/*_storage.sh`：源码 checkout 的 audit、plan、apply wrapper。
-- `tests/`、`references/`：测试和敏感场景路由说明。
-
-</details>
-
-<details id="开发者说明">
-<summary><strong>开发者说明</strong></summary>
-
-```bash
-python3 -m pip install ".[mcp]" build
-python3 -m unittest discover -s tests -v
-python3 -m build
-```
-
-PyPI 首发前，在 PyPI 为 `Matoya-Amadeus/MacCleaner` 配置 Trusted Publisher；push `v0.1.0` tag 后发布工作流会验证 tag 与包版本一致。
-
-</details>
-
-<details id="常见问题">
-<summary><strong>常见问题</strong></summary>
-
-### 我没有说“先列清单”，它会直接清理吗？
-
-推荐流程不会跳过清单：先运行 `plan`，看完结果，再决定是否运行 apply。apply 会重新扫描，并再次执行风险和批准检查。
-
-### `--yes` 会删除 Downloads 或 Trash 吗？
-
-不会。`--yes` 只放行 low-risk 目标。敏感范围需要精确批准，浏览器身份和凭据数据保持阻断。
-
-### apply 失败或没有释放空间怎么办？
-
-查看报告里的 `blocked`、`skipped`、`failed` 和 `reason`。`empty` 表示没有可清理内容，属于正常结果。
-
-### MCP 会直接清理吗？
-
-不会。MCP 先返回只读 `plan_storage` 结果和短期 `plan_id`。apply 必须带同一个 token、精确 target IDs 和需要时的二次确认；未批准的 low-risk target 也会保持阻断。
-
-</details>
+---
 
 由 **AI·Maho** 和 **人类·Matoya** 共同维护

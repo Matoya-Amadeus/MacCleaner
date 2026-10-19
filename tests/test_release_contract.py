@@ -73,19 +73,27 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertTrue(english.endswith("Maintained jointly by **AI·Maho** and **Human·Matoya**\n"))
         self.assertNotIn("由 **AI·Maho** 和 **人类·Matoya** 共同维护", english)
 
-    def test_readmes_use_assets_in_the_selected_language(self) -> None:
+    def test_readmes_are_text_only(self) -> None:
+        """README 不再放头图/流程图（2026-10-19 用户要求"图片可以删了"）。
+
+        纯文字的好处：diff 可读、GitHub 深浅色都能看、不用维护两套语言版本的图。
+        """
+        for name in ("README.md", "README.en.md"):
+            text = (ROOT / name).read_text(encoding="utf-8")
+            self.assertNotIn("<img", text, f"{name} 不应再引用图片")
+            self.assertNotIn("assets/readme-header", text)
+            self.assertNotIn("assets/readme-workflow", text)
+
+    def test_readmes_link_each_other_for_language_switching(self) -> None:
+        """点中文显示中文、点英文显示英文：两页互相链接，且都在最上面。"""
         chinese = (ROOT / "README.md").read_text(encoding="utf-8")
         english = (ROOT / "README.en.md").read_text(encoding="utf-8")
-        chinese_asset = (ROOT / "assets" / "readme-header.zh.svg").read_text(encoding="utf-8")
-        english_asset = (ROOT / "assets" / "readme-header.svg").read_text(encoding="utf-8")
 
-        self.assertIn('src="assets/readme-header.zh.svg"', chinese)
-        self.assertNotIn('src="assets/readme-header.svg"', chinese)
-        self.assertIn('src="assets/readme-header.svg"', english)
-        self.assertIn("先审计", chinese_asset)
-        self.assertIn("1 审计", chinese_asset)
-        self.assertIn("Audit first", english_asset)
-        self.assertIn("1 Audit", english_asset)
+        self.assertIn("[English](README.en.md)", chinese)
+        self.assertIn("[中文](README.md)", english)
+        # 语言切换要在第一屏（第一行附近），不能埋在页尾
+        self.assertLess(chinese.index("[English](README.en.md)"), 120)
+        self.assertLess(english.index("[中文](README.md)"), 120)
 
     def test_ci_and_trusted_publisher_workflows_exist(self) -> None:
         ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
