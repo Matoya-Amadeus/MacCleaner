@@ -280,6 +280,41 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn(".ctx{", STYLE)
 
 
+    def test_long_lists_are_grouped_with_sticky_toolbar(self) -> None:
+        """长列表按格式塔分组（2026-10-19 用户：50 项/79 项平铺，往下拉太费劲）。"""
+        from maccleaner.ui.pages import render_uninstall_list_html, render_updates_list_html
+
+        uninstall = render_uninstall_list_html({"apps": [
+            {"name": "Alpha", "bundle_id": "com.a", "path": "/A"},
+            {"name": "Beta", "bundle_id": "com.b", "path": "/B"},
+            {"name": "微信读书", "bundle_id": "com.w", "path": "/W"},
+        ]})
+        self.assertGreaterEqual(uninstall.count('class="group"'), 3, "按首字母分组（中文归 #）")
+        self.assertIn('class="toolbar"', uninstall, "工具条要 sticky 在内容顶部")
+        self.assertIn("data-filter", uninstall, "50 项要有搜索")
+        self.assertIn("data-select-all-apps", uninstall)
+
+        updates = render_updates_list_html({"items": [
+            {"name": "aom", "manager": "brew", "kind": "formula", "installed": "1", "available": "2"},
+            {"name": "Logic Pro", "manager": "mas", "kind": "app-store", "installed": "11.2", "available": "12.4"},
+            {"name": "ts", "manager": "npm", "kind": "npm-global", "installed": "5", "available": "6"},
+        ]})
+        for label in ("Homebrew formula", "App Store", "npm 全局包"):
+            self.assertIn(label, updates, f"更新要按来源分组：{label}")
+        self.assertIn("data-select-group", updates, "组头要能全选该组")
+
+    def test_clicking_a_row_does_not_toggle_its_checkbox(self) -> None:
+        """点行 = 打开残留预览；只有左侧小方框才改勾选（整行 label 会误触）。"""
+        from maccleaner.ui.pages import render_uninstall_list_html
+
+        page = render_uninstall_list_html({"apps": [
+            {"name": "Alpha", "bundle_id": "com.a", "path": "/Applications/Alpha.app"},
+        ]})
+        self.assertIn("data-row", page)
+        self.assertIn("checkbox-only", page)
+        self.assertNotIn('<label class="row opt" data-sort-text', page, "行不能整体是 label")
+
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")

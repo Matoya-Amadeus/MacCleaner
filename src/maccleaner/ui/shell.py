@@ -72,14 +72,40 @@ _RUNTIME_JS = """
   const CHECKBOXES = '[data-target-id],[data-item-id],[data-update-id],[data-app-path]';
   let lastBox = null;
 
-  function refreshBatch(){
-    const boxes = Array.from(document.querySelectorAll('[data-app-path]'));
-    if (!boxes.length) return;
-    const picked = boxes.filter(box => box.checked).length;
-    const label = document.getElementById('mc-selected-count');
-    if (label) label.textContent = '已选 ' + picked + ' 个';
-    const button = document.querySelector('[data-bridge-action="uninstall-batch"]');
-    if (button) button.disabled = picked === 0;
+  // 统一刷新"已选 N / 共 M"，并按选择状态禁用主操作（两类列表共用）。
+  function refreshSelection(){
+    const apps = Array.from(document.querySelectorAll('[data-app-path]'));
+    const updates = Array.from(document.querySelectorAll('[data-update-id]'));
+    const picked = list => list.filter(box => box.checked).length;
+
+    const appLabel = document.getElementById('mc-selected-count');
+    if (appLabel && apps.length) {
+      appLabel.textContent = '已选 ' + picked(apps) + ' / ' + apps.length;
+    }
+    const appBtn = document.querySelector('[data-bridge-action="uninstall-batch"]');
+    if (appBtn && apps.length) appBtn.disabled = picked(apps) === 0;
+
+    const upLabel = document.getElementById('mc-updates-count');
+    if (upLabel && updates.length) {
+      upLabel.textContent = '已选 ' + picked(updates) + ' / ' + updates.length;
+    }
+    const upBtn = document.querySelector('[data-bridge-action="updates-apply"]');
+    if (upBtn && updates.length) upBtn.disabled = picked(updates) === 0;
+
+    // 三态同步：全选框必须反映真实状态（部分选中 = indeterminate）。
+    // 不做这件事时，取消一整组后主框仍是"已勾选"，再点一下反而把剩下的也清空。
+    function sync(master, boxes) {
+      if (!master || !boxes.length) return;
+      const chosen = boxes.filter(box => box.checked).length;
+      master.checked = chosen === boxes.length;
+      master.indeterminate = chosen > 0 && chosen < boxes.length;
+    }
+    sync(document.querySelector('[data-select-all-apps]'), apps);
+    sync(document.querySelector('[data-select-all-updates]'), updates);
+    document.querySelectorAll('[data-select-group]').forEach((master) => {
+      const group = master.closest('.group');
+      if (group) sync(master, Array.from(group.querySelectorAll('[data-update-id]')));
+    });
   }
 
   function selectRange(from, to){
@@ -161,6 +187,13 @@ _RUNTIME_JS = """
       return;
     }
 
+    // 点行（不是勾选框/按钮）= 触发这一行的主操作（卸载 → 残留预览）。
+    const row = event.target.closest('[data-row]');
+    if (row && !event.target.closest('input, button, a, [data-menu]')) {
+      const action = row.querySelector('[data-bridge-action]');
+      if (action) { event.preventDefault(); action.click(); return; }
+    }
+
     // 复选框：处理连选与批量计数，不产生动作。
     const box = event.target.closest('input[type="checkbox"]');
     if (box && box.matches(CHECKBOXES)) {
@@ -168,13 +201,30 @@ _RUNTIME_JS = """
         selectRange(lastBox, box);
       }
       lastBox = box;
-      refreshBatch();
+      refreshSelection();
       return;
     }
     const selectApps = event.target.closest('[data-select-all-apps]');
     if (selectApps) {
       document.querySelectorAll('[data-app-path]').forEach(box => { box.checked = selectApps.checked; });
-      refreshBatch();
+      refreshSelection();
+      return;
+    }
+    const selectUpdates = event.target.closest('[data-select-all-updates]');
+    if (selectUpdates) {
+      document.querySelectorAll('[data-update-id]').forEach(box => { box.checked = selectUpdates.checked; });
+      document.querySelectorAll('[data-select-group]').forEach(box => { box.checked = selectUpdates.checked; });
+      refreshSelection();
+      return;
+    }
+    // 组头全选：只影响**这一组**内的行（共同区域的直接后果）。
+    const selectGroup = event.target.closest('[data-select-group]');
+    if (selectGroup) {
+      const group = selectGroup.closest('.group');
+      if (group) {
+        group.querySelectorAll('[data-update-id]').forEach(box => { box.checked = selectGroup.checked; });
+      }
+      refreshSelection();
       return;
     }
     // 全选框：只是前端联动，不产生动作（审阅页/更新页都可能用到）。
@@ -211,7 +261,7 @@ _RUNTIME_JS = """
     try { await window.maccleanerAction(action, payload); }
     catch (error) { button.disabled = false; toast(error.message); }
   });
-  refreshBatch();
+  refreshSelection();
   // ---- 右键菜单（2026-10-19）：复制路径 / 在 Finder 中显示 ----
   // 只对带 data-reveal-path 的行生效；"在 Finder 中显示"要经过会话白名单校验。
   // 复制路径：安全上下文用剪贴板 API，否则退回隐藏 textarea（file:// 或旧内核）。
@@ -275,7 +325,7 @@ _RUNTIME_JS = """
       event.preventDefault();
       const shouldCheck = boxes.some(box => !box.checked);
       boxes.forEach(box => { box.checked = shouldCheck; });
-      refreshBatch();
+      refreshSelection();
       return;
     }
     if (event.key === 'Escape') { closeMenu(); return; }
@@ -283,6 +333,31 @@ _RUNTIME_JS = """
       const primary = document.querySelector('[data-bridge-action].primary');
       if (primary && !primary.disabled) { event.preventDefault(); primary.click(); }
     }
+  });
+
+  // 搜索：按 data-sort-text（小写名字）与文本内容匹配，整组无命中就隐藏该组。
+  document.addEventListener('input', (event) => {
+    const search = event.target.closest('[data-filter]');
+    if (!search) return;
+    const needle = search.value.trim().toLowerCase();
+    document.querySelectorAll('[data-group]').forEach((group) => {
+      let shown = 0;
+      const rows = Array.from(group.querySelectorAll('[data-sort-text]'));
+      rows.forEach((row) => {
+        const text = (row.dataset.sortText || '') + ' ' + (row.textContent || '').toLowerCase();
+        const hit = !needle || text.includes(needle);
+        row.style.display = hit ? '' : 'none';
+        if (hit) shown += 1;
+      });
+      group.style.display = shown ? '' : 'none';
+      if (needle && shown) group.open = true;
+      // 组头计数跟着过滤走：显示"命中 / 总数"，否则数字会误导（C 9 个却只看到 3 行）。
+      const badge = group.querySelector('summary .meta');
+      if (badge) {
+        if (!badge.dataset.total) badge.dataset.total = badge.textContent.trim();
+        badge.textContent = needle ? (shown + ' / ' + rows.length) : badge.dataset.total;
+      }
+    });
   });
 
   document.addEventListener('click', closeMenu);
@@ -329,6 +404,7 @@ def state_page(
     subtitle: str = "",
     meta: str = "",
     hero: str = "",
+    toolbar: str = "",
 ) -> str:
     """拼一页：顶栏 + 侧栏 + 标题区 + 动作插槽 + 内联脚本。
 
@@ -363,6 +439,7 @@ def state_page(
     {f'<p class="hero">{html.escape(hero)}</p>' if hero else ''}
     {f'<p class="state-msg">{message}</p>' if message else ''}
     {f'<p class="state-detail">{detail}</p>' if detail else ''}
+    {f'<div class="toolbar">{toolbar}</div>' if toolbar else ''}
     {ACTIONS_SLOT}
   </section>
 </main>

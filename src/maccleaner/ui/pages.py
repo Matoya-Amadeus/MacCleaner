@@ -35,6 +35,7 @@ def _button(
     primary: bool = False,
     element_id: str = "",
     payload: dict[str, Any] | None = None,
+    ghost: bool = False,
 ) -> str:
     """按钮只携带**动作名 + 数据**；参数走 data-bridge-payload。
 
@@ -43,7 +44,7 @@ def _button(
     """
     import json as _json
 
-    cls = "button primary" if primary else "button"
+    cls = "button primary" if primary else ("button ghost" if ghost else "button")
     ident = f' id="{html.escape(element_id)}"' if element_id else ""
     data = ""
     if payload:
@@ -434,72 +435,91 @@ def render_recovery_html(payload: dict[str, Any], *, interactive: bool = True) -
 
 
 def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = True) -> str:
-    """应用列表（只列 `/Applications` 与用户应用目录里的 `.app`）。"""
+    """应用列表：**首字母分组 + 搜索 + 粘性工具条**（2026-10-19 用户反馈"50 项往下拉太费劲"）。
+
+    字母分组对应"我记得名字开头"的找法，搜索对应"我知道叫什么"的找法；
+    两者一起解决滚动，而不是把行做矮。
+    """
     apps = [item for item in (payload.get("apps") or []) if isinstance(item, dict)]
-    # 每个应用一行，**卸载按钮就放在行尾**：之前把按钮单独堆成一块（只前 6 个、还会换行），
-    # 用户看到的是"一排按钮 + 一堆 0 B"（2026-10-19 看真机快照发现）。
-    rows = []
+    buckets: dict[str, list[str]] = {}
+
     for app in apps:
         size = int(app.get("allocated_bytes") or 0)
-        # 体积未知时**整段不渲染**：50 行都挂一个 "—" 是纯噪声（列表页默认不算体积）。
         size_text = f'<span class="meta value">{human_bytes(size)}</span>' if size else ""
+        name = str(app.get("name", ""))
+        bundle = str(app.get("bundle_id", ""))
+        path = str(app.get("path", ""))
         button = (
-            _button(
-                "卸载",
-                "uninstall-plan",
-                payload={"bundle_id": app.get("bundle_id", ""), "path": app.get("path", "")},
-            )
+            _button("卸载", "uninstall-plan", payload={"bundle_id": bundle, "path": path}, ghost=True)
             if interactive
             else ""
         )
         checkbox = (
-            '<input type="checkbox" data-app-path="'
-            + html.escape(str(app.get("path", "")))
-            + '" data-app-bundle="'
-            + html.escape(str(app.get("bundle_id", "")))
-            + '" data-app-name="'
-            + html.escape(str(app.get("name", "")))
-            + '">'
+            f'<input type="checkbox" data-app-path="{html.escape(path)}"'
+            f' data-app-bundle="{html.escape(bundle)}" data-app-name="{html.escape(name)}">'
             if interactive
             else ""
         )
-        rows.append(
-            f'<label class="row opt" data-sort-text="{html.escape(str(app.get("name", "")).lower())}"'
-            f' data-sort-bytes="{size}" data-reveal-path="{html.escape(str(app.get("path", "")))}">'
-            + checkbox
-            + '<div style="min-width:0;flex:1">'
-            f'<strong>{html.escape(str(app.get("name", "")))}</strong>'
-            f'<div class="meta">{html.escape(str(app.get("bundle_id", "")))}</div>'
-            f'</div><div style="display:flex;align-items:center;gap:10px;flex:none">'
-            f"{size_text}{button}</div></label>"
+        # 行**不是** label：整行 label 会让"点应用名想打开"变成"误勾选"（2026-10-19 截图发现）。
+        # 勾选只由左侧那个小 label 触发；点行其它位置 = 打开残留预览（JS 代理到行内按钮）。
+        row = (
+            f'<div class="row opt clickable" data-row data-sort-text="{html.escape(name.lower())}"'
+            f' data-sort-bytes="{size}" data-reveal-path="{html.escape(path)}">'
+            '<label class="checkbox-only">'
+            + (checkbox or '<span style="width:16px"></span>')
+            + "</label>"
+            '<div style="min-width:0;flex:1">'
+            f"<strong>{html.escape(name)}</strong>"
+            f'<div class="meta">{html.escape(bundle)}</div>'
+            "</div>"
+            f'<div class="row-actions">{size_text}{button}</div></div>'
         )
-    # 批量条：勾一个或多个应用后可以"一次确认、一次执行"，
-    # 而不是点 5 次卸载、走 5 遍确认（2026-10-19 用户提出的原生批量操作缺口）。
-    batch = (
-        '<div class="batchbar"><label class="row opt" style="border-top:0">'
-        '<input type="checkbox" data-select-all-apps>'
-        f'<div><strong>全选</strong><div class="meta">共 {len(apps)} 个应用 · ⌘A 全选</div></div></label>'
-        '<div class="batchbar-actions"><span class="meta" id="mc-selected-count">已选 0 个</span>'
-        + _button("批量卸载所选", "uninstall-batch", primary=True)
-        + "</div></div>"
-        if (interactive and apps)
-        else ""
+        initial = name.strip()[:1].upper()
+        key = initial if (initial.isascii() and initial.isalpha()) else "#"
+        buckets.setdefault(key, []).append(row)
+
+    groups: list[str] = []
+    for key in sorted(buckets, key=lambda item: (item == "#", item)):
+        rows = buckets[key]
+        groups.append(
+            '<details class="group" open data-group>'
+            f'<summary><span class="group-name">{key}</span>'
+            f'<span class="meta">{len(rows)} 个</span></summary>'
+            f'<div class="rows">{"".join(rows)}</div></details>'
+        )
+
+    toolbar = ""
+    if interactive and apps:
+        toolbar = (
+            '<div class="toolbar-left">'
+            '<label class="checkbox-inline"><input type="checkbox" data-select-all-apps>'
+            "<span>全选</span></label>"
+            '<input class="search" type="search" placeholder="搜索名称或 bundle id"'
+            ' data-filter aria-label="搜索应用">'
+            '<span class="meta" id="mc-selected-count"></span></div>'
+            '<div class="toolbar-right">'
+            + sort_bar()
+            + _button("批量卸载所选", "uninstall-batch", primary=True)
+            + "</div>"
+        )
+
+    body = "".join(groups) if groups else empty_block(
+        "check", "没有找到应用", "换一个入口，或稍后再来。"
     )
-    actions = batch
     return state_page(
         {
-            "message": "点右侧【卸载】查看它留下的文件，确认后才移入废纸篓",
+            "message": "点行尾【卸载】看它留下的文件；勾选多个可以批量处理",
             "detail": "系统级残留需要一次管理员授权；体积在点开应用后计算。",
         },
         stage="uninstall-list",
         title="软件卸载",
         body="选择一个应用",
-        actions=batch + sort_bar() + f'<div class="rows" data-sortable>{"".join(rows)}</div>',
+        toolbar=toolbar,
+        actions=body,
         current="uninstall",
         subtitle="先看残留清单，确认后才移入废纸篓（可恢复）",
         meta=f"{len(apps)} 个应用" if apps else "",
     )
-
 
 
 def render_uninstall_batch_confirm_html(batch: dict[str, Any], *, interactive: bool = True) -> str:
@@ -672,33 +692,93 @@ def render_uninstall_complete_html(result: dict[str, Any], *, interactive: bool 
 def render_updates_list_html(
     payload: dict[str, Any], *, interactive: bool = True, notice: str = ""
 ) -> str:
+    """可升级列表，**按来源分组**（2026-10-19 用户反馈"79 项平铺，往下拉太费劲"）。
+
+    分组边界用用户能理解的"来源"（Homebrew formula / cask / App Store / npm…），
+    而不是内部字段名——这正是格式塔的相似性：同一来源放在一起才像一个东西。
+    """
     items = [item for item in (payload.get("items") or []) if isinstance(item, dict)]
-    rows: list[str] = []
+
+    labels = {
+        ("brew", "formula"): "Homebrew formula",
+        ("brew", "cask"): "Homebrew cask",
+        ("mas", "app-store"): "App Store",
+        ("npm", "npm-global"): "npm 全局包",
+        ("pip", "pip"): "Python 包",
+        ("gem", "gem"): "Ruby gem",
+        ("rustup", "toolchain"): "Rust 工具链",
+    }
+    order = [
+        "Homebrew formula",
+        "Homebrew cask",
+        "App Store",
+        "npm 全局包",
+        "Python 包",
+        "Ruby gem",
+        "Rust 工具链",
+    ]
+    buckets: dict[str, list[str]] = {}
+
     for index, item in enumerate(items):
+        manager = str(item.get("manager") or "")
+        kind = str(item.get("kind") or "")
+        label = labels.get((manager, kind), f"{manager}/{kind}".strip("/") or "其它")
         transition = f"{item.get('installed') or '?'} → {item.get('available') or '?'}"
-        rows.append(
-            '<label class="row opt"><input type="checkbox" data-update-id="'
-            + str(index)
-            + '" checked><div><strong>'
-            + html.escape(str(item.get("name", "")))
-            + '</strong><div class="meta">'
-            + html.escape(f"{item.get('manager')}/{item.get('kind')} · {transition}")
-            + '</div></div></label>'
+        name = str(item.get("name", ""))
+        row = (
+            f'<label class="row opt" data-sort-text="{html.escape(name.lower())}">'
+            f'<input type="checkbox" data-update-id="{index}" checked>'
+            '<div style="min-width:0">'
+            f"<strong>{html.escape(name)}</strong>"
+            f'<div class="meta">{html.escape(transition)}</div></div></label>'
         )
+        buckets.setdefault(label, []).append(row)
+
+    groups: list[str] = []
+    for label in sorted(buckets, key=lambda key: (order.index(key) if key in order else 99, key)):
+        rows = buckets[label]
+        group_box = (
+            f'<input type="checkbox" data-select-group checked aria-label="全选 {html.escape(label)}">'
+            if interactive
+            else ""
+        )
+        groups.append(
+            '<details class="group" open><summary>'
+            f'<span class="group-name">{html.escape(label)}</span>'
+            f'<span class="meta">{len(rows)} 项</span>'
+            f"{group_box}</summary>"
+            f'<div class="rows">{"".join(rows)}</div></details>'
+        )
+
     notes = "".join(f'<p class="muted">{html.escape(str(note))}</p>' for note in (payload.get("notes") or []))
-    actions = _actions(_button("重新检查", "updates-refresh"), _button("更新所选", "updates-apply", primary=True)) if interactive else ""
-    if notice:
-        # 提示在按钮**上方**：否则会挤进动作条、看起来像第三个按钮。
-        actions = f'<p class="pill warn" role="status">{html.escape(notice)}</p>' + actions
+    toolbar = ""
+    if interactive:
+        toolbar = (
+            '<div class="toolbar-left">'
+            '<label class="checkbox-inline"><input type="checkbox" data-select-all-updates checked>'
+            "<span>全选</span></label>"
+            '<span class="meta" id="mc-updates-count"></span></div>'
+            '<div class="toolbar-right">'
+            + _button("重新检查", "updates-refresh")
+            + _button("更新所选", "updates-apply", primary=True)
+            + "</div>"
+        )
+        if notice:
+            toolbar += f'<p class="pill warn" role="status">{html.escape(notice)}</p>'
+
+    body = "".join(groups) if groups else empty_block(
+        "check", "已经是最新的", "没有发现可升级的第三方软件。"
+    )
     return state_page(
         {
-            "message": f"可升级 {len(items)} 项（只处理第三方：Homebrew / App Store）",
-            "detail": "macOS 系统更新不在此列——它有自己的机制。升级不可逆，确认后逐组执行并记录输出。",
+            "message": f"可升级 {len(items)} 项，按来源分了 {len(groups)} 组",
+            "detail": "只处理第三方来源；macOS 系统更新不在此列。升级不可逆，确认后逐组执行并记录输出。",
         },
         stage="updates",
         title="软件更新",
         body="可升级的第三方软件",
-        actions=actions + "".join(rows) + notes,
+        toolbar=toolbar,
+        actions=body + notes,
         current="updates",
     )
 

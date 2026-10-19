@@ -154,6 +154,49 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:1
   color:var(--text);font:inherit;font-size:var(--fs-meta);padding:7px 10px;border-radius:6px;cursor:pointer}
 .ctx button:hover{background:var(--accent-soft);color:var(--accent)}
 
+/* ---- 长列表的格式塔改造（2026-10-19）---- */
+/* 连续律：工具栏贴在内容顶部，滚到第 40 行时"已选/全选/主操作"仍够得着。 */
+.toolbar{position:sticky;top:0;z-index:6;display:flex;justify-content:space-between;
+  align-items:center;gap:var(--sp-3);flex-wrap:wrap;padding:10px 0;margin:0 0 var(--sp-2);
+  background:color-mix(in srgb, var(--surface) 94%, transparent);
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line)}
+.toolbar-left,.toolbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.toolbar-left .meta{color:var(--muted);font-size:var(--fs-meta);font-variant-numeric:tabular-nums}
+
+/* 搜索：只在长列表出现，样式沿用控件 token。 */
+.search{appearance:none;border:1px solid var(--line-strong);background:var(--surface-2);
+  color:var(--text);font:inherit;font-size:var(--fs-meta);padding:5px 10px;
+  border-radius:var(--r-control);min-width:190px}
+.search::placeholder{color:var(--muted)}
+.search:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+.checkbox-inline{display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+  font-size:var(--fs-meta);color:var(--text-2)}
+.checkbox-inline input{margin:0;accent-color:var(--accent)}
+
+/* 勾选区单独成 label：只有点这里才改变勾选，点行其它地方是"打开"。 */
+.checkbox-only{display:flex;align-items:center;flex:none;cursor:pointer;padding:2px 2px 2px 0}
+.checkbox-only input{margin:0;accent-color:var(--accent)}
+/* 可点行：hover 给出"这行能点"的反馈（接近性 + 可供性）。 */
+.row.clickable{cursor:pointer}
+.row.clickable:hover{background:var(--surface-2);border-radius:var(--r-row)}
+
+/* 共同区域：每组一块，组头比行更"平"（图底关系：行是前景）。 */
+.group{margin:0 0 var(--sp-3)}
+/* 组头吸顶：滚到第 40 行时仍知道自己在哪个字母段/来源段（连续律）。 */
+.group > summary{position:sticky;top:54px;z-index:5;
+  display:flex;align-items:center;gap:10px;cursor:pointer;
+  padding:7px 10px;border-radius:var(--r-row);background:var(--surface-2);
+  color:var(--text-2);font-size:var(--fs-label);font-weight:600;list-style:none}
+.group > summary::-webkit-details-marker{display:none}
+.group > summary:hover{background:color-mix(in srgb, var(--surface-2) 70%, var(--surface))}
+.group > summary .group-name{flex:1;letter-spacing:.02em}
+.group > summary .meta{color:var(--muted);font-weight:400}
+/* 组内第一行不画分隔线：组头已经是边界，再画一条会多出一道"假边界"。 */
+.group .rows .row:first-child{border-top:0}
+.row-actions{display:flex;align-items:center;gap:10px;flex:none}
+
 /* 排序条：小、安静，不抢主操作。 */
 .sortbar{display:flex;align-items:center;gap:6px;padding:8px 0 2px}
 .sortbtn{appearance:none;border:1px solid transparent;background:transparent;color:var(--muted);
