@@ -398,11 +398,11 @@ class AppStoreFallbackTests(unittest.TestCase):
 
         from maccleaner.updates import _proxy_hint
 
-        fake = "SOCKSEnable : 1\nSOCKSPort : 7892\nSOCKSProxy : 127.0.0.1"
+        fake = "SOCKSEnable : 1\nSOCKSPort : 9999\nSOCKSProxy : 127.0.0.1"
         with patch("maccleaner.updates._system_proxy_state",
-                   return_value={"SOCKSEnable": "1", "SOCKSPort": "7892", "SOCKSProxy": "127.0.0.1"}):
+                   return_value={"SOCKSEnable": "1", "SOCKSPort": "9999", "SOCKSProxy": "127.0.0.1"}):
             hint = _proxy_hint()
-        self.assertIn("127.0.0.1:7892", hint)
+        self.assertIn("127.0.0.1:9999", hint)
         self.assertIn("连不上", hint)
 
     def test_lookup_fallback_lists_updates_without_mas_network(self) -> None:
