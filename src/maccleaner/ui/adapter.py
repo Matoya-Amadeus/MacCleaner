@@ -51,6 +51,7 @@ def review_payload(report: dict[str, Any]) -> dict[str, Any]:
         "total_bytes": sum(int(candidate["allocated_bytes"]) for candidate in candidates),
         "mode": str(report.get("mode") or ""),
         "dry_run": bool(report.get("dry_run")),
+        "scan_cached_at": float(report.get("scan_cached_at") or 0),
     }
 
 

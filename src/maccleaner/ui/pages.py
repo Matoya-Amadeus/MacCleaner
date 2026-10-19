@@ -153,6 +153,12 @@ def render_review_html(payload: dict[str, Any], *, interactive: bool = True) -> 
         if candidates
         else "你的 Mac 现在很干净。可以调大扫描范围或稍后再试。"
     )
+    cached_at = float(payload.get("scan_cached_at") or 0)
+    if cached_at:
+        import time as _time
+
+        stamp = _time.strftime("%H:%M", _time.localtime(cached_at))
+        detail += f" 数据来自 {stamp} 的扫描（点【重新扫描】可强制刷新）。"
     actions = _actions(_button("取消", "cancel"), _button("开始清理", "approval", primary=True)) if (interactive and candidates) else _actions(_button("重新扫描", "rescan", primary=interactive))
     return state_page(
         {"message": f"扫描完成：{len(candidates)} 组候选，{human_bytes(total)}", "detail": detail},

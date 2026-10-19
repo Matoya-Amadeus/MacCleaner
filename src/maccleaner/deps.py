@@ -16,10 +16,12 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import plistlib
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -111,6 +113,107 @@ def history_summary(*, state_root: Path | None = None) -> dict[str, Any]:
     }
 
 
+SCAN_CACHE_SECONDS = 300
+
+
+def _cache_path(state_root: Path) -> Path:
+    return state_root / "scan-cache.json"
+
+
+def _watched_paths(report: dict[str, Any]) -> list[str]:
+    """把报告里出现的目标路径当作"变化信号"。
+
+    缓存必须能自己判断"过期"，而判断依据只能来自上次扫描看到的路径——
+    所以把路径连同结果一起存，下次先 stat 这些路径的 mtime。
+    """
+    paths: list[str] = []
+    for item in report.get("plan_items") or []:
+        for raw in item.get("paths") or []:
+            if isinstance(raw, str) and raw:
+                paths.append(raw)
+    return sorted(set(paths))
+
+
+def _signature(paths: list[str], home: Path) -> str:
+    """把 `~/...` 按**本次扫描的 home** 展开后再取 mtime。
+
+    踩过的坑：用 `os.path.expanduser` 会展开成真实家目录，于是临时 home 的缓存永远"有效"——
+    路径变了也不重扫（用例当场抓到）。
+    """
+    parts: list[str] = []
+    for raw in paths:
+        if raw.startswith("~/"):
+            candidate = home / raw[2:]
+        else:
+            candidate = Path(os.path.expanduser(raw))
+        try:
+            stamp = int(candidate.stat().st_mtime)
+        except OSError:
+            stamp = -1
+        parts.append(f"{raw}:{stamp}")
+    return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
+
+
+def scan_report(
+    *,
+    home: Path,
+    root: Path,
+    state_root: Path,
+    force: bool = False,
+    ttl_seconds: int = SCAN_CACHE_SECONDS,
+) -> dict[str, Any]:
+    """带磁盘缓存的扫描。
+
+    为什么要缓存：全盘扫描实测 **24.7s**（`~/Downloads` 5.5 GiB 占大头）。用户点两次就要等两次。
+    但缓存必须诚实：**TTL 到期或目标路径 mtime 变化就重扫**，并把"这份数据是什么时候扫的"带回给页面，
+    页面上明写时间、且【重新扫描】永远强制重扫。
+    """
+    cache_file = _cache_path(state_root)
+    disabled = os.environ.get("MACCLEANER_SCAN_CACHE", "1") == "0"
+    if not disabled and not force:
+        try:
+            entry = json.loads(cache_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            entry = None
+        if isinstance(entry, dict):
+            age = time.time() - float(entry.get("scanned_at") or 0)
+            paths = entry.get("paths") or []
+            if age <= ttl_seconds and _signature(paths, home) == entry.get("signature"):
+                report = entry.get("report") or {}
+                if isinstance(report, dict):
+                    return {**report, "scan_cached_at": float(entry.get("scanned_at") or 0)}
+
+    # 扫描会遍历整个主目录；系统调用可能被信号打断（实测 `InterruptedError: [Errno 4]`，
+    # 发生在 `rglob` 里），一次重试就能过去——总比让用户看到"出错了，可以重试"要好。
+    last_error: BaseException | None = None
+    report: dict[str, Any] = {}
+    for attempt in range(2):
+        try:
+            report = StorageManager(StorageContext(home=home, root=root)).audit().to_dict()
+            break
+        except InterruptedError as exc:      # noqa: PERF203 - 只重试一次
+            last_error = exc
+            if attempt == 1:
+                raise
+    if last_error is not None and not report:
+        raise last_error
+    if not disabled:
+        entry = {
+            "scanned_at": time.time(),
+            "paths": _watched_paths(report),
+            "signature": _signature(_watched_paths(report), home),
+            "report": report,
+        }
+        try:
+            state_root.mkdir(parents=True, exist_ok=True)
+            tmp = cache_file.with_suffix(".tmp")
+            tmp.write_text(json.dumps(entry, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, cache_file)
+        except OSError:
+            pass
+    return {**report, "scan_cached_at": 0.0}
+
+
 def build_deps(
     *,
     home: Path | None = None,
@@ -135,7 +238,10 @@ def build_deps(
         return instance.clean().to_dict()
 
     def audit() -> dict[str, Any]:
-        return report_of("audit")
+        return scan_report(home=home_path, root=root_path, state_root=state_path)
+
+    def rescan() -> dict[str, Any]:
+        return scan_report(home=home_path, root=root_path, state_root=state_path, force=True)
 
     def plan() -> dict[str, Any]:
         return report_of("plan")
@@ -176,6 +282,7 @@ def build_deps(
 
     return SessionDeps(
         audit=audit,
+        rescan=rescan,
         plan=plan,
         clean=clean,
         history=lambda: history_summary(state_root=state_path),

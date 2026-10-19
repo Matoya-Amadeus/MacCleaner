@@ -220,3 +220,104 @@ class ListingSpeedTests(unittest.TestCase):
             _fake_app(home / "Applications")
             apps = list_applications(home=home, with_sizes=True)
             self.assertIn("allocated_bytes", apps[0])
+
+
+class ScanCacheTests(unittest.TestCase):
+    """扫描缓存（2026-10-19）：命中要真省时间，过期/路径变化要真重扫。"""
+
+    def _home(self, tmp: Path) -> Path:
+        home = tmp / "home"
+        cache = home / "Library" / "Caches" / "Demo"
+        cache.mkdir(parents=True)
+        (cache / "a.bin").write_bytes(b"z" * 4096)
+        import os as _os
+
+        _os.utime(cache, (1, 1))
+        return home
+
+    def test_second_scan_hits_cache_and_reports_the_time(self) -> None:
+        from unittest.mock import patch
+
+        from maccleaner.deps import scan_report
+
+        with tempfile.TemporaryDirectory(prefix="scan-cache-") as tmp:
+            home = self._home(Path(tmp))
+            state = Path(tmp) / "state"
+            with patch.object(__import__("maccleaner.deps", fromlist=["StorageManager"]).StorageManager,
+                              "audit", autospec=True, side_effect=lambda self: _fake_report()) as spy:
+                first = scan_report(home=home, root=home, state_root=state)
+                second = scan_report(home=home, root=home, state_root=state)
+            self.assertEqual(spy.call_count, 1, "第二次应命中缓存，不再扫")
+            self.assertEqual(first.get("scan_cached_at"), 0.0)
+            self.assertGreater(second.get("scan_cached_at"), 0, "命中时要带回扫描时间，页面才能标注")
+            self.assertEqual(len(second["plan_items"]), len(first["plan_items"]))
+
+    def test_force_bypasses_the_cache(self) -> None:
+        from unittest.mock import patch
+
+        from maccleaner.deps import scan_report
+
+        with tempfile.TemporaryDirectory(prefix="scan-force-") as tmp:
+            home = self._home(Path(tmp))
+            state = Path(tmp) / "state"
+            with patch.object(__import__("maccleaner.deps", fromlist=["StorageManager"]).StorageManager,
+                              "audit", autospec=True, side_effect=lambda self: _fake_report()) as spy:
+                scan_report(home=home, root=home, state_root=state)
+                scan_report(home=home, root=home, state_root=state, force=True)
+            self.assertEqual(spy.call_count, 2, "force 必须绕过缓存（页面上的【重新扫描】用它）")
+
+    def test_changed_target_invalidates_the_cache(self) -> None:
+        from unittest.mock import patch
+
+        from maccleaner.deps import scan_report
+
+        with tempfile.TemporaryDirectory(prefix="scan-invalid-") as tmp:
+            home = self._home(Path(tmp))
+            state = Path(tmp) / "state"
+            watched = home / "Library" / "Caches"
+            with patch.object(__import__("maccleaner.deps", fromlist=["StorageManager"]).StorageManager,
+                              "audit", autospec=True, side_effect=lambda self: _fake_report()) as spy:
+                scan_report(home=home, root=home, state_root=state)
+                os.utime(watched, (10_000, 10_000))     # 目标目录变了
+                scan_report(home=home, root=home, state_root=state)
+            self.assertEqual(spy.call_count, 2, "目标 mtime 变化后必须重扫")
+
+
+    def test_interrupted_scan_is_retried_once(self) -> None:
+        """扫描会遍历整个主目录，系统调用可能被信号打断（实测 Errno 4）。"""
+        from unittest.mock import patch
+
+        from maccleaner.deps import scan_report
+
+        with tempfile.TemporaryDirectory(prefix="scan-eintr-") as tmp:
+            home = self._home(Path(tmp))
+            state = Path(tmp) / "state"
+            report = _fake_report()
+            with patch.object(__import__("maccleaner.deps", fromlist=["StorageManager"]).StorageManager,
+                              "audit", autospec=True,
+                              side_effect=[InterruptedError(4, "Interrupted system call"), report]) as spy:
+                result = scan_report(home=home, root=home, state_root=state, force=True)
+            self.assertEqual(spy.call_count, 2, "被信号打断后应重试一次")
+            self.assertTrue(result["plan_items"])
+
+def _fake_report() -> object:
+    from pathlib import Path as _Path
+
+    class _Report:
+        def to_dict(self) -> dict:
+            return {
+                "mode": "audit",
+                "plan_items": [
+                    {
+                        "target_id": "home-caches",
+                        "name": "Home caches",
+                        "category": "cache",
+                        "estimated_bytes": 4096,
+                        "recoverable": True,
+                        "status": "planned",
+                        "paths": ["~/Library/Caches"],
+                    }
+                ],
+            }
+
+    return _Report()

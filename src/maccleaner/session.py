@@ -56,6 +56,8 @@ class SessionDeps:
     uninstall_apply: Callable[..., dict[str, Any]] = lambda **_kwargs: {"status": "refused"}
     updates_check: Callable[[], dict[str, Any]] = lambda: {"items": [], "count": 0, "notes": []}
     updates_apply: Callable[..., dict[str, Any]] = lambda **_kwargs: {"status": "refused", "groups": []}
+    # 扫描可能很慢（实测全盘 24.7s），所以有缓存；`rescan` 必须能**绕过缓存**强制重扫。
+    rescan: Callable[[], dict[str, Any]] | None = None
 
 
 @dataclass
@@ -209,20 +211,29 @@ class InteractiveSession:
 
     def _run_cleanup(self, timeout: float | None) -> dict[str, Any] | None:
         try:
-            self._serve("scanning", pages.render_progress_html())
-            report = self.deps.audit()
             from .ui.adapter import review_payload
 
-            payload = review_payload(report)
-            self._serve("review", pages.render_review_html(payload))
+            force = False
+            while True:
+                self._serve("scanning", pages.render_progress_html(
+                    {"message": "重新扫描中…" if force else "正在扫描，请稍候…"}
+                ))
+                scanner = self.deps.rescan if (force and self.deps.rescan) else self.deps.audit
+                report = scanner()
+                payload = review_payload(report)
+                self._serve("review", pages.render_review_html(payload))
 
-            action = self._wait_or_nav(("approval", "rescan", "cancel"), timeout or self.ACTION_TIMEOUT_SECONDS)
-            if action is not None and "nav" in action:
-                return None          # 用户切到别的入口，交回主循环
-            if action is None or action["action"] in {"cancel", "rescan"}:
-                if action is not None and action["action"] == "cancel":
+                action = self._wait_or_nav(("approval", "rescan", "cancel"), timeout or self.ACTION_TIMEOUT_SECONDS)
+                if action is not None and "nav" in action:
+                    return None          # 用户切到别的入口，交回主循环
+                if action is None:
+                    return None
+                if action["action"] == "cancel":
                     return self._finish("cancelled", pages.render_cancelled_html({}))
-                return None
+                if action["action"] == "rescan":
+                    force = True         # 用户点【重新扫描】→ 必须绕过缓存
+                    continue
+                break
 
             self._serve("confirming", pages.render_confirmation_html({
                 "selected_count": payload.get("count", 0),
