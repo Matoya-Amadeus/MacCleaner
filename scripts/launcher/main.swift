@@ -239,6 +239,8 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
             ("uninstall-list", "uninstall-list", "",
              "document.querySelectorAll('.row').length"),
             ("skills", "skills-open", "", "document.querySelectorAll('.row').length"),
+            // 侧栏"Mac 清理"现在只是**回落地页**（不再触发扫描）；扫描必须点落地页的按钮。
+            ("idle", "home", "", "document.querySelectorAll('.side-item').length"),
             // 扫描优化后（26.5s → 0.7s）这一步可以要求**真的到审阅页**，而不只是"有反应"。
             // 审阅页现在是勾选行：按勾选框计数（`.row` 也会匹配到 label，但语义不直接）
             ("review", "start", "", "document.querySelectorAll('[data-target-id]').length"),
@@ -303,7 +305,9 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
                 self.webView?.evaluateJavaScript(
                     // 点按钮而不是直接调 API：按钮的点击处理器会收集当前勾选的 id
                     // （清理的批准必须带 approved_ids，直接传 {} 等于"一组都没选"）。
-                    "var __b=document.querySelector('[data-bridge-action=\"\(action)\"]')"
+                    "var __sa=document.querySelector('[data-select-all]');"
+                    + "if(__sa && !__sa.checked){__sa.click();}"
+                    + "var __b=document.querySelector('[data-bridge-action=\"\(action)\"]')"
     + " || document.querySelector('[data-nav-action=\"\(action)\"]'); if(__b){__b.click();'clicked'}else{'missing'}"
                     ) { value, _ in
                     if let flag = value as? String, flag == "missing" { self.log("smoke click \(action): button not found") }

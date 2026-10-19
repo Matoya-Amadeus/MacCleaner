@@ -44,6 +44,8 @@ def review_payload(report: dict[str, Any]) -> dict[str, Any]:
                 "kind": str(item.get("category") or item.get("kind") or ""),
                 "allocated_bytes": estimated,
                 "recoverable": bool(item.get("recoverable")),
+                "risk": str(item.get("risk") or "low"),
+                "requires_confirmation": bool(item.get("requires_confirmation")),
                 "status": str(item.get("status") or ""),
                 "target_id": str(item.get("target_id") or ""),
             }

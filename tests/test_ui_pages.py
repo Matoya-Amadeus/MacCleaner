@@ -129,6 +129,36 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn("-webkit-backdrop-filter:blur(", STYLE, "WKWebView 需要前缀")
         self.assertIn("radial-gradient", STYLE, "没有背景层，玻璃看不出层次")
 
+    def test_review_rows_are_unchecked_by_default_and_risky_are_disabled(self) -> None:
+        """审阅页默认**不勾**，高风险项连勾选框都不给（2026-10-19 用户要求）。
+
+        之前默认全勾，`~/Downloads` 与 Docker 数据（high risk，内核要求 confirm_targets）
+        一键就能删——这是危险的默认值。
+        """
+        from maccleaner.ui.pages import render_review_html
+
+        page = render_review_html({"candidates": [
+            {"name": "Home caches", "path": "/Users/x/Library/Caches", "kind": "cache",
+             "allocated_bytes": 1024, "target_id": "home-caches", "risk": "low"},
+            {"name": "Downloads", "path": "/Users/x/Downloads", "kind": "user-files",
+             "allocated_bytes": 2048, "target_id": "downloads", "risk": "high",
+             "requires_confirmation": True},
+        ]})
+        self.assertEqual(page.count('data-target-id="home-caches"'), 1)
+        self.assertNotRegex(page, r'data-target-id="[^"]+"[^>]*checked', "默认不该勾选")
+        self.assertIn('data-risk="1"', page, "高风险项要禁用勾选")
+        self.assertNotIn('data-target-id="downloads"', page, "高风险项要留到确认页")
+        self.assertIn("确认页单独确认", page)
+        self.assertIn("这些条目是怎么被挑出来的", page, "要能解释为什么它在清单里")
+
+    def test_sidebar_clean_entry_is_navigation_not_scan(self) -> None:
+        """侧栏"Mac 清理"只是回落地页；扫描必须由落地页按钮触发（2026-10-19 用户报的 bug）。"""
+        from maccleaner.ui.shell import NAV_GROUPS
+
+        actions = [item.action for group in NAV_GROUPS for item in group.items]
+        self.assertIn("home", actions)
+        self.assertNotIn("start", actions, "侧栏不该直接等于\"开始扫描\"")
+
 
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:

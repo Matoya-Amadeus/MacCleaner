@@ -35,7 +35,7 @@ TERMINAL_STAGES = frozenset({"complete", "cancelled"})
 
 # 侧栏在任何页面都可见 ⇒ 任何等待都必须能接住它们，否则用户在子流程里点侧栏会"没反应"
 # （2026-10-18 真浏览器实测：点了更新页后再点卸载，队列里的动作没人取）。
-NAV_ACTIONS: tuple[str, ...] = ("start", "uninstall-list", "updates-open", "skills-open")
+NAV_ACTIONS: tuple[str, ...] = ("home", "uninstall-list", "updates-open", "skills-open")
 
 
 class SessionBusy(RuntimeError):
@@ -50,7 +50,7 @@ class SessionDeps:
     plan: Callable[[], dict[str, Any]]
     clean: Callable[[], dict[str, Any]]
     # 带批准 id 的执行入口：界面点过的那批 target id。没有它只能走无参 `clean`（dry-run）。
-    clean_approved: Callable[[list[str]], dict[str, Any]] | None = None
+    clean_approved: Callable[[list[str], list[str]], dict[str, Any]] | None = None
     # 打开废纸篓（完成页的按钮）。默认不做事，真实实现由 deps 注入。
     open_trash: Callable[[], None] | None = None
     history: Callable[[], dict[str, Any]] = lambda: {}
@@ -171,7 +171,7 @@ class InteractiveSession:
             while True:
                 if pending is None:
                     action = self.bridge.wait_for_action(
-                        ("start", "cancel", "uninstall-list", "updates-open", "skills-open"),
+                        ("start", "home", "cancel", "uninstall-list", "updates-open", "skills-open"),
                         timeout=timeout or self.IDLE_TIMEOUT_SECONDS,
                     )
                     if action is None:
@@ -179,6 +179,10 @@ class InteractiveSession:
                     pending = action["action"]
 
                 kind, pending = pending, None
+                if kind == "home":
+                    # 侧栏"Mac 清理"只是回落地页，**不触发扫描**（扫描必须由落地页按钮发起）。
+                    self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
+                    continue
                 if kind == "cancel":
                     return self._finish("cancelled", pages.render_cancelled_html({}))
 
@@ -283,8 +287,16 @@ class InteractiveSession:
                 for candidate in selected
                 if str(candidate.get("target_id") or "")
             ]
+            # 高风险项只有在确认页**额外勾了**才放行（内核也要求 confirm_targets）。
+            confirmed_risk = bool((decision.get("payload") or {}).get("confirmed_risk"))
+            confirm_ids = (
+                [str(item.get("target_id") or "") for item in risky]
+                if (confirmed_risk and risky)
+                else []
+            )
+            approved_ids += [item for item in confirm_ids if item]
             cleaned = (
-                self.deps.clean_approved(approved_ids)
+                self.deps.clean_approved(approved_ids, confirm_ids)
                 if self.deps.clean_approved is not None
                 else self.deps.clean()
             )

@@ -42,7 +42,7 @@ class NavGroup:
 
 # 三个真实入口 + 一个"技能说明"页；未实现的能力不列（宁缺勿假）。
 NAV_GROUPS: tuple[NavGroup, ...] = (
-    NavGroup("清理", (NavItem("clean", "Mac 清理", "start"),)),
+    NavGroup("清理", (NavItem("clean", "Mac 清理", "home"),)),
     NavGroup(
         "应用",
         (
@@ -119,6 +119,10 @@ _RUNTIME_JS = """
     try { payload = button.dataset.bridgePayload ? JSON.parse(button.dataset.bridgePayload) : {}; } catch (e) {}
     // 清理的批准必须带**用户勾选的那几组**：不带就是"全部"，与界面上"我取消了几项"不符。
     if (action === 'approval') { payload.approved_ids = ids('[data-target-id]'); }
+    if (action === 'confirm') {
+      const risk = document.querySelector('[data-confirm-risk]');
+      payload.confirmed_risk = !!(risk && risk.checked);
+    }
     if (action === 'uninstall-apply') { payload.selected_ids = ids('[data-item-id]'); }
     if (action === 'updates-apply') { payload.ids = ids('[data-update-id]'); }
     button.disabled = true;

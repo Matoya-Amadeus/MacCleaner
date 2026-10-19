@@ -236,7 +236,7 @@ def build_deps(
     def manager() -> StorageManager:
         return StorageManager(_context(home_path, root_path))
 
-    def approved_manager(approved: Sequence[str]) -> StorageManager:
+    def approved_manager(approved: Sequence[str], confirm: Sequence[str] = ()) -> StorageManager:
         """真正执行用的上下文：**apply=True 且带上批准的目标 id**。
 
         2026-10-19 真机抓到的问题：原来 clean() 用的是默认上下文（`dry_run=True, apply=False`），
@@ -250,6 +250,8 @@ def build_deps(
                 apply=True,
                 dry_run=False,
                 approved_targets=frozenset(str(item) for item in approved if str(item)),
+                # 高风险项（~/Downloads、Docker 数据…）内核要求**单独确认**，不传就只能被 blocked。
+                confirm_targets=frozenset(str(item) for item in confirm if str(item)),
                 require_explicit_plan=True,
                 enforce_approved_scope=True,
                 # 界面承诺"一律移入废纸篓（可恢复）"：缓存/日志也要走废纸篓，不能直接抹掉。
@@ -274,7 +276,7 @@ def build_deps(
     def plan() -> dict[str, Any]:
         return report_of("plan")
 
-    def clean(approved: Sequence[str] = ()) -> dict[str, Any]:
+    def clean(approved: Sequence[str] = (), confirm: Sequence[str] = ()) -> dict[str, Any]:
         """执行清理。
 
         `approved` 必须由调用方给出（界面上就是用户点过的那批 target id）；
@@ -290,7 +292,7 @@ def build_deps(
                 "actual_reclaimed_bytes": 0,
                 "notes": ["refused: nothing approved"],
             }
-        report = approved_manager(wanted).clean().to_dict()
+        report = approved_manager(wanted, [str(item) for item in confirm if str(item)]).clean().to_dict()
         # 走废纸篓时内核不把字节算作"已释放"（它们还在 .Trash 里），所以 actual_bytes 是 0。
         # 但界面必须能说"可恢复 N"——否则完成页又变成"可恢复 0 B"，用户以为没清掉。
         # 这里按"已移入废纸篓"的语义补上字节数：可恢复 = 移走的量，释放仍要等清空废纸篓。

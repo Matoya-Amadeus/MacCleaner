@@ -316,6 +316,41 @@ class UpdatesFlowTests(unittest.TestCase):
             driver.join()
 
 
+
+    def test_sidebar_home_returns_to_landing_without_scanning(self) -> None:
+        """点侧栏"Mac 清理"只回落地页，**不能**触发扫描（2026-10-19 用户报的 bug）。"""
+        scans = {"n": 0}
+
+        def audit():
+            scans["n"] += 1
+            return {"mode": "audit", "plan_items": []}
+
+        with tempfile.TemporaryDirectory(prefix="session-home-") as tmp:
+            driver = _Driver(_deps(audit=audit), Path(tmp))
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+            self.assertEqual(driver.action("home"), 202)
+            page = driver.wait_page('data-stage="idle"', timeout=5)
+            self.assertIn("开始扫描", page)
+            self.assertEqual(scans["n"], 0, "切页签不该触发扫描")
+            driver.action("cancel")
+            driver.join()
+
+    def test_approval_without_selection_stays_on_review(self) -> None:
+        """默认不勾后，"一组都不勾就点开始清理"必须留在审阅页并提示。"""
+        with tempfile.TemporaryDirectory(prefix="session-noSel-", ignore_cleanup_errors=True) as tmp:
+            driver = _Driver(_deps(), Path(tmp))
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+            driver.action("start")
+            driver.wait_page('data-stage="review"')
+            self.assertEqual(driver.action("approval", {"approved_ids": []}), 202)
+            page = driver.wait_page("至少勾选一组", timeout=5)
+            self.assertIn('data-stage="review"', page)
+            driver.action("cancel")
+            driver.join()
+
+
 class NavigationTests(unittest.TestCase):
     def test_uninstall_entry_lists_apps(self) -> None:
         with tempfile.TemporaryDirectory(prefix="session-unin-") as tmp:

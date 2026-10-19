@@ -58,6 +58,24 @@ def _actions(*buttons: str) -> str:
     return '<div class="actions">' + "".join(buttons) + "</div>" if buttons else ""
 
 
+
+_CATEGORY_LABEL = {
+    "cache": "缓存",
+    "logs": "日志",
+    "xcode": "Xcode 生成物",
+    "ide": "编辑器缓存",
+    "homebrew": "Homebrew",
+    "docker": "Docker 数据",
+    "user-files": "你的文件",
+    "simulator": "模拟器数据",
+}
+
+
+def _category_label(kind: str) -> str:
+    return _CATEGORY_LABEL.get(str(kind or "").lower(), str(kind or ""))
+
+
+
 def _display_path(path: str) -> str:
     """把家目录缩成 `~`（只用于展示）。"""
     home = str(Path.home())
@@ -83,16 +101,27 @@ def _rows(
         kind = str(item.get("kind", "") or item.get("status", "") or "")
         note = str(item.get(note_key, "") or "")
         size = human_bytes(int(item.get("allocated_bytes", 0) or item.get("bytes", 0) or 0))
-        meta = " · ".join(part for part in (_display_path(path) if selectable else kind, note) if part)
+        label = _category_label(kind)
+        meta = " · ".join(part for part in (label, _display_path(path), note) if part)
         body = (
             f"<strong>{html.escape(name)}</strong>"
             f'<div class="meta">{html.escape(meta)}</div>'
         )
         if selectable:
             target_id = html.escape(str(item.get("target_id", "") or ""))
+            risky = bool(item.get("requires_confirmation"))
+            # 默认**不勾**；高风险项连勾选框都不给（要在确认页单独确认）。
+            box = (
+                '<input type="checkbox" disabled data-risk="1">'
+                if risky
+                else f'<input type="checkbox" data-target-id="{target_id}">'
+            )
+            risk_note = (
+                '<span class="pill risk">高风险 · 确认页单独确认</span>' if risky else ""
+            )
             rows.append(
-                f'<label class="row opt"><input type="checkbox" data-target-id="{target_id}" checked>'
-                f'<div>{body}</div><span class="meta value">{size}</span></label>'
+                f'<label class="row opt">{box}<div>{body}{risk_note}</div>'
+                f'<span class="meta value">{size}</span></label>'
             )
         else:
             rows.append(
@@ -260,13 +289,26 @@ def render_review_html(
             empty   # 空结果时的"没有找到可清理的内容"块（别在改写时漏掉）
             + (f'<p class="pill warn" role="status">{html.escape(notice)}</p>' if notice else "")
             + (
-                '<label class="row opt select-all"><input type="checkbox" data-select-all checked>'
-                '<div><strong>全选</strong><div class="meta">取消勾选可跳过某一组</div></div>'
+                '<label class="row opt select-all"><input type="checkbox" data-select-all>'
+                '<div><strong>全选（不含高风险）</strong><div class="meta">默认不勾；高风险项在确认页单独确认</div></div>'
                 '<span class="meta value">' + human_bytes(total) + "</span></label>"
                 if candidates and interactive
                 else ""
             )
             + _rows(candidates, selectable=interactive and bool(candidates))
+            + (
+                "<details class=\"why\"><summary>这些条目是怎么被挑出来的</summary>"
+                "<div class=\"meta\" style=\"line-height:1.8;margin-top:8px\">"
+                "<div>1. 只扫**预先登记的目标**（缓存、日志、Xcode 生成物、包管理器缓存、容器数据、下载目录），"
+                "不做全盘搜索；</div>"
+                "<div>2. 每个目标有自己的**保留期**（默认 7 天）：只挑超过保留期、且没被修改的文件；</div>"
+                "<div>3. 受保护路径（.ssh、钥匙串、浏览器登录数据等）**永远不出现**；</div>"
+                "<div>4. 标记「高风险」的目标（如 ~/Downloads、Docker 数据）**默认不勾**，"
+                "要在确认页再单独确认一次。</div>"
+                "</div></details>"
+                if candidates
+                else ""
+            )
             + actions
         ),
         current="clean",
@@ -283,6 +325,28 @@ def render_confirmation_html(payload: dict[str, Any], *, interactive: bool = Tru
         _button("返回修改", "back"),
         _button("确认清理", "confirm", primary=True),
     ) if interactive else ""
+
+    risk_items = [item for item in (payload.get("risk_items") or []) if isinstance(item, dict)]
+    risk_block = ""
+    if risk_items and interactive:
+        # 高风险项（例如 ~/Downloads、Docker 数据）**单独确认**：内核本来就要 `confirm_targets`，
+        # 而界面之前根本不传 → 它们只能被 blocked，用户勾了却什么都没发生。
+        rows = "".join(
+            '<div class="row"><div><strong>'
+            + html.escape(str(item.get("name", "")))
+            + "</strong>"
+            + f'<div class="meta">{html.escape(str(item.get("path", "")))}</div></div>'
+            + f'<span class="meta value">{human_bytes(int(item.get("allocated_bytes", 0) or 0))}</span></div>'
+            for item in risk_items
+        )
+        risk_block = (
+            '<p class="group-title">高风险项（需单独确认）</p>'
+            + rows
+            + '<label class="row opt"><input type="checkbox" data-confirm-risk>'
+            '<div><strong>我确认清理上面这些高风险项</strong>'
+            '<div class="meta">不勾选则本次只清低风险项</div></div></label>'
+        )
+
     return state_page(
         {
             "message": f"将移入废纸篓：{count} 组，共 {size}",
@@ -291,7 +355,7 @@ def render_confirmation_html(payload: dict[str, Any], *, interactive: bool = Tru
         stage="confirming",
         title="确认清理",
         body="确认清理",
-        actions=actions,
+        actions=risk_block + actions,
         current="clean",
     )
 
