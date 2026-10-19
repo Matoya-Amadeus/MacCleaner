@@ -259,6 +259,31 @@ _RUNTIME_JS = """
     document.body.appendChild(menu);
   });
 
+  // ---- 键盘快捷键（2026-10-19）：补回表格的键鼠手感 ----
+  // ⌘A 全选（再按一次全不选）、Esc 关闭菜单、Enter 触发主操作。
+  // 注意：Esc **不**映射到"取消会话"——误触会丢掉一次已经点好的清理。
+  document.addEventListener('keydown', (event) => {
+    // 事件可能派发到 document 本身（没有 closest），先归一化到元素再判断。
+    const source = event.target instanceof Element ? event.target : document.body;
+    const inField = source.closest('input, textarea, select, [contenteditable]');
+    if (inField && inField.type !== 'checkbox') return;
+
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+      const boxes = Array.from(document.querySelectorAll(CHECKBOXES)).filter(box => !box.disabled);
+      if (!boxes.length) return;
+      event.preventDefault();
+      const shouldCheck = boxes.some(box => !box.checked);
+      boxes.forEach(box => { box.checked = shouldCheck; });
+      refreshBatch();
+      return;
+    }
+    if (event.key === 'Escape') { closeMenu(); return; }
+    if (event.key === 'Enter') {
+      const primary = document.querySelector('[data-bridge-action].primary');
+      if (primary && !primary.disabled) { event.preventDefault(); primary.click(); }
+    }
+  });
+
   document.addEventListener('click', closeMenu);
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenu(); });
 

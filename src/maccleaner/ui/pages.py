@@ -476,7 +476,7 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
     batch = (
         '<div class="batchbar"><label class="row opt" style="border-top:0">'
         '<input type="checkbox" data-select-all-apps>'
-        f'<div><strong>全选</strong><div class="meta">共 {len(apps)} 个应用</div></div></label>'
+        f'<div><strong>全选</strong><div class="meta">共 {len(apps)} 个应用 · ⌘A 全选</div></div></label>'
         '<div class="batchbar-actions"><span class="meta" id="mc-selected-count">已选 0 个</span>'
         + _button("批量卸载所选", "uninstall-batch", primary=True)
         + "</div></div>"
