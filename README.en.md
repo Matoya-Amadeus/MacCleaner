@@ -119,6 +119,14 @@ Before the first PyPI release, install directly from GitHub:
 pipx install "git+https://github.com/Matoya-Amadeus/MacCleaner.git"
 ```
 
+Offline install from a built artifact is verified too (clean venv, `pip install --no-index`):
+
+```bash
+python3 -m pip install wheel        # needed for the first build
+python3 -m build --no-isolation     # dist/*.whl + *.tar.gz
+pip install --no-index dist/maccleaner-0.1.0-py3-none-any.whl
+```
+
 ### MCP
 
 ```bash

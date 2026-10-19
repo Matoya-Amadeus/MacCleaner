@@ -149,3 +149,16 @@ class WindowFrameTests(unittest.TestCase):
         self.assertIn("clamped.size.width = max(", source, "恢复后要显式夹一次")
         self.assertIn("clamped.size.height = max(", source)
 
+class PackagingMetadataTests(unittest.TestCase):
+    """`pyproject.toml` 的 license 写法必须与声明的最低 setuptools 版本匹配。
+
+    2026-10-19 实测：`license = "MIT"` + `license-files` 是 PEP 639（需 setuptools>=77），
+    而 build-system 声明的是 `>=61` → 在 setuptools 63 上直接
+    `ValueError: invalid pyproject.toml config: project.license`，构建失败。
+    """
+
+    def test_license_uses_pep621_table_form(self) -> None:
+        text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn('license = { text = "MIT" }', text)
+        self.assertNotRegex(text, r'(?m)^license = "', "字符串形式需要 setuptools>=77，与 >=61 的声明不符")
+

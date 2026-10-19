@@ -119,7 +119,19 @@ PyPI 首发前，直接从 GitHub 安装：
 pipx install "git+https://github.com/Matoya-Amadeus/MacCleaner.git"
 ```
 
-除 `audit / plan / clean / trace` 之外，还有四个常用入口：
+也可以直接构建离线安装包（**已实测**：干净 venv `pip install --no-index` 装 wheel 后，
+两个入口与真实审计都正常）：
+
+```bash
+python3 -m pip install wheel        # 首次构建需要
+python3 -m build --no-isolation     # 产出 dist/*.whl 与 *.tar.gz
+pip install --no-index dist/maccleaner-0.1.0-py3-none-any.whl
+```
+
+`bash tests/acceptance_package.sh` 会把这条链路完整跑一遍（构建 → 离线装 wheel →
+无 `mcp` extra 的报错路径 → 真实审计 → 离线装 sdist）。
+
+除 `audit / plan / clean / trace` 之外，还有三个常用入口：
 
 ```bash
 maccleaner ui                                                  # 本地界面（临时端口 + 一次性入口链接）
@@ -133,7 +145,8 @@ maccleaner updates --apply --only aom,cmake                    # 只升点名的
 ```
 
 - `uninstall` 只动**用户域**；系统级残留要显式加 `--accept-admin`（一次管理员授权）。
-- `updates` **不碰 macOS 系统更新**；`brew` 与 `mas` 各自独立，一组失败不拖累另一组。
+- `updates` **不碰 macOS 系统更新**；六个来源（brew / mas / npm / rustup 默认开，pip / gem 默认关）
+  并行查、每个源单独超时，一组失败不拖累其它组。
 
 ### MCP
 
@@ -190,6 +203,7 @@ bash tests/acceptance_native_smoke.sh          # 真窗口 11 步：7 个入口 
 bash tests/acceptance_uninstall_batch.py       # 批量卸载：多选 → 一页确认 → 文件真的进废纸篓
 bash tests/acceptance_quit.sh                  # 关闭 app 后：进程/端口/状态四项归零
 bash tests/acceptance_portability.sh           # 把仓库复制到别处 + 全新 HOME，验 CLI/测试/.app 都能跑
+bash tests/acceptance_package.sh               # 构建 sdist/wheel + 离线装 wheel → 两个入口 + 真实审计
 ```
 
 ### Codex Skill
