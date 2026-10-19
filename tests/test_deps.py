@@ -455,3 +455,48 @@ class DiskBrowseTests(unittest.TestCase):
             child = disk_browse(home, str(home / "big"))
         self.assertTrue(child["parent"], "进到子目录要能回上一级")
 
+class SparkleDetectionTests(unittest.TestCase):
+    """自带 Sparkle 更新器的应用要能被识别（2026-10-19 用户要求"先走应用自带更新"）。"""
+
+    def _app(self, home: Path, name: str, info: dict) -> Path:
+        contents = home / "Applications" / f"{name}.app" / "Contents"
+        contents.mkdir(parents=True)
+        with (contents / "Info.plist").open("wb") as handle:
+            plistlib.dump(info, handle)
+        return contents.parent
+
+    def test_detects_su_feed_url(self) -> None:
+        from maccleaner.deps import sparkle_apps
+
+        with tempfile.TemporaryDirectory(prefix="sparkle-") as tmp:
+            home = Path(tmp)
+            self._app(home, "Feedy", {
+                "CFBundleName": "Feedy",
+                "CFBundleIdentifier": "com.example.feedy",
+                "CFBundleShortVersionString": "1.2.3",
+                "SUFeedURL": "https://example.com/appcast.xml",
+            })
+            apps = sparkle_apps(home, system=False)
+        self.assertEqual([app["name"] for app in apps], ["Feedy"])
+        self.assertEqual(apps[0]["feed"], "https://example.com/appcast.xml")
+        self.assertEqual(apps[0]["version"], "1.2.3")
+
+    def test_detects_sparkle_framework_without_feed(self) -> None:
+        from maccleaner.deps import sparkle_apps
+
+        with tempfile.TemporaryDirectory(prefix="sparkle-fw-") as tmp:
+            home = Path(tmp)
+            bundle = self._app(home, "Framed", {"CFBundleName": "Framed"})
+            (bundle / "Contents" / "Frameworks" / "Sparkle.framework").mkdir(parents=True)
+            apps = sparkle_apps(home, system=False)
+        self.assertEqual([app["name"] for app in apps], ["Framed"])
+        self.assertEqual(apps[0]["feed"], "", "只有框架时 feed 为空，页面要说\"使用内置 Sparkle\"")
+
+    def test_plain_app_is_not_listed(self) -> None:
+        from maccleaner.deps import sparkle_apps
+
+        with tempfile.TemporaryDirectory(prefix="sparkle-none-") as tmp:
+            home = Path(tmp)
+            self._app(home, "Plain", {"CFBundleName": "Plain"})
+            self.assertEqual(sparkle_apps(home, system=False), [])
+

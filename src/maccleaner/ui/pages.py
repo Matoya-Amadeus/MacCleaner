@@ -15,6 +15,7 @@ from __future__ import annotations
 import html
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any, Iterable, Sequence
 
 from .shell import state_page
@@ -769,7 +770,39 @@ def render_updates_list_html(
             f'<div class="rows">{"".join(rows)}</div></details>'
         )
 
+    # 自带 Sparkle 更新器的应用：**优先**让它们在应用内更新（不需要 App Store 登录、
+    # 也不受系统代理影响）；没有 Sparkle 的才需要走 App Store。
+    sparkle_rows: list[str] = []
+    for app in (payload.get("sparkle") or []):
+        if not isinstance(app, dict):
+            continue
+        path = str(app.get("path") or "")
+        feed = str(app.get("feed") or "")
+        host = urlparse(feed).hostname if feed else ""
+        broken = bool(feed) and (not host or host in {"0.0.0.0", "127.0.0.1", "localhost"})
+        hint = "更新源看起来无效（指向本机地址）" if broken else (f"更新源 {host}" if host else "使用内置 Sparkle 框架")
+        button = (
+            _button("在应用内更新", "open-app", payload={"path": path}, primary=True)
+            if interactive
+            else ""
+        )
+        sparkle_rows.append(
+            f'<div class="row" data-reveal-path="{html.escape(path)}">'
+            '<div style="min-width:0;flex:1">'
+            f'<strong>{html.escape(str(app.get("name") or ""))}</strong>'
+            f'<div class="meta">{html.escape(str(app.get("version") or ""))} · {html.escape(hint)}</div>'
+            "</div>"
+            + ('<span class="pill warn">更新源可疑</span>' if broken else "")
+            + f'<div class="row-actions">{button}</div></div>'
+        )
+
     notes = "".join(f'<p class="muted">{html.escape(str(note))}</p>' for note in (payload.get("notes") or []))
+    if sparkle_rows:
+        notes = (
+            '<p class="muted">这些应用自带更新器：先点【在应用内更新】；'
+            "没有 Sparkle 的应用再用上面的 App Store 更新页。</p>"
+            + notes
+        )
     toolbar = ""
     if interactive:
         toolbar = (
@@ -791,12 +824,22 @@ def render_updates_list_html(
         if notice:
             toolbar += f'<p class="pill warn" role="status">{html.escape(notice)}</p>'
 
-    body = "".join(groups) if groups else empty_block(
+    sparkle_block = ""
+    if sparkle_rows:
+        sparkle_block = (
+            '<details class="group" open><summary>'
+            '<span class="group-name">自带更新（Sparkle）</span>'
+            f'<span class="meta">{len(sparkle_rows)} 个</span></summary>'
+            f'<div class="rows">{"".join(sparkle_rows)}</div></details>'
+        )
+    # Sparkle 组放**最前**：策略是"先应用内更新，不行再 App Store"（2026-10-19 用户要求）。
+    body = sparkle_block + ("".join(groups) if groups else empty_block(
         "check", "已经是最新的", "没有发现可升级的第三方软件。"
-    )
+    ))
     return state_page(
         {
             "message": f"可升级 {len(items)} 项，按来源分了 {len(groups)} 组"
+            + (f"，另有 {len(sparkle_rows)} 个应用可自带更新" if sparkle_rows else "")
             + (
                 f'（数据来自 {time.strftime("%H:%M", time.localtime(float(payload.get("checked_at"))))}'
                 + ("，缓存" if payload.get("cached") else "")

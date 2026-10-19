@@ -323,7 +323,11 @@ def _updates_cache_path(state_root: Path) -> Path:
 
 
 def updates_report(
-    *, state_root: Path | None = None, force: bool = False, ttl: int = UPDATES_CACHE_SECONDS
+    *,
+    state_root: Path | None = None,
+    force: bool = False,
+    ttl: int = UPDATES_CACHE_SECONDS,
+    sparkle: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """带缓存的更新检查。
 
@@ -342,7 +346,14 @@ def updates_report(
             if 0 <= age <= ttl:
                 payload = entry.get("report") or {}
                 if isinstance(payload, dict):
-                    return {**payload, "checked_at": float(entry.get("checked_at") or 0), "cached": True}
+                    return {
+                        **payload,
+                        "checked_at": float(entry.get("checked_at") or 0),
+                        "cached": True,
+                        # Sparkle 应用每次都重扫：它只是读本地 Info.plist（毫秒级），
+                        # 而且用户装/删应用后应该立刻反映，不该被 120s 缓存挡住。
+                        "sparkle": sparkle or [],
+                    }
 
     report = discover_updates()
     checked_at = time.time()
@@ -354,7 +365,7 @@ def updates_report(
             os.replace(tmp, cache_file)
         except OSError:
             pass
-    return {**report, "checked_at": checked_at, "cached": False}
+    return {**report, "checked_at": checked_at, "cached": False, "sparkle": sparkle or []}
 
 
 def _system_proxy_state() -> dict[str, str]:

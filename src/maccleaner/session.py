@@ -64,6 +64,10 @@ class SessionDeps:
     reveal: Callable[[str], None] | None = None
     # 打开 App Store 更新页（mas 不可用时的合法兜底）。
     open_app_store: Callable[[], None] | None = None
+    # 打开某个应用，让它的 Sparkle 更新器自己工作。
+    open_app: Callable[[str], None] | None = None
+    # 自带 Sparkle 更新器的应用列表（随更新结果一起渲染）。
+    sparkle_apps: Callable[[], list[dict[str, Any]]] = lambda: []
     # 只读的"看一眼"页面（磁盘/系统）。
     disk: Callable[[], dict[str, Any]] = lambda: {}
     # 磁盘钻取：传目录路径，返回下一级条目。
@@ -653,12 +657,23 @@ class InteractiveSession:
         while True:
             remaining = max(0.0, deadline - time.monotonic())
             action = self.bridge.wait_for_action(
-                tuple(kinds) + NAV_ACTIONS + ("reveal", "open-app-store"), timeout=remaining
+                tuple(kinds) + NAV_ACTIONS + ("reveal", "open-app", "open-app-store"),
+                timeout=remaining,
             )
             if action is None:
                 return None
             if action["action"] == "reveal":
                 self._reveal(str((action.get("payload") or {}).get("path", "")))
+                continue
+            if action["action"] == "open-app":
+                # 只允许打开**当前页面出现过的**应用路径（与 reveal 同一份白名单）。
+                target = str((action.get("payload") or {}).get("path", ""))
+                opener = getattr(self.deps, "open_app", None)
+                if opener is not None and target and target in self._visible_paths:
+                    try:
+                        opener(target)
+                    except Exception:  # noqa: BLE001
+                        pass
                 continue
             if action["action"] == "open-app-store":
                 opener = getattr(self.deps, "open_app_store", None)

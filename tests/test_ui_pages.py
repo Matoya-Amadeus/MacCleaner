@@ -315,6 +315,26 @@ class LandingPageTests(unittest.TestCase):
         self.assertNotIn('<label class="row opt" data-sort-text', page, "行不能整体是 label")
 
 
+
+    def test_updates_page_lists_sparkle_apps_first_class(self) -> None:
+        """自带 Sparkle 的应用单独成组，给「在应用内更新」；可疑的更新源要标出来。"""
+        from maccleaner.ui.pages import render_updates_list_html
+
+        page = render_updates_list_html({
+            "items": [{"name": "Logic Pro", "manager": "mas", "kind": "app-store",
+                       "installed": "11.2", "available": "12.4"}],
+            "sparkle": [
+                {"name": "ChatGPT", "path": "/Applications/ChatGPT.app", "version": "26.1", "feed": ""},
+                {"name": "ima.copilot", "path": "/Applications/ima.copilot.app", "version": "143",
+                 "feed": "http://0.0.0.0:8000/MacApp.xml"},
+            ],
+        })
+        self.assertIn("自带更新（Sparkle）", page)
+        self.assertEqual(page.count('data-bridge-action="open-app"'), 2)
+        self.assertIn("在应用内更新", page)
+        self.assertIn("更新源可疑", page, "指向 0.0.0.0 的 feed 要标出来")
+        self.assertIn("在应用内更新", page)
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")

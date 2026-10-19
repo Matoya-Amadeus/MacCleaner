@@ -269,6 +269,11 @@ def scan_report(
 
 
 
+def _open_app(path: str) -> None:
+    """打开某个应用（让它的 Sparkle 更新器自己在后台检查更新）。"""
+    subprocess.run(["/usr/bin/open", "-a", path], check=False, timeout=15)
+
+
 def _open_app_store() -> None:
     """打开 App Store 的"更新"页。
 
@@ -346,6 +351,59 @@ def _landing_history(home: Path, state_root: Path | None) -> dict[str, Any]:
         "last_items": int(last.get("items", 0) or 0),
         "last_bytes": int(last.get("bytes", 0) or last.get("estimated", 0) or 0),
     }
+
+
+def _app_dirs(home: Path, *, system: bool = True) -> list[Path]:
+    dirs = [Path(home) / "Applications"]
+    if system:
+        dirs.insert(0, Path("/Applications"))
+    return dirs
+
+
+def sparkle_apps(home: Path, *, limit: int = 40, system: bool = True) -> list[dict[str, Any]]:
+    """列出**自带 Sparkle 更新器**的应用（只读，读 Info.plist / Frameworks）。
+
+    为什么值得单独识别（2026-10-19 用户要求"先走应用自带更新，不行再去 App Store"）：
+    Sparkle 应用可以在应用内自更新，**不需要 App Store 登录、也不受系统代理影响**
+    （它用自己的网络请求）；只有没有 Sparkle 的才必须走 App Store。
+    判定依据两条：`Info.plist` 里的 `SUFeedURL`，或 `Contents/Frameworks/Sparkle.framework`。
+    """
+    found: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for directory in _app_dirs(home, system=system):
+        if not directory.is_dir():
+            continue
+        try:
+            entries = sorted(directory.glob("*.app"), key=lambda item: item.name.lower())
+        except OSError:
+            continue
+        for app in entries:
+            if app.name in seen:
+                continue
+            info = app / "Contents" / "Info.plist"
+            data: dict[str, Any] = {}
+            try:
+                with info.open("rb") as handle:
+                    data = plistlib.load(handle)
+            except Exception:  # noqa: BLE001 - 坏 plist 只跳过这个应用
+                data = {}
+            framework = app / "Contents" / "Frameworks" / "Sparkle.framework"
+            has_sparkle = bool(data.get("SUFeedURL")) or framework.exists()
+            if not has_sparkle:
+                continue
+            seen.add(app.name)
+            found.append(
+                {
+                    "name": str(data.get("CFBundleName") or app.stem),
+                    "bundle_id": str(data.get("CFBundleIdentifier") or ""),
+                    "version": str(data.get("CFBundleShortVersionString") or ""),
+                    "path": str(app),
+                    "feed": str(data.get("SUFeedURL") or ""),
+                }
+            )
+            if len(found) >= limit:
+                return found
+    return found
 
 
 def disk_report(*, home: Path) -> dict[str, Any]:
@@ -636,6 +694,8 @@ def build_deps(
         open_trash=lambda: _open_trash(home_path),
         reveal=_reveal,
         open_app_store=_open_app_store,
+        open_app=_open_app,
+        sparkle_apps=lambda: sparkle_apps(home_path),
         # 落地页的"上次清理"也从回执算：`history.json` 没人写，读它永远是空
         # （2026-10-19 发现；现在与「清理历史」页共用同一真相源）。
         history=lambda: _landing_history(home_path, state_path),

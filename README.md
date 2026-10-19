@@ -178,7 +178,7 @@ bash scripts/install_launcher.sh     # 生成 ~/Applications/MacCleaner.app（�
 |---|---|
 | **Mac 清理** | 扫描 → 审阅（**逐条勾选**，默认不勾）→ 确认 → 完成；重复扫描 5 分钟内走缓存 |
 | **软件卸载** | 应用列表（行内「卸载」看残留）；也可**多选批量**（一页确认、一次执行）；残留含 bundle-id 精确项、名称匹配项与 `.ShipIt` 更新残留 |
-| **软件更新** | brew / mas / npm / rustup 默认开；`pip`、`gem` 要联网，默认关（`MACCLEANER_UPDATE_SOURCES` 打开）；6 个源并行查，本机实测 ~6s |
+| **软件更新** | brew / mas / npm / rustup 默认开；`pip`、`gem` 要联网，默认关（`MACCLEANER_UPDATE_SOURCES` 打开）；6 个源并行查，本机实测 ~2s（有缓存则 0.001s）。**自带 Sparkle 的应用单独成组**：先点【在应用内更新】；没有 Sparkle 的再用【打开 App Store 更新页】 |
 | **磁盘** | 整机容量 + 常用目录占比；每个目录可**逐层点进去**看下一级谁最占地方 |
 | **系统状态** | 负载 / 内存 / CPU 占用 Top 进程（温度与风扇需 sudo，不做） |
 | **清理历史** | 直接读回执文件：每次的时间、条目数、可恢复字节；dry-run 会标「预演」 |
@@ -192,6 +192,8 @@ bash scripts/install_launcher.sh     # 生成 ~/Applications/MacCleaner.app（�
 - **审阅页默认不勾任何一组**；`~/Downloads`、Docker 数据这类高风险项在审阅页**不可勾选**，
   要在确认页单独再确认一次（内核侧还会校验 `confirm_targets`）；
 - 「在 Finder 中显示」只接受**当前页面出现过的路径**（会话侧白名单），不是任意路径打开器。
+
+隐私：**不收集遥测、不上传文件与路径**；联网只发生在包管理器检查与 App Store 版本查询（只传 app id）。详见 [PRIVACY.md](PRIVACY.md)。
 
 安全口径：只绑 `127.0.0.1`；入口是**一次性链接**（`/bootstrap/<secret>` 换完 cookie 立即作废）；
 每个动作都要 cookie + 请求头双凭据并校验 Origin；同一时间只允许一个会话（flock）。

@@ -46,6 +46,7 @@ ACTIONS = frozenset(
         "updates-refresh",
         "skills-open",
         "reveal",
+        "open-app",
         "open-app-store",
         "disk-open",
         "disk-back",
