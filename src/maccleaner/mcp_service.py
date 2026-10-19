@@ -250,6 +250,9 @@ class StorageService:
 
         `home` 只给测试与多用户场景用（默认当前用户主目录）——否则用例会去扫真实的 `~/Library`。
         """
+        # 传 None 会让 build_plan 用**真实家目录**搜残留——临时 home 的验收会去翻用户的 ~/Library
+        # （2026-10-19 测试撞到：残留没被找到，只有应用本体被搬走）。回落到 service 自己的 home。
+        home = home or self.home
         from .uninstall import build_plan, read_app_identity, summarize
 
         identity = read_app_identity(app_path)
@@ -270,15 +273,21 @@ class StorageService:
         app_path: str | Path,
         bundle_id: str = "",
         app_name: str = "",
-        ids: Sequence[str] = (),
+        ids: Sequence[str] | None = None,
         home: str | Path | None = None,
         dry_run: bool = False,
     ) -> dict[str, object]:
         """执行卸载：只移勾选项、只移用户域、一律进废纸篓（可恢复）。
 
-        `ids` 为空表示"计划里的全部用户域项"；传了就只认这些 id（调用方换不掉路径）。
+        `ids` 的三态语义（2026-10-19 锐化）：
+        - `None`（默认）：计划里的**全部**用户域项；
+        - 非空列表：只认这些 id（调用方换不掉路径）；
+        - **空列表**：什么都没选 → 拒绝执行。
+          以前 `list(ids) or None` 把"空列表"折成"全部"，调用方传 `[]` 会把残留全搬走。
         """
         from .uninstall import apply_plan, build_plan, read_app_identity
+
+        home = home or self.home
 
         identity = read_app_identity(app_path)
         plan = build_plan(
@@ -289,7 +298,8 @@ class StorageService:
             },
             home=home,
         )
-        return apply_plan(plan, home=home, selected_ids=list(ids) or None, dry_run=dry_run)
+        selected = None if ids is None else [str(item) for item in ids]
+        return apply_plan(plan, home=home, selected_ids=selected, dry_run=dry_run)
 
     def updates_check(self) -> dict[str, object]:
         """第三方软件更新（只读）：Homebrew + App Store，不含 macOS 系统更新。"""

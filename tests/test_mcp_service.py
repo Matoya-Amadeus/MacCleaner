@@ -287,3 +287,51 @@ class PlanDigestTests(unittest.TestCase):
             digest_a = service_a.plan()["plan_digest"]
             digest_b = service_b.plan()["plan_digest"]
             self.assertNotEqual(digest_a, digest_b, "不同计划不该有相同摘要")
+
+
+class UninstallApplySemanticsTests(unittest.TestCase):
+    """MCP 卸载执行的三种 `ids` 语义（2026-10-19）。
+
+    起因：`list(ids) or None` 把"空列表"折成"全部"，调用方传 `[]` 会把残留全搬走。
+    """
+
+    def _service_with_app(self, root):
+        import os
+        import plistlib
+
+        from maccleaner.mcp_service import StorageService
+
+        app = root / "Applications" / "Demo.app" / "Contents"
+        app.mkdir(parents=True)
+        with (app / "Info.plist").open("wb") as handle:
+            plistlib.dump({"CFBundleIdentifier": "com.demo.app", "CFBundleName": "Demo"}, handle)
+        leftover = root / "Library" / "Caches" / "com.demo.app"
+        leftover.mkdir(parents=True)
+        (leftover / "x.bin").write_bytes(b"z" * 4096)
+        os.utime(leftover, (1, 1))
+        # 注意：`app` 是 `.../Demo.app/Contents`，要传的是 **Demo.app 本身**。
+        # 传成上级 Applications 目录会让 bundle_id 变空、残留一个都找不到（踩过一次）。
+        return StorageService(home=root, root=root), app.parent, leftover
+
+    def test_empty_ids_is_refused_not_all(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory(prefix="mcp-unin0-") as tmp:
+            root = Path(tmp) / "home"
+            service, app, leftover = self._service_with_app(root)
+            result = service.uninstall_apply(app_path=str(app), ids=[])
+            self.assertEqual(result["status"], "refused")
+            self.assertTrue(leftover.exists(), "空列表不能动任何文件")
+
+    def test_none_ids_means_all_user_scope(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory(prefix="mcp-unin-all-") as tmp:
+            root = Path(tmp) / "home"
+            service, app, leftover = self._service_with_app(root)
+            result = service.uninstall_apply(app_path=str(app), ids=None)
+            self.assertEqual(result["status"], "applied")
+            self.assertFalse(leftover.exists(), "None 才表示全部用户域项")
+            self.assertGreater(int(result.get("moved_count", 0) or 0), 0)
