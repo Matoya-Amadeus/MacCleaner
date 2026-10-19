@@ -12,7 +12,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from maccleaner.deps import build_deps, history_summary, list_applications, read_manifest
+from maccleaner.deps import (
+    build_deps,
+    history_summary,
+    list_applications,
+    list_skills,
+    read_manifest,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -117,3 +123,75 @@ class ManifestTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RobustnessTests(unittest.TestCase):
+    """一个坏文件不能毁掉整页（2026-10-19 用户看到"共 0 个应用"的真因）。"""
+
+    def test_corrupt_info_plist_does_not_empty_the_app_list(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="deps-bad-plist-") as tmp:
+            home = Path(tmp) / "home"
+            good = home / "Applications" / "Good.app" / "Contents"
+            good.mkdir(parents=True)
+            with (good / "Info.plist").open("wb") as handle:
+                plistlib.dump({"CFBundleIdentifier": "com.example.good", "CFBundleName": "Good"}, handle)
+            bad = home / "Applications" / "Broken.app" / "Contents"
+            bad.mkdir(parents=True)
+            (bad / "Info.plist").write_bytes(b"<?xml version='1.0'?><plist><dict><key>broken")
+
+            apps = list_applications(home=home)
+            names = {item["name"] for item in apps}
+            self.assertIn("Good", names)
+            self.assertIn("Broken", names, "坏 plist 的应用仍应按目录名列出，并带上空 bundle_id")
+            broken = next(item for item in apps if item["name"] == "Broken")
+            self.assertEqual(broken["bundle_id"], "")
+
+
+class SkillListingTests(unittest.TestCase):
+    """技能页要列**本机全部** skill（2026-10-19 用户要求）。"""
+
+    def _write_skill(self, root: Path, name: str, description: str) -> Path:
+        skill_dir = root / name
+        skill_dir.mkdir(parents=True)
+        skill_md = skill_dir / "SKILL.md"
+        skill_md.write_text(f"---\nname: {name}\ndescription: {description}\n---\n\n# {name}\n", encoding="utf-8")
+        return skill_md
+
+    def test_lists_skills_from_every_root(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skills-") as tmp:
+            first, second = Path(tmp) / "root-a", Path(tmp) / "root-b"
+            self._write_skill(first, "alpha", "第一个技能")
+            self._write_skill(second, "beta", "第二个技能")
+
+            skills = list_skills([str(first), str(second)])
+            # 第 0 条永远是"本工具自己"（置顶标注），断言时先排除
+            self.assertEqual(skills[0]["root"], "本工具", "本工具应置顶")
+            others = [item for item in skills if item["root"] != "本工具"]
+            names = {item["name"] for item in others}
+            self.assertEqual(names, {"alpha", "beta"})
+            self.assertTrue(all(item["path"].endswith("SKILL.md") for item in others))
+            self.assertEqual(len({item["root"] for item in others}), 2, "要保留来源根，页面要分组")
+
+    def test_missing_root_is_skipped_not_fatal(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="skills-miss-") as tmp:
+            existing = Path(tmp) / "root"
+            self._write_skill(existing, "only", "仅此一个")
+            skills = list_skills([str(Path(tmp) / "nope"), str(existing)])
+            names = [item["name"] for item in skills if item["root"] != "本工具"]
+            self.assertEqual(names, ["only"], "不存在的根要跳过，而不是整体失败")
+
+    def test_skills_page_renders_rows_and_groups(self) -> None:
+        from maccleaner.ui.pages import render_skills_html
+
+        payload = {
+            "skills": [
+                {"name": "mac-cleaner", "description": "清理磁盘", "path": "/x/SKILL.md", "root": "本工具"},
+                {"name": "alpha", "description": "第一个", "path": "/a/SKILL.md", "root": "~/.codex/skills"},
+            ]
+        }
+        page = render_skills_html(payload)
+        self.assertIn('data-stage="skills"', page)
+        self.assertEqual(page.count('class="row"'), 2)
+        self.assertIn("本工具", page, "自己的那条要标注出来")
+        self.assertIn("~/.codex/skills", page, "按来源分组")
+        self.assertIn("<details", page, "自己的细节仍收进折叠块")

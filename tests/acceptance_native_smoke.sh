@@ -25,8 +25,9 @@ pkill -f "python3 -m maccleaner ui" 2>/dev/null
 sleep 1
 rm -rf "${HOME}/Library/Logs/MacCleaner"
 
-# 用临时 HOME 起，避免污染真实 ~/.maccleaner 与会话锁
-HOME="$T" MACCLEANER_SMOKE=1 "$APP" >/dev/null 2>&1 &
+# 用**真实 HOME**起（这样应用列表与 skill 根都是用户真实看到的），
+# 但状态隔离到临时目录：不污染 ~/.maccleaner，也不会撞单会话锁。
+MACCLEANER_SMOKE=1 MACCLEANER_STATE_ROOT="$T/state" "$APP" >/dev/null 2>&1 &
 PID=$!
 
 for _ in $(seq 1 90); do

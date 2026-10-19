@@ -51,6 +51,7 @@ class SessionDeps:
     clean: Callable[[], dict[str, Any]]
     history: Callable[[], dict[str, Any]] = lambda: {}
     apps: Callable[[], list[dict[str, Any]]] = lambda: []
+    skills: Callable[[], list[dict[str, Any]]] = lambda: []
     uninstall_plan: Callable[..., dict[str, Any]] = lambda **_kwargs: {}
     uninstall_apply: Callable[..., dict[str, Any]] = lambda **_kwargs: {"status": "refused"}
     updates_check: Callable[[], dict[str, Any]] = lambda: {"items": [], "count": 0, "notes": []}
@@ -176,7 +177,9 @@ class InteractiveSession:
                     return self._finish("cancelled", pages.render_cancelled_html({}))
 
                 if kind == "skills-open":
-                    self._serve("skills", pages.render_skills_html())
+                    self._serve("skills", pages.render_skills_html(
+                        {"skills": self._safe(self.deps.skills, default=[])},
+                    ))
                     back = self._wait_or_nav(("cancel",), self.ACTION_TIMEOUT_SECONDS)
                     # **先判 nav 再取 action**：`_wait_or_nav` 在用户点侧栏时返回 {"nav": …}，
                     # 没有 "action" 键——顺序写反会 KeyError 把会话打崩（2026-10-18 真机复现）。
@@ -257,7 +260,7 @@ class InteractiveSession:
                  "detail": "只读目录，不会改动任何应用。", "nav": "uninstall"},
                 stage="uninstalling",
             ))
-            apps = self._safe(self.deps.apps)
+            apps = self._safe(self.deps.apps, default=[])
             self._serve("uninstalling", pages.render_uninstall_list_html({"apps": apps}))
             while True:
                 action = self._wait_or_nav(("uninstall-plan", "uninstall-list", "cancel"), self.ACTION_TIMEOUT_SECONDS)
@@ -439,11 +442,16 @@ class InteractiveSession:
             self._lock_handle = None
 
     @staticmethod
-    def _safe(call: Callable[[], Any]) -> Any:
+    def _safe(call: Callable[[], Any], default: Any = None) -> Any:
+        """装饰性信息读失败不该拖垮会话——但要返回**调用方期望的类型**。
+
+        早先固定返回 `{}`：`apps()` 失败时列表页就变成"共 0 个应用"，
+        看起来像功能没做，实际是错误被吞了（2026-10-19 排查到的）。
+        """
         try:
             return call()
-        except Exception:  # noqa: BLE001 - 摘要类信息失败不该拖垮会话
-            return {}
+        except Exception:  # noqa: BLE001
+            return {} if default is None else default
 
 
 __all__ = ["ACTIVE_STAGES", "TERMINAL_STAGES", "InteractiveSession", "SessionBusy", "SessionDeps", "SessionState"]

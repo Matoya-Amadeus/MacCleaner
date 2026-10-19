@@ -58,11 +58,12 @@ body.has-nav{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:1
 .row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:11px 14px;border-top:1px solid var(--line)}
 .row:first-of-type{border-top:0}
 .row .meta{color:var(--muted);font-size:12px}
-.pill{font-size:11px;border-radius:999px;padding:2px 8px;background:var(--surface-muted);color:var(--muted)}
+.pill{font-size:11px;border-radius:999px;padding:2px 8px;white-space:nowrap;
+  background:var(--surface-muted);color:var(--muted)}
 .pill.ok{background:var(--accent-soft);color:var(--accent)}
 .muted{color:var(--muted);font-size:12px}
 .hero{font-size:40px;font-weight:700;letter-spacing:-.02em;margin:6px 0 0;color:var(--accent)}
-.group-title{margin:18px 0 6px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.group-title{margin:18px 0 6px;font-size:12px;letter-spacing:.04em;color:var(--muted)}
 /* `.row` 是 space-between（用于"名称…数值"两端对齐），但勾选行里它是**错的**：
    复选框会被顶到最左、名称甩到最右（2026-10-18 看原生快照发现）。勾选行改成左对齐 + 文字占满。 */
 label.row.opt{display:flex;align-items:center;gap:10px;justify-content:flex-start;cursor:pointer}

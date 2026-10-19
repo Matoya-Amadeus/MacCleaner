@@ -452,34 +452,57 @@ def render_updates_result_html(result: dict[str, Any], *, interactive: bool = Tr
 
 
 def render_skills_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
-    """可调用的 Skill：只讲 MacCleaner 自己，细节收进折叠菜单。"""
-    info = payload or {}
-    name = str(info.get("name") or "Mac Cleaner")
-    description = str(info.get("description") or "说一句话就能清理磁盘：扫描只读，清理移入废纸篓且可恢复。")
-    triggers = str(info.get("triggers") or "mac清理、清理磁盘、清理缓存、清理磁盘空间")
-    entry = str(info.get("entry") or "maccleaner audit / plan / clean（也可通过 MCP 调用）")
-    card = (
-        '<div class="row"><div><strong>'
-        + html.escape(name)
-        + '</strong><div class="meta">'
-        + html.escape(description)
-        + '</div></div><span class="pill ok">已就绪</span></div>'
-    )
-    details = (
-        '<details style="margin-top:12px"><summary>更多信息（触发词 / 怎么调用 / 边界）</summary>'
+    """本机可被调用的 Skill 列表（2026-10-19 改）。
+
+    早先这一页只讲 Mac Cleaner 自己（按当时"只展示自己"的要求）；用户后来指出
+    **这一页应当显示本设备的全部 skill**——它本来就是"这台机器上 agent 能调什么"的地方。
+    现在按来源根分组列出，并把本工具自己标出来。
+    """
+    data = payload or {}
+    skills = [item for item in (data.get("skills") or []) if isinstance(item, dict)]
+    rows: list[str] = []
+
+    current_root = ""
+    for skill in skills:
+        root = str(skill.get("root", "") or "")
+        if root != current_root:
+            current_root = root
+            rows.append(f'<p class="group-title">{html.escape(root or "(未知来源)")}</p>')
+        name = str(skill.get("name", "") or "")
+        description = str(skill.get("description", "") or "")
+        path = str(skill.get("path", "") or "")
+        mine = name.strip().lower() in {"mac cleaner", "mac-cleaner", "maccleaner"}
+        rows.append(
+            '<div class="row"><div style="min-width:0">'
+            f"<strong>{html.escape(name)}</strong>"
+            f'<div class="meta">{html.escape(description[:120])}</div>'
+            f'<div class="meta">{html.escape(path)}</div>'
+            "</div>"
+            + ('<span class="pill ok">本工具</span>' if mine else '<span class="pill">可调用</span>')
+            + "</div>"
+        )
+
+    body = "".join(rows) or '<p class="muted">没有在常见 skill 根下找到 SKILL.md。</p>'
+    # 本工具自己的细节仍收进折叠块：列表要"全"，但触发词/边界这类说明不该占满屏幕。
+    body += (
+        "<details style=\"margin-top:16px\"><summary>本工具的触发词 / 调用方式 / 边界</summary>"
         '<div class="meta" style="margin-top:8px;line-height:1.9">'
-        f"<div><b>触发词</b>：{html.escape(triggers)}</div>"
-        f"<div><b>怎么调用</b>：{html.escape(entry)}</div>"
-        "<div><b>边界</b>：只清理可安全重建的内容；受保护路径（会话、凭据）永不触碰。</div>"
+        "<div><b>触发词</b>：mac清理、清理磁盘、清理缓存、清理磁盘空间</div>"
+        "<div><b>怎么调用</b>：<code>maccleaner ui</code>（本地界面）/ <code>maccleaner uninstall</code> / MCP 工具</div>"
+        "<div><b>边界</b>：扫描只读；清理一律移入废纸篓；系统级残留需要一次管理员授权。</div>"
         "</div></details>"
     )
     actions = _actions(_button("返回", "start", primary=True)) if interactive else ""
     return state_page(
-        {"message": "这是本工具唯一可被调用的 skill", "detail": "其它页面是它的入口，不是几个不同的工具。"},
+        {
+            "message": f"本机共 {len(skills)} 个可被调用的 skill",
+            "detail": "来自 ~/.codex/skills、~/.codebuddy/skills、~/.claude/skills（可用 MACCLEANER_SKILL_ROOTS 追加）。"
+                      "本页只读，不会执行任何 skill。",
+        },
         stage="skills",
         title="可调用的 Skill",
-        body=name,
-        actions=actions + card + details,
+        body="本机全部 skill",
+        actions=actions + body,
         current="skills",
     )
 

@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import os
 import plistlib
 import subprocess
 from pathlib import Path
@@ -172,6 +173,7 @@ def build_deps(
         clean=clean,
         history=lambda: history_summary(state_root=state_path),
         apps=lambda: list_applications(home=home_path),
+        skills=list_skills,
         uninstall_plan=uninstall_plan,
         uninstall_apply=uninstall_apply,
         updates_check=updates_check,
@@ -189,3 +191,96 @@ def read_manifest(repo_root: Path) -> dict[str, Any]:
 
 
 __all__ = ["build_deps", "history_summary", "list_applications", "read_manifest"]
+
+DEFAULT_SKILL_ROOTS: tuple[str, ...] = (
+    "~/.codex/skills",
+    "~/.codebuddy/skills",
+    "~/.claude/skills",
+)
+
+
+def _display_path(path: Path) -> str:
+    """把家目录前缀缩成 `~`（只用于展示）。"""
+    text = str(path)
+    home = str(Path.home())
+    return "~" + text[len(home):] if text.startswith(home) else text
+
+
+def _skill_summary(skill_md: Path) -> dict[str, Any]:
+    """读 `SKILL.md` 前部的 name/description（frontmatter 优先，缺失退回首个正文行）。"""
+    info: dict[str, Any] = {
+        "name": skill_md.parent.name,
+        "description": "",
+        "path": _display_path(skill_md),
+        # 显示成 `~/...`：绝对路径对用户没有信息量，还会被样式大写化后更难读。
+        "root": _display_path(skill_md.parent.parent),
+    }
+    try:
+        text = skill_md.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return info
+    in_front = False
+    for line in text.splitlines()[:40]:
+        stripped = line.strip()
+        if stripped == "---":
+            in_front = not in_front
+            continue
+        if in_front and ":" in stripped:
+            key, _, value = stripped.partition(":")
+            key, value = key.strip().lower(), value.strip().strip('"').strip("'")
+            if key == "name" and value:
+                info["name"] = value
+            elif key == "description" and value:
+                info["description"] = value
+    if not info["description"]:
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith(("#", "---", "|", ">")):
+                info["description"] = stripped[:160]
+                break
+    return info
+
+
+def list_skills(roots: list[str] | None = None, *, limit: int = 300) -> list[dict[str, Any]]:
+    """列出本机可被 agent 调用的 skill（读 `SKILL.md`，只读，不执行）。
+
+    为什么要走"根目录"而不是写死某个仓库：skill 由**客户端的根**决定（codex / codebuddy / claude），
+    同一台机器上可能装在不同地方；用 `MACCLEANER_SKILL_ROOTS` 还能临时加别的根（冒号分隔）。
+    """
+    candidates: list[str] = list(roots or [])
+    if not candidates:
+        env_roots = os.environ.get("MACCLEANER_SKILL_ROOTS", "")
+        candidates = [part for part in env_roots.split(":") if part.strip()] or list(DEFAULT_SKILL_ROOTS)
+    skills: list[dict[str, Any]] = []
+    for raw in candidates:
+        root = Path(os.path.expanduser(str(raw)))
+        if not root.is_dir():
+            continue
+        try:
+            found = sorted(root.rglob("SKILL.md"))
+        except OSError:
+            continue
+        for skill_md in found:
+            if ".git" in skill_md.parts:
+                continue
+            skills.append(_skill_summary(skill_md))
+            if len(skills) >= limit:
+                return skills
+    skills = sorted(skills, key=lambda item: (str(item["root"]), str(item["name"]).lower()))
+    return _with_self(skills)
+
+
+def _with_self(skills: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """把**本工具自己**放到列表最前（并标 `root=本工具`）。
+
+    它通常不在那三个 skill 根下（它是独立安装的插件），如果不主动加进去，
+    用户在"本机全部 skill"里反而找不到正在用的这一个。
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    own = repo_root / "SKILL.md"
+    if not own.is_file():
+        return skills
+    entry = _skill_summary(own)
+    entry["root"] = "本工具"
+    entry["name"] = entry.get("name") or "Mac Cleaner"
+    return [entry, *skills]

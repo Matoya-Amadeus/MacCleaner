@@ -457,7 +457,10 @@ def read_app_identity(app_path: str | Path) -> dict[str, str]:
     try:
         with plist_path.open("rb") as handle:
             data = plistlib.load(handle)
-    except (OSError, plistlib.InvalidFileException, ValueError):
+    except Exception:  # noqa: BLE001 - 见下
+        # **故意宽捕获**：Info.plist 可能是坏 XML（`xml.parsers.expat.ExpatError`）、
+        # 二进制格式、权限不足……任何一种都不该让"列应用"整体失败。
+        # 2026-10-19 实测：本机某个 app 的 plist 损坏 → 异常穿透到会话 → 页面显示"共 0 个应用"。
         return identity
     if isinstance(data, dict):
         identity["bundle_id"] = str(data.get("CFBundleIdentifier") or "").strip()

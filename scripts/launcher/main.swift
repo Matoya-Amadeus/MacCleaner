@@ -57,7 +57,13 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
     func startBackend() -> URL? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["python3", "-m", "maccleaner", "ui", "--no-open"]
+        var arguments = ["python3", "-m", "maccleaner", "ui", "--no-open"]
+        // 自测用：真实 HOME（这样应用列表/skill 根都是用户真实的）但状态隔离到临时目录，
+        // 不污染 ~/.maccleaner、也不会撞上单会话锁。
+        if let stateRoot = ProcessInfo.processInfo.environment["MACCLEANER_STATE_ROOT"], !stateRoot.isEmpty {
+            arguments += ["--state-root", stateRoot]
+        }
+        process.arguments = arguments
         process.currentDirectoryURL = URL(fileURLWithPath: repo)
 
         var environment = ProcessInfo.processInfo.environment
@@ -228,8 +234,10 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
              "document.querySelectorAll('[data-update-id]').length"),
             ("uninstall-list", "uninstall-list", "",
              "document.querySelectorAll('.row').length"),
-            ("skills", "skills-open", "", "document.querySelectorAll('details').length"),
-            ("review", "start", "", "document.querySelectorAll('.row').length"),
+            ("skills", "skills-open", "", "document.querySelectorAll('.row').length"),
+            // 第 5 步只验"点击后有反应"：真实主目录扫描要几十秒，等它到 review 会把自测拖成分钟级。
+            // 完整的 扫描→审阅→完成 链路由 python 层会话用例与临时 home 的浏览器验收覆盖。
+            ("scanning", "start", "", "document.querySelectorAll('.row').length"),
         ]
         var index = 0
 
