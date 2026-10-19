@@ -72,6 +72,20 @@ class CompletionPayloadTests(unittest.TestCase):
         payload = completion_payload({"receipt": "/tmp/r.json", "plan_items": []})
         self.assertEqual(payload["receipt_path"], "/tmp/r.json")
 
+    def test_non_problem_skips_are_not_counted(self) -> None:
+        """"路径不存在"和"用户没批准"都不是问题，不该显示成跳过。"""
+        report = {
+            "plan_items": [
+                {"paths": ["~/a"], "status": "cleaned", "recoverable": True, "actual_bytes": 10},
+                {"paths": ["~/b"], "status": "skipped", "reason": "target path missing"},
+                {"paths": ["~/c"], "status": "blocked", "reason": "outside approved cleanup plan"},
+                {"paths": ["~/d"], "status": "skipped", "reason": "changed since approval"},
+            ]
+        }
+        payload = completion_payload(report)
+        self.assertEqual(payload["skipped_count"], 1, "只有真正的原因才算跳过")
+        self.assertEqual(payload["skipped_items"][0]["reason"], "changed since approval")
+
 
 class UpdatesPayloadTests(unittest.TestCase):
     def test_defaults_are_filled(self) -> None:

@@ -27,7 +27,14 @@ rm -rf "${HOME}/Library/Logs/MacCleaner"
 
 # 用**真实 HOME**起（这样应用列表与 skill 根都是用户真实看到的），
 # 但状态隔离到临时目录：不污染 ~/.maccleaner，也不会撞单会话锁。
-MACCLEANER_SMOKE=1 MACCLEANER_STATE_ROOT="$T/state" "$APP" >/dev/null 2>&1 &
+# 扫描目标指到临时目录：最后两步会真的清理，只允许动这里。
+SCAN_HOME="$T/home"
+mkdir -p "$SCAN_HOME/Library/Caches/Demo"
+printf 'z%.0s' {1..8192} > "$SCAN_HOME/Library/Caches/Demo/big.cache"
+touch -t 202001010000 "$SCAN_HOME/Library/Caches/Demo/big.cache"
+
+MACCLEANER_SMOKE=1 MACCLEANER_STATE_ROOT="$T/state" MACCLEANER_SCAN_HOME="$SCAN_HOME" \
+  "$APP" >/dev/null 2>&1 &
 PID=$!
 
 for _ in $(seq 1 90); do
@@ -36,7 +43,6 @@ for _ in $(seq 1 90); do
 done
 kill "$PID" 2>/dev/null
 pkill -f "MacCleaner.app/Contents/MacOS/MacCleaner" 2>/dev/null
-rm -rf "$T"
 
 echo "=== 步骤 ==="
 grep -E "smoke step|smoke done" "${LOG}" 2>/dev/null | sed 's/^/  /'
@@ -48,11 +54,25 @@ mismatch=$(grep -E "smoke step" "${LOG}" 2>/dev/null | \
 steps=$(grep -cE "smoke step" "${LOG}" 2>/dev/null || echo 0)
 shots=$(ls -1 "${HOME}/Library/Logs/MacCleaner/"smoke-*.png 2>/dev/null | wc -l | tr -d ' ')
 
-echo "=== 判定 ==="
-echo "  步骤数=${steps} 不一致=${mismatch} 截图=${shots}"
+echo "=== 文件级判定（页面到位 ≠ 真的清了） ==="
+if [[ -d "${SCAN_HOME}/Library/Caches/Demo" ]]; then
+  echo "  ❌ 目标目录仍在：清理没有真的发生"
+  cleaned=0
+else
+  echo "  ✓ 目标目录已移走"
+  cleaned=1
+fi
+trash_count=$(ls -1 "${SCAN_HOME}/.Trash" 2>/dev/null | wc -l | tr -d ' ')
+echo "  ✓ 废纸篓里 ${trash_count} 项（应为 1）"
+[[ "${trash_count}" -ge 1 ]] || cleaned=0
 
-if [[ "${steps}" -ne 5 || "${mismatch}" -ne 0 || "${shots}" -ne 5 ]]; then
+echo "=== 判定 ==="
+echo "  步骤数=${steps} 不一致=${mismatch} 截图=${shots} 文件已移动=${cleaned}"
+
+if [[ "${steps}" -ne 7 || "${mismatch}" -ne 0 || "${shots}" -ne 7 || "${cleaned}" -ne 1 ]]; then
   echo "❌ 原生窗口自测未通过"
   exit 1
 fi
-echo "✅ 原生窗口五步全部通过（截图见 ~/Library/Logs/MacCleaner/）"
+echo "✅ 原生窗口七步全部通过（含确认清理，截图见 ~/Library/Logs/MacCleaner/）"
+
+rm -rf "$T"

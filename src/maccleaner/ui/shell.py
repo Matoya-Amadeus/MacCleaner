@@ -157,6 +157,7 @@ def state_page(
     with_nav: bool = True,
     subtitle: str = "",
     meta: str = "",
+    hero: str = "",
 ) -> str:
     """拼一页：顶栏 + 侧栏 + 标题区 + 动作插槽 + 内联脚本。
 
@@ -188,6 +189,7 @@ def state_page(
   </header>
   <section class="state card">
     {f'<p class="state-head">{html.escape(body)}</p>' if body else ''}
+    {f'<p class="hero">{html.escape(hero)}</p>' if hero else ''}
     {f'<p class="state-msg">{message}</p>' if message else ''}
     {f'<p class="state-detail">{detail}</p>' if detail else ''}
     {ACTIONS_SLOT}

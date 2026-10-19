@@ -268,17 +268,10 @@ def render_completion_html(payload: dict[str, Any], *, interactive: bool = True)
     hero = human_bytes(actual or recoverable)
     caveat = "（已移入废纸篓，清空废纸篓后释放）" if via_trash else ""
     receipt = str(payload.get("receipt_path", "") or "")
-    actions = _actions(_button("再看一眼", "rescan"), _button("打开废纸篓", "open-trash", primary=True)) if interactive else ""
-    page = state_page(
-        {
-            "message": f"可恢复 {human_bytes(recoverable)}{caveat}" if via_trash else f"实际释放 {human_bytes(actual)}",
-            "detail": (f"回执：{receipt}" if receipt else "") + " · 失败/跳过：%d" % int(payload.get("failed_count", 0) or 0),
-        },
-        stage="complete",
-        title="清理完成",
-        body="清理完成",
-        actions=actions,
-        current="clean",
+    buttons = (
+        _actions(_button("再看一眼", "rescan"), _button("打开废纸篓", "open-trash", primary=True))
+        if interactive
+        else ""
     )
     stats = (
         '<div class="stats">'
@@ -290,9 +283,19 @@ def render_completion_html(payload: dict[str, Any], *, interactive: bool = True)
         f'<div class="v">{int(payload.get("skipped_count", 0) or 0)}</div></div>'
         "</div>"
     )
-    return page.replace(
-        '<p class="state-head">清理完成</p>',
-        f'<p class="state-head">清理完成</p><p class="hero">{html.escape(hero)}</p>{stats}',
+    return state_page(
+        {
+            # 数字只在 hero 与三格里出现一次；这句话负责"这意味着什么"。
+            "message": "已移入废纸篓，清空废纸篓后释放空间" if via_trash else "已直接删除并释放空间",
+            "detail": (f"回执：{receipt}" if receipt else "")
+            + " · 失败/跳过：%d" % int(payload.get("failed_count", 0) or 0),
+        },
+        stage="complete",
+        title="清理完成",
+        body="",          # 标题已写"清理完成"，正文再写一遍就是重复
+        hero=hero,
+        actions=stats + buttons,   # 数字在按钮上方：先看结果，再决定下一步
+        current="clean",
     )
 
 

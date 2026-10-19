@@ -33,8 +33,8 @@ from .updates import apply_updates, build_upgrade_plan, discover_updates
 SKIP_APP_NAMES = {"Safari.app", "Notes.app"}   # 系统自带、通常不希望出现在卸载列表里
 
 
-def _context(home: Path, root: Path) -> StorageContext:
-    return StorageContext(home=home, root=root)
+def _context(home: Path, root: Path, **overrides: Any) -> StorageContext:
+    return StorageContext(home=home, root=root, **overrides)
 
 
 def list_applications(
@@ -214,6 +214,13 @@ def scan_report(
     return {**report, "scan_cached_at": 0.0}
 
 
+
+def _open_trash(home: Path) -> None:
+    """在 Finder 里打开废纸篓（扫描 home 下的 .Trash，没有就开用户的）。"""
+    candidate = Path(home) / ".Trash"
+    target = candidate if candidate.is_dir() else Path.home() / ".Trash"
+    subprocess.run(["/usr/bin/open", str(target)], check=False)
+
 def build_deps(
     *,
     home: Path | None = None,
@@ -228,6 +235,27 @@ def build_deps(
 
     def manager() -> StorageManager:
         return StorageManager(_context(home_path, root_path))
+
+    def approved_manager(approved: Sequence[str]) -> StorageManager:
+        """真正执行用的上下文：**apply=True 且带上批准的目标 id**。
+
+        2026-10-19 真机抓到的问题：原来 clean() 用的是默认上下文（`dry_run=True, apply=False`），
+        内核只回了一份"计划"，页面却发布了"完成"——用户看到"清理完成"，文件一个都没动。
+        另外 `enforce_approved_scope=True` 让内核只动批准过的目标，与"先给清单再清"的承诺一致。
+        """
+        return StorageManager(
+            _context(
+                home_path,
+                root_path,
+                apply=True,
+                dry_run=False,
+                approved_targets=frozenset(str(item) for item in approved if str(item)),
+                require_explicit_plan=True,
+                enforce_approved_scope=True,
+                # 界面承诺"一律移入废纸篓（可恢复）"：缓存/日志也要走废纸篓，不能直接抹掉。
+                prefer_trash=True,
+            )
+        )
 
     def report_of(mode: str) -> dict[str, Any]:
         instance = manager()
@@ -246,10 +274,33 @@ def build_deps(
     def plan() -> dict[str, Any]:
         return report_of("plan")
 
-    def clean() -> dict[str, Any]:
+    def clean(approved: Sequence[str] = ()) -> dict[str, Any]:
+        """执行清理。
+
+        `approved` 必须由调用方给出（界面上就是用户点过的那批 target id）；
+        没给就**拒绝执行**，而不是"尽力清一点"——空批准不等于全部批准。
+        """
+        wanted = [str(item) for item in approved if str(item)]
         if dry_run:
             return report_of("plan")
-        return report_of("clean")
+        if not wanted:
+            return {
+                "mode": "clean",
+                "plan_items": [],
+                "actual_reclaimed_bytes": 0,
+                "notes": ["refused: nothing approved"],
+            }
+        report = approved_manager(wanted).clean().to_dict()
+        # 走废纸篓时内核不把字节算作"已释放"（它们还在 .Trash 里），所以 actual_bytes 是 0。
+        # 但界面必须能说"可恢复 N"——否则完成页又变成"可恢复 0 B"，用户以为没清掉。
+        # 这里按"已移入废纸篓"的语义补上字节数：可恢复 = 移走的量，释放仍要等清空废纸篓。
+        for item in report.get("plan_items") or []:
+            if str(item.get("status")) == "cleaned" and not int(item.get("actual_bytes") or 0):
+                item["actual_bytes"] = int(item.get("estimated_bytes") or 0)
+        report["notes"] = list(report.get("notes") or []) + [
+            "files were moved to Trash: recoverable until the Trash is emptied"
+        ]
+        return report
 
     def uninstall_plan(*, app_path: str, bundle_id: str = "", app_name: str = "") -> dict[str, Any]:
         identity = read_app_identity(app_path)
@@ -285,6 +336,8 @@ def build_deps(
         rescan=rescan,
         plan=plan,
         clean=clean,
+        clean_approved=clean,   # clean(approved) 同一实现：无参时 dry-run，带 id 才真执行
+        open_trash=lambda: _open_trash(home_path),
         history=lambda: history_summary(state_root=state_path),
         apps=lambda: list_applications(home=home_path),
         skills=list_skills,

@@ -127,6 +127,10 @@ class CleanupFlowTests(unittest.TestCase):
             complete = driver.wait_page('data-stage="complete"')
             self.assertIn("4.00 KiB", complete, "完成页头条是可恢复字节")
 
+            # 完成页是可交互的（打开废纸篓/再看一眼），会话不会立刻结束；
+            # 这里发一个 cancel 等价"关窗"，终态必须仍是 complete。
+            driver.action("cancel")
+
             result = driver.join()
             self.assertEqual(result["stage"], "complete")
             self.assertFalse(result["active"])
@@ -176,6 +180,31 @@ class CleanupFlowTests(unittest.TestCase):
             driver.action("cancel")
             result = driver.join()
             self.assertEqual(result["stage"], "cancelled", "出错不该落 failed，用户放弃才是 cancelled")
+
+    def test_complete_page_open_trash_actually_opens(self) -> None:
+        """完成页的【打开废纸篓】曾经是死按钮：白名单里有、会话不处理（2026-10-19 走查发现）。"""
+        opened: list[int] = []
+        with tempfile.TemporaryDirectory(prefix="session-trash-") as tmp:
+            driver = _Driver(_deps(open_trash=lambda: opened.append(1)), Path(tmp))
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+            self.assertEqual(driver.action("start"), 202)
+            driver.wait_page('data-stage="review"')
+            self.assertEqual(driver.action("approval"), 202)
+            driver.wait_page('data-stage="confirming"')
+            self.assertEqual(driver.action("confirm"), 202)
+            driver.wait_page('data-stage="complete"')
+
+            self.assertEqual(driver.action("open-trash"), 202)
+            deadline = time.time() + 5
+            while time.time() < deadline and not opened:
+                time.sleep(0.05)
+            self.assertEqual(opened, [1], "点了就必须真的调用打开废纸篓")
+
+            # 打开后仍停在完成页，且终态是 complete
+            driver.wait_page('data-stage="complete"')
+            driver.action("cancel")
+            self.assertEqual(driver.join()["stage"], "complete")
 
 
 class NavigationTests(unittest.TestCase):

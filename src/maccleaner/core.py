@@ -691,6 +691,9 @@ class StorageContext:
     state_root: Path | None = None
     require_explicit_plan: bool = False
     enforce_approved_scope: bool = False
+    # 本地界面用：缓存/日志这类 `purge_tree` 目标也**移入废纸篓**（产品承诺"可恢复"）。
+    # 命令行默认关闭，保持既有语义不变——否则脚本用户的磁盘不会释放，行为会被悄悄改掉。
+    prefer_trash: bool = False
     system_roots: tuple[Path, ...] = field(default_factory=lambda: DEFAULT_SYSTEM_ROOTS)
 
 
@@ -1951,7 +1954,9 @@ class StorageManager:
 
     def _execute_filesystem_target(self, target: CleanupTarget) -> tuple[int, list[str]]:
         cutoff_ts = time.time() - _effective_cutoff_seconds(target, days_to_keep=self.context.days_to_keep)
-        trash = target.kind == "trash_tree"
+        trash = target.kind == "trash_tree" or (
+            self.context.prefer_trash and target.kind == "purge_tree"
+        )
         move_whole_paths = bool(target.metadata.get("move_whole_paths"))
         return _cleanup_tree(
             target.paths,

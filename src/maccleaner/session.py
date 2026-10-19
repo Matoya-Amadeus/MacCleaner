@@ -49,6 +49,10 @@ class SessionDeps:
     audit: Callable[[], dict[str, Any]]
     plan: Callable[[], dict[str, Any]]
     clean: Callable[[], dict[str, Any]]
+    # 带批准 id 的执行入口：界面点过的那批 target id。没有它只能走无参 `clean`（dry-run）。
+    clean_approved: Callable[[list[str]], dict[str, Any]] | None = None
+    # 打开废纸篓（完成页的按钮）。默认不做事，真实实现由 deps 注入。
+    open_trash: Callable[[], None] | None = None
     history: Callable[[], dict[str, Any]] = lambda: {}
     apps: Callable[[], list[dict[str, Any]]] = lambda: []
     skills: Callable[[], list[dict[str, Any]]] = lambda: []
@@ -252,15 +256,52 @@ class InteractiveSession:
                  "detail": "文件一律移入废纸篓，可从废纸篓恢复。"},
                 stage="cleaning",
             ))
-            cleaned = self.deps.clean()
+            # 把"用户刚在审阅页看到的那些目标"作为批准清单交给内核；
+            # 没有这份清单，内核会按 dry-run 处理并回一份空计划（页面却显示完成）。
+            approved_ids = [
+                str(candidate.get("target_id") or "")
+                for candidate in (payload.get("candidates") or [])
+                if str(candidate.get("target_id") or "")
+            ]
+            cleaned = (
+                self.deps.clean_approved(approved_ids)
+                if self.deps.clean_approved is not None
+                else self.deps.clean()
+            )
             from .ui.adapter import completion_payload
 
-            return self._finish("complete", pages.render_completion_html(completion_payload(cleaned)))
+            done = completion_payload(cleaned)
+            # 完成页**不能立刻结束会话**：否则【打开废纸篓】这个按钮点了没人接，
+            # 白名单里有、界面上有，实际是死的（2026-10-19 真机走查发现）。
+            while True:
+                self._serve("complete", pages.render_completion_html(done))
+                action = self._wait_or_nav(
+                    ("open-trash", "rescan", "cancel"), timeout or self.ACTION_TIMEOUT_SECONDS
+                )
+                if action is None or "nav" in action or action["action"] == "cancel":
+                    # 工作已经完成：此时关窗/取消**不该**把终态降级成 cancelled
+                    # （用户清完了，只是把窗口关了）。
+                    break
+                if action["action"] == "rescan":
+                    return None          # 回落地页重新开始
+                self._open_trash()        # 打开后仍停在完成页
+            return self._finish("complete", pages.render_completion_html(done))
         except Exception as exc:  # noqa: BLE001 - 运行期任何异常都走"可重试"，不落 failed
             terminal = self._recover(exc, timeout)
             if terminal is not None:
                 return terminal
             return self._run_cleanup(timeout)   # 重试 = 重跑这一段（不是回落地页）
+
+
+    def _open_trash(self) -> None:
+        """打开废纸篓。测试可注入 `deps.open_trash` 记录调用，不打真实 Finder。"""
+        opener = getattr(self.deps, "open_trash", None)
+        if opener is None:
+            return
+        try:
+            opener()
+        except Exception:  # noqa: BLE001 - 打不开废纸篓不该把"已完成"变成"出错"
+            return
 
     # ---- 卸载 ----
 

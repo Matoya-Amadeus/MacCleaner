@@ -68,10 +68,16 @@ def completion_payload(report: dict[str, Any]) -> dict[str, Any]:
     items = _items(report)
     recoverable = sum(_actual_bytes(item) for item in items if item.get("recoverable"))
     failed = sum(1 for item in items if str(item.get("status")) == "failed")
+    # 这两类都不是"出问题"，不该计进"跳过"：
+    # - `target path missing`：目标是空的/不存在（扫到 0 字节的目标很常见）；
+    # - `outside approved cleanup plan`：用户**没勾**的目标，被内核按范围外标记。
+    # 把它们算成跳过，完成页会显示"跳过 19"，看着像清理失败了（2026-10-19 截图里就是这样）。
+    IGNORED = ("target path missing", "outside approved cleanup plan")
     skipped = [
         {"path": _first_path(item), "reason": str(item.get("reason") or "")}
         for item in items
         if str(item.get("status")) in {"skipped", "blocked", "protected"}
+        and not any(marker in str(item.get("reason") or "") for marker in IGNORED)
     ]
     receipt = report.get("receipt")
     receipt_path = ""

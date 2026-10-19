@@ -63,6 +63,10 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
         if let stateRoot = ProcessInfo.processInfo.environment["MACCLEANER_STATE_ROOT"], !stateRoot.isEmpty {
             arguments += ["--state-root", stateRoot]
         }
+        // 自测用：把"扫哪里"指到临时目录，这样点【确认清理】也只动临时文件（真实 HOME 不受影响）。
+        if let scanHome = ProcessInfo.processInfo.environment["MACCLEANER_SCAN_HOME"], !scanHome.isEmpty {
+            arguments += ["--home", scanHome, "--root", scanHome]
+        }
         process.arguments = arguments
         process.currentDirectoryURL = URL(fileURLWithPath: repo)
 
@@ -237,6 +241,10 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
             ("skills", "skills-open", "", "document.querySelectorAll('.row').length"),
             // 扫描优化后（26.5s → 0.7s）这一步可以要求**真的到审阅页**，而不只是"有反应"。
             ("review", "start", "", "document.querySelectorAll('.row').length"),
+            // 后面两步是**破坏性路径**：真点【开始清理】→【确认清理】。自测的 home 是临时目录，
+            // 所以真的会移动文件——这正是"验收要自己操作一遍"的意思。
+            ("confirming", "approval", "", "document.querySelectorAll('.button').length"),
+            ("complete", "confirm", "", "document.querySelectorAll('.stat').length"),
         ]
         var index = 0
 
