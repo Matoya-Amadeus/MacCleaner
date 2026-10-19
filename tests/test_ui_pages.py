@@ -149,7 +149,6 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn('data-risk="1"', page, "高风险项要禁用勾选")
         self.assertNotIn('data-target-id="downloads"', page, "高风险项要留到确认页")
         self.assertIn("确认页单独确认", page)
-        self.assertIn("这些条目是怎么被挑出来的", page, "要能解释为什么它在清单里")
 
     def test_sidebar_clean_entry_is_navigation_not_scan(self) -> None:
         """侧栏"Mac 清理"只是回落地页；扫描必须由落地页按钮触发（2026-10-19 用户报的 bug）。"""

@@ -295,19 +295,6 @@ def render_review_html(
                 else ""
             )
             + _rows(candidates, selectable=interactive and bool(candidates))
-            + (
-                "<details class=\"why\"><summary>这些条目是怎么被挑出来的</summary>"
-                "<div class=\"meta\" style=\"line-height:1.8;margin-top:8px\">"
-                "<div>1. 只扫**预先登记的目标**（缓存、日志、Xcode 生成物、包管理器缓存、容器数据、下载目录），"
-                "不做全盘搜索；</div>"
-                "<div>2. 每个目标有自己的**保留期**（默认 7 天）：只挑超过保留期、且没被修改的文件；</div>"
-                "<div>3. 受保护路径（.ssh、钥匙串、浏览器登录数据等）**永远不出现**；</div>"
-                "<div>4. 标记「高风险」的目标（如 ~/Downloads、Docker 数据）**默认不勾**，"
-                "要在确认页再单独确认一次。</div>"
-                "</div></details>"
-                if candidates
-                else ""
-            )
             + actions
         ),
         current="clean",

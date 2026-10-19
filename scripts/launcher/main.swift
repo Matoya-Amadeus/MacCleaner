@@ -14,7 +14,41 @@ app.setActivationPolicy(.regular)
 
 let repoKey = "MacCleanerRepo"
 let repoPath = (Bundle.main.object(forInfoDictionaryKey: repoKey) as? String) ?? ""
-let fallbackRepo = "/Users/you/Workspace/Github/MacCleaner"
+
+/// 仓库位置解析顺序（**不能写死某台机器的路径**）：
+/// 1. Info.plist 的 `MacCleanerRepo`（`scripts/install_launcher.sh` 安装时写入，永远是本机的正确值）；
+/// 2. 环境变量 `MACCLEANER_REPO`（CI 或临时试装用）；
+/// 3. 几个常见 checkout 位置；
+/// 4. 从可执行文件位置往上找（在仓库里直接跑编译产物时）。
+/// 找不到就返回空串，由调用方给出明确提示，而不是去猜一个别人的路径。
+func resolveRepo() -> String {
+    let fm = FileManager.default
+    var candidates: [String] = []
+    if !repoPath.isEmpty { candidates.append(repoPath) }
+    if let env = ProcessInfo.processInfo.environment["MACCLEANER_REPO"], !env.isEmpty {
+        candidates.append(env)
+    }
+    let home = fm.homeDirectoryForCurrentUser.path
+    candidates.append(contentsOf: [
+        "\(home)/Workspace/Github/MacCleaner",
+        "\(home)/Projects/MacCleaner",
+        "\(home)/MacCleaner",
+        "\(home)/code/MacCleaner",
+    ])
+    // 从可执行文件往上两级找 manifest.json（在仓库内直接编译运行时）
+    var directory = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent()
+    for _ in 0..<5 {
+        candidates.append(directory.path)
+        directory = directory.deletingLastPathComponent()
+    }
+    for candidate in candidates {
+        if fm.fileExists(atPath: "\(candidate)/manifest.json")
+            || fm.fileExists(atPath: "\(candidate)/bin/maccleaner") {
+            return candidate
+        }
+    }
+    return ""
+}
 
 final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSWindowDelegate {
     var window: NSWindow?
@@ -49,12 +83,17 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
         showWindow(url: url)
     }
 
+    /// 解析失败时为空串：交给界面提示"请重新运行安装脚本"，不去猜路径。
     var repo: String {
-        repoPath.isEmpty ? fallbackRepo : repoPath
+        resolveRepo()
     }
 
     /// 起后端并同步读取入口 URL（后端第一行就是 URL，见 cli.py 的 `ui` 子命令）。
     func startBackend() -> URL? {
+        if repo.isEmpty {
+            log("startBackend: repository not found (plist/env/common locations all missed)")
+            return nil
+        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         var arguments = ["python3", "-m", "maccleaner", "ui", "--no-open"]
@@ -209,10 +248,19 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
     // 教训：进程活着 ≠ 页面渲染了。WKWebView 默认禁止 http://（ATS），失败时**不报错、只是白/黑**。
     // 所以这里把"加载完成"和"加载失败"都写到日志，并用 JS 读一次 data-stage 证明 HTML 真的跑起来了。
 
+    /// 日志与快照的落盘目录。
+    ///
+    /// 优先用 `$HOME`：`FileManager.homeDirectoryForCurrentUser` **不认环境变量**，
+    /// 于是把 HOME 指到临时目录的验收会把日志写进真实家目录（2026-10-19 测试撞到）。
+    func logDirectory() -> URL {
+        let env = ProcessInfo.processInfo.environment["HOME"] ?? ""
+        let base = env.isEmpty ? FileManager.default.homeDirectoryForCurrentUser.path : env
+        return URL(fileURLWithPath: base).appendingPathComponent("Library/Logs/MacCleaner", isDirectory: true)
+    }
+
     func log(_ message: String) {
         let line = "[\(ISO8601DateFormatter().string(from: Date()))] \(message)\n"
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Logs/MacCleaner", isDirectory: true)
+        let dir = logDirectory()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let file = dir.appendingPathComponent("launcher.log")
         if let handle = try? FileHandle(forWritingTo: file) {
@@ -340,8 +388,8 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
             if let image = image, let tiff = image.tiffRepresentation,
                let rep = NSBitmapImageRep(data: tiff),
                let png = rep.representation(using: .png, properties: [:]) {
-                let dir = FileManager.default.homeDirectoryForCurrentUser
-                    .appendingPathComponent("Library/Logs/MacCleaner", isDirectory: true)
+                let dir = self.logDirectory()
+                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                 try? png.write(to: dir.appendingPathComponent("smoke-\(index)-\(actual).png"))
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { next() }
@@ -378,8 +426,7 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
                     self.log("snapshot failed: \(error?.localizedDescription ?? "unknown")")
                     return
                 }
-                let dir = FileManager.default.homeDirectoryForCurrentUser
-                    .appendingPathComponent("Library/Logs/MacCleaner", isDirectory: true)
+                let dir = self.logDirectory()
                 try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                 let file = dir.appendingPathComponent("launcher-snapshot.png")
                 try? png.write(to: file)

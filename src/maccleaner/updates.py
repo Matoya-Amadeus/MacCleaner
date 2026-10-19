@@ -22,7 +22,8 @@ from pathlib import Path
 from typing import Any, Sequence
 
 BREW_CANDIDATES = ("/opt/homebrew/bin/brew", "/usr/local/bin/brew")
-MAS = "/opt/homebrew/bin/mas"
+# mas 与 brew 一样有 Apple Silicon / Intel 两种默认前缀；写死一个在另一种机器上必然找不到。
+MAS_CANDIDATES = ("/opt/homebrew/bin/mas", "/usr/local/bin/mas")
 
 SCOPE_NOTE = "third-party only (brew + mas); macOS system updates are out of scope"
 
@@ -35,8 +36,9 @@ def _resolve(name: str) -> str:
                 return candidate
         return ""
     if name == "mas":
-        if Path(MAS).exists():
-            return MAS
+        for candidate in MAS_CANDIDATES:
+            if Path(candidate).exists():
+                return candidate
         return shutil.which("mas") or ""
     return shutil.which(name) or ""
 

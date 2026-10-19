@@ -46,7 +46,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
     NavGroup(
         "应用",
         (
-            NavItem("uninstall", "软件卸载（彻底）", "uninstall-list"),
+            NavItem("uninstall", "软件卸载", "uninstall-list"),
             NavItem("updates", "软件更新", "updates-open"),
         ),
     ),
