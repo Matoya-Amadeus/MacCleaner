@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import signal
 import threading
 import time
 from dataclasses import dataclass, field
@@ -109,8 +110,26 @@ class InteractiveSession:
         self._acquire_lock()
         self.bridge.start()
         self.state.url = self.bridge.bootstrap_url
+        self._install_signal_handlers()
         self._watch_parent()
         return self.bridge.bootstrap_url
+
+    def _install_signal_handlers(self) -> None:
+        """SIGTERM/SIGINT 要能走 `finally`，否则状态文件会停留在 active=True。
+
+        2026-10-19 实测：外壳 quit 时 `backend.terminate()` 发 SIGTERM，Python 默认直接死掉，
+        既不写终态也不标记非活动——下一个读状态的地方（另一个实例、诊断命令）会以为会话还活着，
+        表现就是"关闭 app 后功能没关干净"。
+        """
+
+        def _stop(_signum: int, _frame: Any) -> None:
+            raise SystemExit(0)
+
+        for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            try:
+                signal.signal(sig, _stop)
+            except (ValueError, OSError):   # 非主线程 / 平台不支持：忽略
+                continue
 
     def _watch_parent(self) -> None:
         """父进程死了就退出（避免孤儿后端一直占着会话锁）。
@@ -403,6 +422,9 @@ class InteractiveSession:
     def _release_lock(self) -> None:
         self.bridge.stop()
         self.state.active = False
+        # 用户关掉窗口/退出时，把阶段收尾成 cancelled（而不是停在 idle/updates 之类的中间态）。
+        if self.state.stage not in TERMINAL_STAGES:
+            self.state.stage = "cancelled"
         try:
             self._write_state()
         except OSError:

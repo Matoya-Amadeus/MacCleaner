@@ -130,7 +130,7 @@ def render_progress_html(payload: dict[str, Any] | None = None, *, stage: str = 
         # 进度页**自己轮询刷新**：慢操作（例如 brew outdated 要几秒）期间服务端不会发新页，
         # 不自刷的话用户就一直停在"正在…"（2026-10-18 真浏览器实测过的坑）。
         actions=(
-            "<script>setTimeout(function(){location.reload()}, 800)</script>"
+            "<script>setTimeout(function(){location.reload()}, 1500)</script>"
             if data.get("auto_refresh", True)
             else ""
         ),
@@ -251,29 +251,30 @@ def render_recovery_html(payload: dict[str, Any], *, interactive: bool = True) -
 def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = True) -> str:
     """应用列表（只列 `/Applications` 与用户应用目录里的 `.app`）。"""
     apps = [item for item in (payload.get("apps") or []) if isinstance(item, dict)]
-    rows = _rows(
-        [
-            {
-                "path": app.get("name") or app.get("path", ""),
-                "kind": app.get("bundle_id", ""),
-                "allocated_bytes": app.get("allocated_bytes", 0),
-                "reason": app.get("version", ""),
-            }
-            for app in apps
-        ]
-    )
-    actions = ""
-    if interactive and apps:
-        actions = _actions(
-            *[
+    # 每个应用一行，**卸载按钮就放在行尾**：之前把按钮单独堆成一块（只前 6 个、还会换行），
+    # 用户看到的是"一排按钮 + 一堆 0 B"（2026-10-19 看真机快照发现）。
+    rows = []
+    for app in apps:
+        size = int(app.get("allocated_bytes") or 0)
+        size_text = human_bytes(size) if size else "—"
+        rows.append(
+            '<div class="row"><div style="min-width:0">'
+            f'<strong>{html.escape(str(app.get("name", "")))}</strong>'
+            f'<div class="meta">{html.escape(str(app.get("bundle_id", "")))}</div>'
+            f'</div><div style="display:flex;align-items:center;gap:10px;flex:none">'
+            f'<span class="meta">{size_text}</span>'
+            + (
                 _button(
-                    f"卸载 {app.get('name', '')}",
+                    "卸载",
                     "uninstall-plan",
                     payload={"bundle_id": app.get("bundle_id", ""), "path": app.get("path", "")},
                 )
-                for app in apps[:6]
-            ]
+                if interactive
+                else ""
+            )
+            + "</div></div>"
         )
+    actions = ""
     return state_page(
         {
             "message": f"共 {len(apps)} 个应用",
@@ -282,7 +283,7 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
         stage="uninstall-list",
         title="软件卸载（彻底）",
         body="选择一个应用",
-        actions=actions + rows,
+        actions="".join(rows),
         current="uninstall",
     )
 

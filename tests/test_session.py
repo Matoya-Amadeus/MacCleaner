@@ -230,3 +230,25 @@ class LockTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ShutdownStateTests(unittest.TestCase):
+    """关闭会话时必须把状态收尾（2026-10-19 用户反馈"关闭后没关干净"）。"""
+
+    def test_release_marks_stage_cancelled_and_inactive(self) -> None:
+        import json
+
+        from maccleaner.session import InteractiveSession, SessionDeps
+
+        with tempfile.TemporaryDirectory(prefix="shutdown-") as tmp:
+            session = InteractiveSession(
+                SessionDeps(audit=lambda: {}, plan=lambda: {}, clean=lambda: {}),
+                state_root=Path(tmp),
+            )
+            session.state.stage = "updates"      # 停在中间态
+            session._write_state()
+            session._release_lock()               # 相当于收到 SIGTERM 后的 finally
+
+            payload = json.loads((Path(tmp) / "session.json").read_text(encoding="utf-8"))
+            self.assertEqual(payload["stage"], "cancelled", "退出时不能停在中间态")
+            self.assertFalse(payload["active"], "退出后不得再声称会话活动")

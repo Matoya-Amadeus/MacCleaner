@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import plistlib
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -57,7 +58,32 @@ def list_applications(*, home: Path | None = None, limit: int = 60) -> list[dict
                 }
             )
             if len(apps) >= limit:
-                return apps
+                return _with_sizes(apps)
+    return _with_sizes(apps)
+
+
+def _with_sizes(apps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """用一次 `du -sk` 批量补体积。
+
+    为什么不在 Python 里逐个数：`.app` 动辄几 GB、几十万个小文件，逐个 `os.walk` 会让列表页卡住；
+    `du` 是系统实现、一次调用就够。`du` 失败就留空——页面会显示"—"而不是假的 0。
+    """
+    if not apps:
+        return apps
+    try:
+        completed = subprocess.run(
+            ["/usr/bin/du", "-sk", *[str(app["path"]) for app in apps]],
+            capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return apps
+    sizes: dict[str, int] = {}
+    for line in (completed.stdout or "").splitlines():
+        parts = line.split("\t", 1)
+        if len(parts) == 2 and parts[0].strip().isdigit():
+            sizes[parts[1]] = int(parts[0]) * 1024
+    for app in apps:
+        app["allocated_bytes"] = sizes.get(str(app["path"]), 0)
     return apps
 
 

@@ -22,6 +22,7 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
     var backend: Process?
     var errorPipe: Pipe?
     var smokeStarted = false
+    var snapshotTaken = false
 
     /// 读后端失败时的 stderr（最多 400 字符），给提示框用。
     func backendErrorText() -> String {
@@ -219,12 +220,16 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
     func runSmoke() {
         // (期望 stage, 要点的动作, 额外等待条件)：`updates` 会先出进度页，再出列表——
         // 只等 stage 会截到"正在检查更新"，看不出列表到底有没有渲染出来。
-        let steps: [(String, String, String)] = [
-            ("idle", "", ""),
-            ("updates", "updates-open", "!!document.querySelector('[data-update-id]')"),
-            ("uninstall-list", "uninstall-list", ""),
-            ("skills", "skills-open", ""),
-            ("review", "start", ""),
+        // 每步除了 stage，还要探一个**内容计数**：只验 stage 会漏掉"页签切了但内容是空的"
+        // （2026-10-19 用户指出的正是这一点）。
+        let steps: [(String, String, String, String)] = [
+            ("idle", "", "", "document.querySelectorAll('.side-item').length"),
+            ("updates", "updates-open", "!!document.querySelector('[data-update-id]')",
+             "document.querySelectorAll('[data-update-id]').length"),
+            ("uninstall-list", "uninstall-list", "",
+             "document.querySelectorAll('.row').length"),
+            ("skills", "skills-open", "", "document.querySelectorAll('details').length"),
+            ("review", "start", "", "document.querySelectorAll('.row').length"),
         ]
         var index = 0
 
@@ -234,7 +239,7 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
                 app.terminate(nil)
                 return
             }
-            let (expected, action, marker) = steps[index]
+            let (expected, action, marker, probe) = steps[index]
             index += 1
 
             func currentStage(_ done: @escaping (String) -> Void) {
@@ -251,7 +256,7 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
                     if stageOK && (!marker.isEmpty) && attempt < 40 {
                         self.webView?.evaluateJavaScript(marker) { value, _ in
                             if (value as? Bool) == true {
-                                self.capture(index: index, expected: expected, actual: stage) { next() }
+                                self.capture(index: index, expected: expected, actual: stage, probe: probe) { next() }
                             } else {
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                                     waitForChange(previous: previous, attempt: attempt + 1)
@@ -261,7 +266,7 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
                         return
                     }
                     if stageOK {
-                        self.capture(index: index, expected: expected, actual: stage) { next() }
+                        self.capture(index: index, expected: expected, actual: stage, probe: probe) { next() }
                         return
                     }
                     _ = previous
@@ -273,7 +278,7 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
 
             if action.isEmpty {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                    currentStage { self.capture(index: index, expected: expected, actual: $0) { next() } }
+                    currentStage { self.capture(index: index, expected: expected, actual: $0, probe: probe) { next() } }
                 }
                 return
             }
@@ -291,8 +296,22 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { next() }
     }
 
-    func capture(index: Int, expected: String, actual: String, then next: @escaping () -> Void) {
-        log("smoke step \(index): expected=\(expected) actual=\(actual)")
+    func capture(index: Int, expected: String, actual: String, probe: String = "",
+                 then next: @escaping () -> Void) {
+        if probe.isEmpty {
+            log("smoke step \(index): expected=\(expected) actual=\(actual)")
+        } else {
+            webView?.evaluateJavaScript(probe) { value, _ in
+                let count = (value as? NSNumber)?.intValue ?? -1
+                self.log("smoke step \(index): expected=\(expected) actual=\(actual) content=\(count)")
+                self.snapshot(index: index, actual: actual, then: next)
+            }
+            return
+        }
+        snapshot(index: index, actual: actual, then: next)
+    }
+
+    func snapshot(index: Int, actual: String, then next: @escaping () -> Void) {
         guard let webView = webView else { next(); return }
         webView.takeSnapshot(with: WKSnapshotConfiguration()) { image, _ in
             if let image = image, let tiff = image.tiffRepresentation,
@@ -321,6 +340,9 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
             runSmoke()
             return
         }
+        // 只拍一次：进度页会自刷，每刷一次都截图会刷屏（2026-10-19 日志里出现过）。
+        if snapshotTaken { return }
+        snapshotTaken = true
         // 自证渲染：等一帧后把窗口内容截成 PNG。用户上一轮遇到黑屏，而我当时只看到"进程在跑"。
         // 这张图是"页面真的有内容"的证据，也可用于以后的自动验收。
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
