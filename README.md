@@ -159,11 +159,38 @@ pipx install "git+https://github.com/Matoya-Amadeus/MacCleaner.git#egg=maccleane
 bash scripts/install_launcher.sh     # 生成 ~/Applications/MacCleaner.app（原生窗口，不开浏览器）
 ```
 
-界面里能做：清理（扫描 → 审阅 → 确认 → 完成）、软件卸载（残留清单 → 勾选 → 移入废纸篓）、
-软件更新（Homebrew / App Store）、查看本机可调用的 Skill。
+侧栏 7 个入口：
+
+| 入口 | 里面能做什么 |
+|---|---|
+| **Mac 清理** | 扫描 → 审阅（**逐条勾选**，默认不勾）→ 确认 → 完成；重复扫描 5 分钟内走缓存 |
+| **软件卸载** | 应用列表（行内「卸载」看残留）；也可**多选批量**（一页确认、一次执行）；残留含 bundle-id 精确项、名称匹配项与 `.ShipIt` 更新残留 |
+| **软件更新** | brew / mas / npm / rustup 默认开；`pip`、`gem` 要联网，默认关（`MACCLEANER_UPDATE_SOURCES` 打开）；6 个源并行查，本机实测 ~6s |
+| **磁盘** | 整机容量 + 常用目录占比；每个目录可**逐层点进去**看下一级谁最占地方 |
+| **系统状态** | 负载 / 内存 / CPU 占用 Top 进程（温度与风扇需 sudo，不做） |
+| **清理历史** | 直接读回执文件：每次的时间、条目数、可恢复字节；dry-run 会标「预演」 |
+| **可调用的 Skill** | 本机 `~/.codex/skills`、`~/.codebuddy/skills`、`~/.claude/skills` 下的全部 skill |
+
+交互（尽量贴近 macOS 原生表格）：行首勾选框、`⌘A` 全选（再按取消）、`Shift+点击` 连选、
+列头按**体积/名称**排序、右键「复制路径 / 在 Finder 中显示」、`Esc` 关菜单、`Enter` 触发主操作。
+
+两处刻意的安全默认值：
+
+- **审阅页默认不勾任何一组**；`~/Downloads`、Docker 数据这类高风险项在审阅页**不可勾选**，
+  要在确认页单独再确认一次（内核侧还会校验 `confirm_targets`）；
+- 「在 Finder 中显示」只接受**当前页面出现过的路径**（会话侧白名单），不是任意路径打开器。
 
 安全口径：只绑 `127.0.0.1`；入口是**一次性链接**（`/bootstrap/<secret>` 换完 cookie 立即作废）；
 每个动作都要 cookie + 请求头双凭据并校验 Origin；同一时间只允许一个会话（flock）。
+
+验收脚本（人工运行，都不是 pytest 用例）：
+
+```bash
+bash tests/acceptance_native_smoke.sh          # 真窗口 11 步：7 个入口 + 清理链路 + 文件级判定
+bash tests/acceptance_uninstall_batch.py       # 批量卸载：多选 → 一页确认 → 文件真的进废纸篓
+bash tests/acceptance_quit.sh                  # 关闭 app 后：进程/端口/状态四项归零
+bash tests/acceptance_portability.sh           # 把仓库复制到别处 + 全新 HOME，验 CLI/测试/.app 都能跑
+```
 
 ### Codex Skill
 

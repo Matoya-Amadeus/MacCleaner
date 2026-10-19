@@ -133,3 +133,19 @@ class IconAssetTests(unittest.TestCase):
         text = script.read_text(encoding="utf-8")
         self.assertIn("superellipse", text, "超椭圆几何要写在脚本里，不是手画个圆角矩形")
         self.assertIn("AppIcon-1024.png", text)
+
+class WindowFrameTests(unittest.TestCase):
+    """窗口尺寸记忆（2026-10-19 实测）：autosave 能存能恢复，但**恢复后必须夹到最小尺寸**。
+
+    `NSWindow.minSize` 只约束用户拖拽，管不住 autosave 恢复出来的 frame
+    （种 400x300 会原样恢复），所以源码里必须有一次显式夹取——这里钉住它，
+    避免以后有人"优化"掉这段让布局被挤坏。
+    """
+
+    def test_frame_is_clamped_after_restore(self) -> None:
+        source = (REPO_ROOT / "scripts" / "launcher" / "main.swift").read_text(encoding="utf-8")
+        self.assertIn("setFrameAutosaveName", source)
+        self.assertIn("minSize", source)
+        self.assertIn("clamped.size.width = max(", source, "恢复后要显式夹一次")
+        self.assertIn("clamped.size.height = max(", source)
+

@@ -206,7 +206,27 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
         window.title = "MacCleaner"
         window.center()
         window.delegate = self
+        // 记忆窗口尺寸/位置（AppKit 的 autosave）。已有实测：退出后写入 defaults、下次启动恢复。
         window.setFrameAutosaveName("MacCleanerMain")
+        // 太小会把三栏布局挤坏。注意 `minSize` 只约束**用户拖拽**，
+        // 管不住 autosave 恢复出来的 frame（实测种 400x300 会原样恢复），所以下面还要手动夹一次。
+        window.minSize = NSSize(width: 860, height: 560)
+        if window.frame.width < 860 || window.frame.height < 560 {
+            var clamped = window.frame
+            clamped.size.width = max(clamped.size.width, 860)
+            clamped.size.height = max(clamped.size.height, 560)
+            window.setFrame(clamped, display: false)
+        }
+        // 换过显示器/拔过外接屏后，记忆的坐标可能落在所有屏幕之外。
+        // 实测 AppKit（macOS 26）**已经会自己 clamp** 回可见区域（种 5000,5000 得到 520,101），
+        // 所以下面这条只是双保险：真遇到不 clamp 的系统/坐标，也不至于"窗口打开但看不见"。
+        let visible = NSScreen.screens.contains { $0.visibleFrame.intersects(window.frame) }
+        if !visible {
+            log("window frame off-screen, recentering: \(NSStringFromRect(window.frame))")
+            window.center()
+        }
+        // 记一行实际 frame：窗口记忆是否生效只能看真实矩形，不能靠"我调了 API"。
+        log("window frame=\(NSStringFromRect(window.frame))")
 
         let webView = WKWebView(frame: frame)
         webView.navigationDelegate = self
