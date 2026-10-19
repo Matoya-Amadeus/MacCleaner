@@ -481,7 +481,9 @@ def render_uninstall_complete_html(result: dict[str, Any], *, interactive: bool 
 # --------------------------------------------------------------------------- 更新
 
 
-def render_updates_list_html(payload: dict[str, Any], *, interactive: bool = True) -> str:
+def render_updates_list_html(
+    payload: dict[str, Any], *, interactive: bool = True, notice: str = ""
+) -> str:
     items = [item for item in (payload.get("items") or []) if isinstance(item, dict)]
     rows: list[str] = []
     for index, item in enumerate(items):
@@ -497,6 +499,9 @@ def render_updates_list_html(payload: dict[str, Any], *, interactive: bool = Tru
         )
     notes = "".join(f'<p class="muted">{html.escape(str(note))}</p>' for note in (payload.get("notes") or []))
     actions = _actions(_button("重新检查", "updates-refresh"), _button("更新所选", "updates-apply", primary=True)) if interactive else ""
+    if notice:
+        # 提示在按钮**上方**：否则会挤进动作条、看起来像第三个按钮。
+        actions = f'<p class="pill warn" role="status">{html.escape(notice)}</p>' + actions
     return state_page(
         {
             "message": f"可升级 {len(items)} 项（只处理第三方：Homebrew / App Store）",

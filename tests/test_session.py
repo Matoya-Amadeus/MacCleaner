@@ -207,6 +207,112 @@ class CleanupFlowTests(unittest.TestCase):
             self.assertEqual(driver.join()["stage"], "complete")
 
 
+    def test_uninstall_empty_selection_stays_on_preview_then_applies(self) -> None:
+        """一个都不勾时必须**停在预览页**并提示，而不是冒充"卸载完成 0 项"。
+
+        2026-10-19 真机 HTTP 验收撞到：空勾选会把会话推进到完成页，用户再勾选提交就没人接了
+        （外层等的是 uninstall-plan）。这里钉住"拒绝 → 重等 → 再提交 → 成功"。
+        """
+        calls: list[list[str]] = []
+
+        def apply(**kwargs):
+            ids = list(kwargs.get("ids") or [])
+            calls.append(ids)
+            if not ids:
+                return {"status": "refused", "reason": "nothing selected", "moved": [], "skipped": []}
+            return {"status": "applied", "moved_count": 1, "moved": [], "skipped": []}
+
+        # 会话线程可能仍在写 state/，清理临时目录会撞上 "Directory not empty"，所以忽略清理错误
+        with tempfile.TemporaryDirectory(prefix="session-unin-", ignore_cleanup_errors=True) as tmp:
+            driver = _Driver(_deps(uninstall_apply=apply), Path(tmp))
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+
+            self.assertEqual(driver.action("uninstall-list"), 202)
+            driver.wait_page('data-stage="uninstall-list"')
+            self.assertEqual(
+                driver.action("uninstall-plan", {"bundle_id": "com.example.app", "path": "/Applications/Example.app"}),
+                202,
+            )
+            driver.wait_page('data-stage="uninstall-preview"')
+
+            self.assertEqual(driver.action("uninstall-apply", {"selected_ids": []}), 202)
+            notice = driver.wait_page("至少选一项", timeout=5)
+            self.assertIn('data-stage="uninstall-preview"', notice, "被拒绝后应留在预览页")
+
+            self.assertEqual(driver.action("uninstall-apply", {"selected_ids": ["aaa"]}), 202)
+            done = driver.wait_page('data-stage="uninstall-complete"', timeout=5)
+            self.assertIn("卸载", done)
+            self.assertEqual(calls, [[], ["aaa"]], "拒绝一次后必须还能再提交")
+
+            driver.action("cancel")
+            driver.join()
+
+class UpdatesFlowTests(unittest.TestCase):
+    """更新链路的接线（2026-10-19 补）：勾选 → 执行 → 结果页。
+
+    此前完全没有会话级用例，于是"空勾选 = 全部升级 79 个包"这种问题没人拦。
+    """
+
+    def _items(self):
+        return [
+            {"name": "aom", "manager": "brew", "kind": "formula", "installed": "1", "available": "2"},
+            {"name": "cmake", "manager": "brew", "kind": "formula", "installed": "3", "available": "4"},
+        ]
+
+    def test_apply_sends_only_the_ticked_ids(self) -> None:
+        calls: list[list[str]] = []
+
+        def apply(**kwargs):
+            calls.append(list(kwargs.get("ids") or []))
+            return {"status": "applied", "ok_count": 1, "total": 1,
+                    "groups": [{"command": "brew upgrade aom", "exit_code": 0, "ok": True}]}
+
+        with tempfile.TemporaryDirectory(prefix="session-upd-") as tmp:
+            driver = _Driver(
+                _deps(updates_check=lambda: {"items": self._items(), "count": 2, "notes": []}, updates_apply=apply),
+                Path(tmp),
+            )
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+
+            self.assertEqual(driver.action("updates-open"), 202)
+            driver.wait_page("data-update-id=", timeout=10)
+            self.assertEqual(driver.action("updates-apply", {"ids": ["1"]}), 202)
+            result = driver.wait_page('data-stage="updates-result"', timeout=10)
+            self.assertIn("brew upgrade aom", result)
+            self.assertEqual(calls, [["1"]], "只能把勾选的那一项交出去")
+
+            driver.action("cancel")
+            driver.join()
+
+    def test_empty_selection_refuses_instead_of_upgrading_everything(self) -> None:
+        """一个都不勾 ≈ 升级全部 79 个包 —— 必须拦住（2026-10-19 复查发现）。"""
+        calls: list[list[str]] = []
+
+        def apply(**kwargs):
+            calls.append(list(kwargs.get("ids") or []))
+            return {"status": "applied", "ok_count": 0, "total": 0, "groups": []}
+
+        with tempfile.TemporaryDirectory(prefix="session-upd0-", ignore_cleanup_errors=True) as tmp:
+            driver = _Driver(
+                _deps(updates_check=lambda: {"items": self._items(), "count": 2, "notes": []}, updates_apply=apply),
+                Path(tmp),
+            )
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+
+            self.assertEqual(driver.action("updates-open"), 202)
+            driver.wait_page("data-update-id=", timeout=10)
+            self.assertEqual(driver.action("updates-apply", {"ids": []}), 202)
+            page = driver.wait_page("至少勾选一项", timeout=5)
+            self.assertIn('data-stage="updates"', page, "被拒绝后应留在列表页")
+            self.assertEqual(calls, [], "空勾选绝不能触发执行")
+
+            driver.action("cancel")
+            driver.join()
+
+
 class NavigationTests(unittest.TestCase):
     def test_uninstall_entry_lists_apps(self) -> None:
         with tempfile.TemporaryDirectory(prefix="session-unin-") as tmp:
@@ -281,44 +387,4 @@ class ShutdownStateTests(unittest.TestCase):
             payload = json.loads((Path(tmp) / "session.json").read_text(encoding="utf-8"))
             self.assertEqual(payload["stage"], "cancelled", "退出时不能停在中间态")
             self.assertFalse(payload["active"], "退出后不得再声称会话活动")
-
-    def test_uninstall_empty_selection_stays_on_preview_then_applies(self) -> None:
-        """一个都不勾时必须**停在预览页**并提示，而不是冒充"卸载完成 0 项"。
-
-        2026-10-19 真机 HTTP 验收撞到：空勾选会把会话推进到完成页，用户再勾选提交就没人接了
-        （外层等的是 uninstall-plan）。这里钉住"拒绝 → 重等 → 再提交 → 成功"。
-        """
-        calls: list[list[str]] = []
-
-        def apply(**kwargs):
-            ids = list(kwargs.get("ids") or [])
-            calls.append(ids)
-            if not ids:
-                return {"status": "refused", "reason": "nothing selected", "moved": [], "skipped": []}
-            return {"status": "applied", "moved_count": 1, "moved": [], "skipped": []}
-
-        with tempfile.TemporaryDirectory(prefix="session-unin-") as tmp:
-            driver = _Driver(_deps(uninstall_apply=apply), Path(tmp))
-            driver.bootstrap()
-            driver.wait_page('data-stage="idle"')
-
-            self.assertEqual(driver.action("uninstall-list"), 202)
-            driver.wait_page('data-stage="uninstall-list"')
-            self.assertEqual(
-                driver.action("uninstall-plan", {"bundle_id": "com.example.app", "path": "/Applications/Example.app"}),
-                202,
-            )
-            driver.wait_page('data-stage="uninstall-preview"')
-
-            self.assertEqual(driver.action("uninstall-apply", {"selected_ids": []}), 202)
-            notice = driver.wait_page("至少选一项", timeout=5)
-            self.assertIn('data-stage="uninstall-preview"', notice, "被拒绝后应留在预览页")
-
-            self.assertEqual(driver.action("uninstall-apply", {"selected_ids": ["aaa"]}), 202)
-            done = driver.wait_page('data-stage="uninstall-complete"', timeout=5)
-            self.assertIn("卸载", done)
-            self.assertEqual(calls, [[], ["aaa"]], "拒绝一次后必须还能再提交")
-
-            driver.action("cancel")
-            driver.join()
 

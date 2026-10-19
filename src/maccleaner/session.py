@@ -399,22 +399,31 @@ class InteractiveSession:
                 stage="updates",
             ))
             found = self.deps.updates_check()
-            self._serve("updates", pages.render_updates_list_html(found))
-            action = self._wait_or_nav(("updates-apply", "updates-refresh", "cancel"), self.ACTION_TIMEOUT_SECONDS)
-            if action is not None and "nav" in action:
-                self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
-                return action["nav"]
-            if action is not None and action["action"] == "cancel":
-                return self._finish("cancelled", pages.render_cancelled_html({}))
-            if action is None or action["action"] == "start":
-                self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
-                return None
-            if action["action"] == "updates-refresh":
-                found = self.deps.updates_check()
-                self._serve("updates", pages.render_updates_list_html(found))
-                return None
-            ids = [str(value) for value in (action.get("payload") or {}).get("ids") or []]
-            result = self.deps.updates_apply(ids=ids)
+            notice = ""
+            while True:
+                self._serve("updates", pages.render_updates_list_html(found, notice=notice))
+                action = self._wait_or_nav(
+                    ("updates-apply", "updates-refresh", "cancel"), self.ACTION_TIMEOUT_SECONDS
+                )
+                if action is not None and "nav" in action:
+                    self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
+                    return action["nav"]
+                if action is not None and action["action"] == "cancel":
+                    return self._finish("cancelled", pages.render_cancelled_html({}))
+                if action is None or action["action"] == "start":
+                    self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
+                    return None
+                if action["action"] == "updates-refresh":
+                    found = self.deps.updates_check()
+                    notice = ""
+                    continue
+                ids = [str(value) for value in (action.get("payload") or {}).get("ids") or []]
+                if not ids:
+                    # 空勾选不是"全部升级"：留在列表页并说明（否则会一口气升掉所有包）。
+                    notice = "至少勾选一项再更新"
+                    continue
+                result = self.deps.updates_apply(ids=ids)
+                break
             self._serve("updates", pages.render_updates_result_html(result))
             follow = self._wait_or_nav(("updates-refresh", "cancel"), self.ACTION_TIMEOUT_SECONDS)
             if follow is not None and "nav" in follow:

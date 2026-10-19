@@ -328,6 +328,13 @@ def build_deps(
         return discover_updates()
 
     def updates_apply(*, ids: list[str]) -> dict[str, Any]:
+        """按页面勾选执行更新。
+
+        **空勾选必须拒绝**：原来 `if not wanted or ...` 让"一个都不勾"变成"全部升级"，
+        79 个包会被一口气升掉（2026-10-19 复查发现，与卸载那条同一个病）。
+        """
+        if not ids:
+            return {"status": "refused", "reason": "nothing selected", "groups": []}
         found = discover_updates()
         wanted = {str(value) for value in ids}
         selected = [
