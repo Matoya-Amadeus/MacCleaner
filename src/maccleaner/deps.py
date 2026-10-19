@@ -319,6 +319,20 @@ def _du_sizes(paths: list[Path], *, timeout: float = 8.0) -> dict[str, int]:
     return sizes
 
 
+def _landing_history(home: Path, state_root: Path | None) -> dict[str, Any]:
+    """落地页摘要：次数 + 释放量 + 最近一次时间（都从回执算）。"""
+    report = history_report(home=home, state_root=state_root)
+    entries = report.get("entries") or []
+    last = entries[0] if entries else {}
+    return {
+        "total_runs": int(report.get("runs", 0) or 0),
+        "total_freed_bytes": int(report.get("total_bytes", 0) or 0),
+        "last_run": str(last.get("created_at") or ""),
+        "last_items": int(last.get("items", 0) or 0),
+        "last_bytes": int(last.get("bytes", 0) or last.get("estimated", 0) or 0),
+    }
+
+
 def disk_report(*, home: Path) -> dict[str, Any]:
     """磁盘概览：整体容量 + 常用目录体积（只读）。"""
     import shutil as _shutil
@@ -603,7 +617,9 @@ def build_deps(
         clean_approved=clean,   # clean(approved) 同一实现：无参时 dry-run，带 id 才真执行
         open_trash=lambda: _open_trash(home_path),
         reveal=_reveal,
-        history=lambda: history_summary(state_root=state_path),
+        # 落地页的"上次清理"也从回执算：`history.json` 没人写，读它永远是空
+        # （2026-10-19 发现；现在与「清理历史」页共用同一真相源）。
+        history=lambda: _landing_history(home_path, state_path),
         apps=lambda: list_applications(home=home_path),
         skills=list_skills,
         disk=lambda: disk_report(home=home_path),

@@ -21,7 +21,7 @@ class LandingPageTests(unittest.TestCase):
 
     def test_landing_shows_history_summary(self) -> None:
         page = render_landing_html({"history": {"total_runs": 3, "total_freed_bytes": 1024 * 1024}})
-        self.assertIn("上次共清理 3 次", page)
+        self.assertIn("已清理 3 次", page)
         self.assertIn("清空废纸篓后才真正释放", page, "回收量口径必须与清理侧一致")
 
     def test_landing_without_history_says_so(self) -> None:

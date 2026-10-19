@@ -178,8 +178,10 @@ def render_landing_html(payload: dict[str, Any], *, interactive: bool = True) ->
     history = payload.get("history") or {}
     total = int(history.get("total_freed_bytes") or 0)
     runs = int(history.get("total_runs") or 0)
+    last_run = str(history.get("last_run") or "").replace("T", " ")[:16]
     summary = (
-        f"上次共清理 {runs} 次，可恢复 {human_bytes(total)}（清空废纸篓后才真正释放）"
+        f"已清理 {runs} 次，可恢复 {human_bytes(total)}（清空废纸篓后才真正释放）"
+        + (f" · 最近 {last_run}" if last_run else "")
         if (total or runs)
         else "还没有清理记录"
     )
