@@ -397,6 +397,25 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn('data-treemap-path="/Users/x/Downloads/big"', page)
         self.assertNotIn('data-treemap-path="/Users/x/Downloads/a.zip"', page, "文件不该可点")
 
+    def test_selectable_lists_mark_rows_for_drag_selection(self) -> None:
+        """四类可选列表的行都要带 `data-select-row`，否则拖拽连选不生效（2026-10-20）。"""
+        from maccleaner.ui.pages import (
+            render_orphans_html, render_review_html, render_uninstall_list_html, render_updates_list_html,
+        )
+
+        pages = {
+            "review": render_review_html({"candidates": [
+                {"name": "C", "path": "/x", "kind": "cache", "allocated_bytes": 1, "target_id": "t1"}]}),
+            "uninstall": render_uninstall_list_html({"apps": [
+                {"name": "A", "bundle_id": "a.b", "path": "/A"}]}),
+            "updates": render_updates_list_html({"items": [
+                {"name": "x", "manager": "brew", "kind": "formula", "installed": "1", "available": "2"}]}),
+            "orphans": render_orphans_html({"items": [
+                {"name": "com.gone.app", "path": "/x/com.gone.app", "bytes": 1}], "total": 1, "bytes": 1}),
+        }
+        for name, page in pages.items():
+            self.assertIn("data-select-row", page, f"{name} 页缺少拖拽标记")
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")

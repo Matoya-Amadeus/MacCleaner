@@ -478,7 +478,7 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
         # 行**不是** label：整行 label 会让"点应用名想打开"变成"误勾选"（2026-10-19 截图发现）。
         # 勾选只由左侧那个小 label 触发；点行其它位置 = 打开残留预览（JS 代理到行内按钮）。
         row = (
-            f'<div class="row opt clickable" data-row data-sort-text="{html.escape(name.lower())}"'
+            f'<div class="row opt clickable" data-row data-select-row data-sort-text="{html.escape(name.lower())}"'
             f' data-sort-bytes="{size}" data-reveal-path="{html.escape(path)}">'
             '<label class="checkbox-only">'
             + (checkbox or '<span style="width:16px"></span>')
@@ -751,7 +751,7 @@ def render_updates_list_html(
         transition = f"{item.get('installed') or '?'} → {item.get('available') or '?'}"
         name = str(item.get("name", ""))
         row = (
-            f'<label class="row opt" data-sort-text="{html.escape(name.lower())}">'
+            f'<label class="row opt" data-select-row data-sort-text="{html.escape(name.lower())}">'
             f'<input type="checkbox" data-update-id="{index}" checked>'
             '<div style="min-width:0">'
             f"<strong>{html.escape(name)}</strong>"
@@ -1129,7 +1129,7 @@ def render_orphans_html(payload: dict[str, Any] | None = None, *, interactive: b
         size = int(item.get("bytes", 0) or 0)
         name = str(item.get("name", ""))
         rows.append(
-            f'<div class="row" data-sort-text="{html.escape(name.lower())}" data-sort-bytes="{size}"'
+            f'<div class="row" data-select-row data-sort-text="{html.escape(name.lower())}" data-sort-bytes="{size}"'
             f' data-reveal-path="{html.escape(path)}">'
             '<label class="checkbox-only">'
             f'<input type="checkbox" data-orphan-path="{html.escape(path)}"></label>'

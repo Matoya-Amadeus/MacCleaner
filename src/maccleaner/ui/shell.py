@@ -170,6 +170,7 @@ _RUNTIME_JS = """
       .filter(node => node.checked)
       .map(node => node.dataset.itemId || node.dataset.updateId || node.dataset.targetId);
   document.addEventListener('click', async (event) => {
+    if (suppressClick) { suppressClick = false; event.preventDefault(); event.stopPropagation(); return; }
     // 排序：纯前端重排（不重新扫盘、不发页面），再点一次反向。
     const sortBtn = event.target.closest('[data-sort]');
     if (sortBtn) {
@@ -292,6 +293,76 @@ _RUNTIME_JS = """
     catch (error) { button.disabled = false; toast(error.message); }
   });
   refreshSelection();
+  // ---- 拖拽连选（2026-10-20）：按住行往下拖，区间内的勾选框一起变 ----
+  // 与 macOS 列表一致：从"未勾"的行起拖 = 全勾上；从"已勾"的行起拖 = 全取消。
+  // 只在移动超过 4px 后才算拖拽，否则点击仍按原语义（打开/勾选）。
+  let dragState = null;
+  let suppressClick = false;
+
+  function rowsIn(container) {
+    return Array.from(container.querySelectorAll('[data-select-row]'))
+      .filter(row => {
+        const box = row.querySelector('input[type="checkbox"]');
+        return box && !box.disabled && row.offsetParent !== null;
+      });
+  }
+
+  function paintTo(target) {
+    if (!dragState) return;
+    const rows = rowsIn(dragState.container);
+    const from = rows.indexOf(dragState.anchor);
+    const to = rows.indexOf(target);
+    if (from < 0 || to < 0) return;
+    const [start, end] = from <= to ? [from, to] : [to, from];
+    for (let index = start; index <= end; index += 1) {
+      const box = rows[index].querySelector('input[type="checkbox"]');
+      if (box) box.checked = dragState.value;
+    }
+    dragState.moved = true;
+    refreshSelection();
+  }
+
+  document.addEventListener('mousedown', (event) => {
+    if (event.button !== 0 || event.target.closest('input, button, a')) return;
+    const row = event.target.closest('[data-select-row]');
+    if (!row) return;
+    const box = row.querySelector('input[type="checkbox"]');
+    if (!box || box.disabled) return;
+    dragState = {
+      anchor: row,
+      // 整页范围：列表被按字母/来源拆成了多个 `.rows` 容器，拖拽必须能跨组。
+      container: document,
+      value: !box.checked,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+    };
+  });
+
+  document.addEventListener('mousemove', (event) => {
+    if (!dragState) return;
+    const dx = Math.abs(event.clientX - dragState.startX);
+    const dy = Math.abs(event.clientY - dragState.startY);
+    // 真实鼠标用坐标命中最准；合成事件（验收脚本）下 elementFromPoint 可能为空，退回事件目标。
+    const under = document.elementFromPoint(event.clientX, event.clientY);
+    const row =
+      (under && under.closest ? under.closest('[data-select-row]') : null) ||
+      (event.target && event.target.closest ? event.target.closest('[data-select-row]') : null);
+    if (!row) return;
+    // 跨行即算拖拽（合成事件没有坐标差）；同一行内则要求真的移动过 4px。
+    if (!dragState.moved && row === dragState.anchor && dx < 4 && dy < 4) return;
+    paintTo(row);
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (dragState && dragState.moved) {
+      // 拖完会紧跟一次 click（可能被当成"打开这一行"）：吃掉它。
+      suppressClick = true;
+      setTimeout(() => { suppressClick = false; }, 0);
+    }
+    dragState = null;
+  });
+
   // ---- 右键菜单（2026-10-19）：复制路径 / 在 Finder 中显示 ----
   // 只对带 data-reveal-path 的行生效；"在 Finder 中显示"要经过会话白名单校验。
   // 复制路径：安全上下文用剪贴板 API，否则退回隐藏 textarea（file:// 或旧内核）。
