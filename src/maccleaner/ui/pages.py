@@ -25,7 +25,10 @@ def human_bytes(value: int | float) -> str:
     number = float(max(0, int(value or 0)))
     for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
         if number < 1024 or unit == "TiB":
-            return f"{int(number)} B" if unit == "B" else f"{number:.2f} {unit}"
+            # B / KiB 用整数：`1012.00 KiB` 的小数位没有信息量（2026-10-20 截图发现）。
+            if unit in ("B", "KiB"):
+                return f"{int(round(number))} {unit}"
+            return f"{number:.2f} {unit}"
         number /= 1024
     return f"{number:.2f} TiB"
 
@@ -1024,6 +1027,121 @@ def render_disk_browse_html(payload: dict[str, Any] | None = None, *, interactiv
     )
 
 
+def render_orphans_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
+    """孤儿残留体检（学 Pearcleaner 的 orphan scan）。
+
+    判定口径写在页面上：名字像 bundle id、没有对应已装应用、且 7 天没动过。
+    **默认不勾**，勾了才动，而且只进废纸篓。
+    """
+    data = payload or {}
+    items = [item for item in (data.get("items") or []) if isinstance(item, dict)]
+    total = int(data.get("total", len(items)) or 0)
+    total_bytes = int(data.get("bytes", 0) or 0)
+
+    rows: list[str] = []
+    for item in items:
+        path = str(item.get("path", ""))
+        size = int(item.get("bytes", 0) or 0)
+        name = str(item.get("name", ""))
+        rows.append(
+            f'<div class="row" data-sort-text="{html.escape(name.lower())}" data-sort-bytes="{size}"'
+            f' data-reveal-path="{html.escape(path)}">'
+            '<label class="checkbox-only">'
+            f'<input type="checkbox" data-orphan-path="{html.escape(path)}"></label>'
+            '<div style="min-width:0;flex:1">'
+            f"<strong>{html.escape(name)}</strong>"
+            f'<div class="meta">{html.escape(_display_path(path))}'
+            + (f" · 最后修改 {html.escape(str(item.get('modified') or ''))}" if item.get("modified") else "")
+            + "</div></div>"
+            f'<span class="meta value">{human_bytes(size)}</span></div>'
+        )
+
+    toolbar = ""
+    if interactive and items:
+        toolbar = (
+            '<div class="toolbar-left">'
+            '<label class="checkbox-inline"><input type="checkbox" data-select-all-orphans>'
+            "<span>全选</span></label>"
+            '<span class="meta" id="mc-orphans-count"></span></div>'
+            '<div class="toolbar-right">'
+            + _button("重新扫描", "orphans-open")
+            + _button("移入废纸篓", "orphans-apply", primary=True)
+            + "</div>"
+        )
+
+    body = (
+        '<div class="rows" data-sortable>' + "".join(rows) + "</div>"
+        if rows
+        else empty_block(
+            "check",
+            "没有发现孤儿残留",
+            "扫过 Caches / Preferences / Logs / Containers / WebKit / HTTPStorages / Saved State，"
+            "每一项都能对上一个已装应用。",
+        )
+    )
+    return state_page(
+        {
+            "message": (
+                f"疑似残留 {total} 项，共 {human_bytes(total_bytes)}"
+                + (f"（页面列出前 {len(items)} 项）" if total > len(items) else "")
+                if items
+                else "没有发现孤儿残留"
+            ),
+            "detail": "判定：名字像 bundle id、对不上任何已装应用、且 7 天没被改动过。"
+            "默认不勾；勾了才移入废纸篓（可恢复）。"
+            + (
+                f" 另有 {int(data.get('skipped_vendor', 0) or 0)} 项同厂商组件被保守排除"
+                "（同厂商别的应用还装着，先不动）。"
+                if int(data.get("skipped_vendor", 0) or 0)
+                else ""
+            ),
+        },
+        stage="orphans",
+        title="残留体检",
+        body="",
+        toolbar=toolbar,
+        actions=body,
+        current="orphans",
+        subtitle="应用删了，残留还在？这里找那些没人认领的",
+        meta=f"已装 {int(data.get('installed', 0) or 0)} 个应用",
+    )
+
+
+def render_orphans_result_html(result: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
+    data = result or {}
+    moved = [item for item in (data.get("moved") or []) if isinstance(item, dict)]
+    failed = [item for item in (data.get("failed") or []) if isinstance(item, dict)]
+    total_bytes = int(data.get("bytes", 0) or 0)
+
+    rows = "".join(
+        '<div class="row"><div style="min-width:0;flex:1">'
+        f'<strong>{html.escape(Path(str(item.get("path", ""))).name)}</strong>'
+        f'<div class="meta">{html.escape(_display_path(str(item.get("path", ""))))}</div></div>'
+        f'<span class="meta value">{human_bytes(int(item.get("bytes", 0) or 0))}</span></div>'
+        for item in moved
+    )
+    fail_rows = "".join(
+        f'<p class="pill warn">{html.escape(str(item.get("path", "")))}：'
+        f'{html.escape(str(item.get("reason", "")))}</p>'
+        for item in failed
+    )
+    actions = _actions(
+        _button("再扫一次", "orphans-open"),
+        _button("打开废纸篓", "open-trash", ghost=True) if interactive else "",
+    ) if interactive else ""
+    return state_page(
+        {
+            "message": f"已移入废纸篓 {len(moved)} 项，共 {human_bytes(total_bytes)}",
+            "detail": "想恢复的话，在废纸篓里右键「放回原处」。",
+        },
+        stage="orphans",
+        title="残留体检",
+        body="",
+        actions=(rows + fail_rows) if (rows or fail_rows) else empty_block("check", "没有移动任何文件", "你什么都没勾。"),
+        current="orphans",
+    )
+
+
 def render_history_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
     """清理历史：直接读回执文件（时间/模式/条目/字节），只读。"""
     data = payload or {}
@@ -1178,6 +1296,8 @@ def render_system_html(payload: dict[str, Any] | None = None, *, interactive: bo
 
 __all__ = [
     "render_disk_browse_html",
+    "render_orphans_html",
+    "render_orphans_result_html",
     "render_disk_html",
     "render_history_html",
     "render_system_html",

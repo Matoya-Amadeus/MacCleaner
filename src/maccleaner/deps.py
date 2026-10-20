@@ -20,12 +20,13 @@ import hashlib
 import json
 import os
 import plistlib
+import re
 import subprocess
 import time
 from pathlib import Path
 from typing import Any
 
-from .core import StorageContext, StorageManager
+from .core import move_to_trash, _protected_session_reason, StorageContext, StorageManager
 from .session import SessionDeps
 from .uninstall import apply_plan, build_plan, read_app_identity
 from .updates import apply_updates, build_upgrade_plan, discover_updates
@@ -467,6 +468,279 @@ def _memory_bytes() -> tuple[int, int]:
     return total, used
 
 
+# 反向扫描的目录：只查"用户域里按 bundle id 命名"的位置。
+# 刻意不含 `~/Library/Application Support`（很多目录是产品名而不是 bundle id，误报率高）。
+ORPHAN_DIRS = (
+    "Library/Caches",
+    "Library/Preferences",
+    "Library/Logs",
+    "Library/Containers",
+    "Library/HTTPStorages",
+    "Library/WebKit",
+    "Library/Saved Application State",
+)
+
+# 看起来像 bundle id：至少两段、只含字母数字与 . _ -
+BUNDLE_LIKE = re.compile(r"^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+$")
+
+# 这些前缀不猜：苹果系统组件删了会出问题，也不该由第三方工具判定。
+ORPHAN_SKIP_PREFIXES = ("com.apple.", "group.com.apple.", "system.", "org.swift.", "com.apple")
+
+
+LSREGISTER = (
+    "/System/Library/Frameworks/CoreServices.framework/Frameworks/"
+    "LaunchServices.framework/Support/lsregister"
+)
+LS_BUNDLE_ID = re.compile(r"^bundle id:\s+(?P<id>\S+)")
+
+
+LAUNCHSERVICES_CACHE_SECONDS = 600
+
+
+def launchservices_bundle_ids(
+    *, timeout: float = 8.0, cache_path: Path | None = None, ttl: int = LAUNCHSERVICES_CACHE_SECONDS
+) -> set[str]:
+    """从 LaunchServices 注册表抓**所有已注册** app 的 bundle id。
+
+    为什么需要它（2026-10-20 实测）：只扫 `/Applications`、`~/Applications` 会把
+    装在别处的应用误判成"已卸载"——本机 `com.epicgames.UnrealEditor` 装在
+    `~/Workspace/UEProject/UE_8/...`，于是它 267 MB 的缓存被错误地报成"孤儿"。
+    宁可多花 4 秒，也不能让用户删掉在用应用的数据。
+    """
+    # 缓存：`lsregister -dump` 实测 4.3 秒，第二次进页不该再等。
+    if cache_path is not None:
+        try:
+            entry = json.loads(Path(cache_path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            entry = None
+        if isinstance(entry, dict):
+            age = time.time() - float(entry.get("at") or 0)
+            ids = entry.get("ids")
+            if 0 <= age <= ttl and isinstance(ids, list):
+                return {str(item) for item in ids}
+
+    try:
+        completed = subprocess.run(
+            [LSREGISTER, "-dump"], capture_output=True, text=True, timeout=timeout
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    ids: set[str] = set()
+    for line in (completed.stdout or "").splitlines():
+        match = LS_BUNDLE_ID.match(line)
+        if match:
+            ids.add(match.group("id"))
+
+    if cache_path is not None:
+        try:
+            Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+            tmp = Path(cache_path).with_suffix(".tmp")
+            tmp.write_text(json.dumps({"at": time.time(), "ids": sorted(ids)}), encoding="utf-8")
+            os.replace(tmp, cache_path)
+        except OSError:
+            pass
+    return ids
+
+
+def installed_bundle_ids(
+    home: Path, *, system: bool = True, cache_path: Path | None = None
+) -> dict[str, str]:
+    """已安装应用的 `bundle_id → 名字`（只读 Info.plist）。
+
+    扫三个位置：`/Applications`、`/System/Applications`、`~/Applications`。
+    """
+    found: dict[str, str] = {}
+    bases = [Path(home) / "Applications"]
+    if system:
+        bases = [Path("/Applications"), Path("/System/Applications"), *bases]
+    for base in bases:
+        if not base.is_dir():
+            continue
+        try:
+            entries = list(base.glob("*.app"))
+        except OSError:
+            continue
+        for app in entries:
+            try:
+                with (app / "Contents" / "Info.plist").open("rb") as handle:
+                    data = plistlib.load(handle)
+            except Exception:  # noqa: BLE001 - 坏 plist 跳过
+                continue
+            bundle_id = str(data.get("CFBundleIdentifier") or "").strip()
+            if bundle_id:
+                found[bundle_id] = str(data.get("CFBundleName") or app.stem)
+
+    if system:
+        # `/Users/Shared` 是不少大型软件（Epic、部分驱动）的默认位置。
+        shared = Path("/Users/Shared")
+        if shared.is_dir():
+            try:
+                for app in shared.glob("**/*.app"):
+                    try:
+                        with (app / "Contents" / "Info.plist").open("rb") as handle:
+                            data = plistlib.load(handle)
+                    except Exception:  # noqa: BLE001
+                        continue
+                    bundle_id = str(data.get("CFBundleIdentifier") or "").strip()
+                    if bundle_id:
+                        found.setdefault(bundle_id, str(data.get("CFBundleName") or app.stem))
+            except OSError:
+                pass
+        # LaunchServices 覆盖"装在任意位置但已注册"的应用。
+        for bundle_id in launchservices_bundle_ids(cache_path=cache_path):
+            found.setdefault(bundle_id, "")
+    return found
+
+
+def _vendor(name: str) -> str:
+    """取 bundle id 的"厂商前缀"：`com.epicgames.UnrealEditor` → `com.epicgames`。"""
+    parts = [part for part in str(name or "").split(".") if part]
+    return ".".join(parts[:2]) if len(parts) >= 2 else str(name or "")
+
+
+def _belongs_to_installed(name: str, installed: dict[str, str]) -> bool:
+    """名字是否"属于某个已装应用"。
+
+    双向前缀匹配：`com.demo.app.ShipIt` 属于 `com.demo.app`；
+    `com.demo` 也可能是 `com.demo.helper` 的父级——两者都算"不是孤儿"，
+    宁可漏报也不误报（误报会让用户删掉正在用的应用数据）。
+    """
+    vendor = _vendor(name)
+    for bundle_id in installed:
+        if name == bundle_id:
+            return True
+        if name.startswith(bundle_id + ".") or bundle_id.startswith(name + "."):
+            return True
+        # 同厂商还装着别的应用时，**按保守处理**：不让它进"孤儿"列表。
+        # 实测例子：`com.epicgames.UnrealEditor` 的缓存对应的是 `UnrealEditorServices`（装在
+        # ~/Workspace/UEProject/…），bundle id 与缓存目录名并不逐字相同，靠前缀匹配抓不到。
+        # 宁可漏报，也不建议用户删掉在用应用的数据。
+        if vendor and _vendor(bundle_id) == vendor:
+            return True
+    return False
+
+
+def orphan_leftovers(
+    home: Path,
+    *,
+    limit: int = 200,
+    min_age_days: int = 7,
+    system: bool = True,
+    cache_path: Path | None = None,
+) -> dict[str, Any]:
+    """找出"应用已经不在，但残留还在"的项（只读）。
+
+    判定条件（三条同时满足）：
+    1. 名字看起来是 bundle id（`a.b` 形态），且在 `ORPHAN_DIRS` 里按该名字存在；
+    2. 没有任何**已安装**应用的 bundle id 与它相同/互为前缀；
+    3. 不是 `com.apple.*` 等系统前缀，也没命中受保护路径，且最后修改早于 `min_age_days`。
+
+    这是 Pearcleaner 的"孤儿文件"能力的最小可信版本：**默认不勾、只在废纸篓里可恢复**。
+    """
+    home_path = Path(home)
+    installed = installed_bundle_ids(home_path, system=system, cache_path=cache_path)
+    candidates: list[Path] = []
+    seen: set[str] = set()
+    skipped_vendor = 0
+
+    for relative in ORPHAN_DIRS:
+        directory = home_path / relative
+        if not directory.is_dir():
+            continue
+        try:
+            entries = list(directory.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            name = entry.name
+            # 去掉常见后缀，还原成 bundle id 形态
+            for suffix in (".plist", ".savedState", ".binarycookies", ".log"):
+                if name.endswith(suffix):
+                    name = name[: -len(suffix)]
+            if not BUNDLE_LIKE.match(name):
+                continue
+            if name.startswith(ORPHAN_SKIP_PREFIXES):
+                continue
+            if _belongs_to_installed(name, installed):
+                # 同厂商还装着别的应用时也走这里：单独计数，页面上要说明"排除了多少"。
+                if not any(name == bundle_id or name.startswith(bundle_id + ".") or bundle_id.startswith(name + ".")
+                           for bundle_id in installed):
+                    skipped_vendor += 1
+                continue
+            if _protected_session_reason(entry):
+                continue
+            key = str(entry)
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(entry)
+
+    cutoff = time.time() - max(0, min_age_days) * 86400
+    kept: list[Path] = []
+    for entry in candidates:
+        try:
+            if entry.stat().st_mtime > cutoff:
+                continue  # 最近还在被写：可能只是暂时没装，先不动
+        except OSError:
+            continue
+        kept.append(entry)
+
+    sizes = _du_sizes(kept, timeout=8.0)
+    items = [
+        {
+            "name": entry.name,
+            "path": str(entry),
+            "bytes": int(sizes.get(str(entry), 0)),
+            "modified": time.strftime("%Y-%m-%d", time.localtime(entry.stat().st_mtime))
+            if entry.exists()
+            else "",
+        }
+        for entry in kept
+    ]
+    items.sort(key=lambda item: -int(item["bytes"]))
+    return {
+        "items": items[:limit],
+        "total": len(items),
+        "bytes": sum(int(item["bytes"]) for item in items[:limit]),
+        "installed": len(installed),
+        "skipped_vendor": skipped_vendor,
+    }
+
+
+def orphans_clean(home: Path, paths: Sequence[str]) -> dict[str, Any]:
+    """把点名要清的孤儿残留移入废纸篓（可恢复）。
+
+    只接受**当前扫描结果里出现过的路径**由会话侧校验；这里再做一次归属校验：
+    必须以 `home` 为前缀，避免被当成任意文件删除器。
+    """
+    home_path = Path(home).resolve()
+    moved: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+    total_bytes = 0
+    for raw in paths:
+        target = Path(str(raw)).expanduser()
+        try:
+            resolved = target.resolve()
+        except OSError:
+            failed.append({"path": str(raw), "reason": "unresolvable"})
+            continue
+        if home_path not in resolved.parents:
+            failed.append({"path": str(raw), "reason": "outside home"})
+            continue
+        if not resolved.exists():
+            failed.append({"path": str(raw), "reason": "missing"})
+            continue
+        size = int(_du_sizes([resolved], timeout=5).get(str(resolved), 0))
+        try:
+            destination = move_to_trash(resolved, home_path)
+        except OSError as exc:
+            failed.append({"path": str(raw), "reason": str(exc)[:80]})
+            continue
+        total_bytes += size
+        moved.append({"path": str(resolved), "to": str(destination), "bytes": size})
+    return {"moved": moved, "failed": failed, "count": len(moved), "bytes": total_bytes}
+
+
 def disk_browse(
     home: Path, target: str | Path | None = None, *, limit: int = 40
 ) -> dict[str, Any]:
@@ -696,6 +970,10 @@ def build_deps(
         open_app_store=_open_app_store,
         open_app=_open_app,
         sparkle_apps=lambda: sparkle_apps(home_path),
+        orphans_scan=lambda: orphan_leftovers(
+            home_path, cache_path=(state_path / "launchservices-ids.json") if state_path else None
+        ),
+        orphans_apply=lambda paths: orphans_clean(home_path, paths),
         # 落地页的"上次清理"也从回执算：`history.json` 没人写，读它永远是空
         # （2026-10-19 发现；现在与「清理历史」页共用同一真相源）。
         history=lambda: _landing_history(home_path, state_path),

@@ -50,11 +50,12 @@ python3 -m build --no-isolation
 
 ## The window
 
-Open `~/Applications/MacCleaner.app`, or run `maccleaner ui`. Seven entries in the sidebar:
+Open `~/Applications/MacCleaner.app`, or run `maccleaner ui`. Eight entries in the sidebar:
 
 - **Mac Cleanup**: scan → tick items → confirm → done
 - **Uninstall**: inspect leftovers one by one, or batch-uninstall
 - **Updates**: grouped by source; apps with Sparkle update themselves first
+- **Orphans**: leftovers whose app is gone (caches/logs/containers), unchecked by default
 - **Disk**: capacity, drill down level by level
 - **System**: load, memory, top CPU processes
 - **History**: one row per cleanup receipt

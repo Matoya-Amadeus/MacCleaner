@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import plistlib
+import time
 import tempfile
 import unittest
 from pathlib import Path
@@ -408,6 +409,35 @@ class HistoryReportTests(unittest.TestCase):
             report = history_report(home=home)
         self.assertEqual(report["runs"], 0, "坏文件不能让整页失败")
         self.assertEqual(report["entries"], [])
+    def test_other_app_from_same_vendor_suppresses_the_report(self) -> None:
+        """同厂商还装着别的应用时，不把它的缓存报成孤儿。
+
+        实测来源（2026-10-20）：`com.epicgames.UnrealEditor` 的缓存对应的是
+        `UnrealEditorServices`（装在 ~/Workspace/UEProject/…），bundle id 与缓存目录名不逐字相同，
+        前缀匹配抓不到 → 267 MB 被误报成孤儿。改为"同厂商保守排除"。
+        """
+        from maccleaner.deps import orphan_leftovers
+
+        with tempfile.TemporaryDirectory(prefix="orphans-vendor-") as tmp:
+            home = Path(tmp)
+            (home / "Applications" / "Epic.app" / "Contents").mkdir(parents=True)
+            plistlib.dump(
+                {"CFBundleIdentifier": "com.epicgames.Launcher", "CFBundleName": "Epic"},
+                (home / "Applications" / "Epic.app" / "Contents" / "Info.plist").open("wb"),
+            )
+            caches = home / "Library" / "Caches"
+            for name in ("com.epicgames.UnrealEditor", "com.gone.app"):
+                path = caches / name
+                path.mkdir(parents=True)
+                (path / "x").write_bytes(b"z" * 512)
+                stamp = time.time() - 40 * 86400
+                os.utime(path, (stamp, stamp))
+            report = orphan_leftovers(home, system=False)
+        names = [item["name"] for item in report["items"]]
+        self.assertNotIn("com.epicgames.UnrealEditor", names, "同厂商应用还在，不能报成孤儿")
+        self.assertIn("com.gone.app", names)
+        self.assertGreater(report["skipped_vendor"], 0, "被排除的要计数，页面要说明")
+
 
 class DiskBrowseTests(unittest.TestCase):
     """磁盘钻取（2026-10-19）：列下一级、按体积降序、不许越出 home。"""
@@ -499,4 +529,58 @@ class SparkleDetectionTests(unittest.TestCase):
             home = Path(tmp)
             self._app(home, "Plain", {"CFBundleName": "Plain"})
             self.assertEqual(sparkle_apps(home, system=False), [])
+
+class OrphanLeftoverTests(unittest.TestCase):
+    """孤儿残留（学 Pearcleaner）：只报"应用不在了但残留还在"，且不能误伤已装应用。"""
+
+    def _home(self, tmp: Path) -> Path:
+        home = tmp / "home"
+        (home / "Applications" / "Demo.app" / "Contents").mkdir(parents=True)
+        plistlib.dump(
+            {"CFBundleIdentifier": "com.demo.app", "CFBundleName": "Demo"},
+            (home / "Applications" / "Demo.app" / "Contents" / "Info.plist").open("wb"),
+        )
+        caches = home / "Library" / "Caches"
+        caches.mkdir(parents=True)
+        return home
+
+    def _dir(self, path: Path, *, days_old: int) -> None:
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "x.bin").write_bytes(b"z" * 1024)
+        stamp = time.time() - days_old * 86400
+        os.utime(path, (stamp, stamp))
+
+    def test_reports_only_truly_orphaned_leftovers(self) -> None:
+        from maccleaner.deps import orphan_leftovers
+
+        with tempfile.TemporaryDirectory(prefix="orphans-") as tmp:
+            home = self._home(Path(tmp))
+            caches = home / "Library" / "Caches"
+            self._dir(caches / "com.demo.app", days_old=40)          # 已装应用 → 不报
+            self._dir(caches / "com.demo.app.ShipIt", days_old=40)   # 前缀属于已装 → 不报
+            self._dir(caches / "com.apple.Safari", days_old=40)      # 苹果系统 → 跳过
+            self._dir(caches / "com.gone.app", days_old=40)          # 真孤儿 → 报
+            self._dir(caches / "com.fresh.app", days_old=0)          # 刚改过 → 先不动
+            report = orphan_leftovers(home, system=False)
+            names = [item["name"] for item in report["items"]]
+            self.assertEqual(names, ["com.gone.app"], f"只该报真孤儿，实际：{names}")
+            self.assertGreater(report["bytes"], 0)
+
+    def test_clean_moves_to_trash_and_refuses_outside_home(self) -> None:
+        from maccleaner.deps import orphans_clean
+
+        with tempfile.TemporaryDirectory(prefix="orphans-clean-") as tmp:
+            home = self._home(Path(tmp))
+            target = home / "Library" / "Caches" / "com.gone.app"
+            self._dir(target, days_old=40)
+            outside = Path(tmp) / "outside.txt"
+            outside.write_text("x", encoding="utf-8")
+
+            result = orphans_clean(home, [str(target), str(outside)])
+            self.assertEqual(result["count"], 1, f"只该搬一个：{result}")
+            self.assertEqual(len(result["failed"]), 1, "越界路径必须被拒")
+            self.assertFalse(target.exists(), "目标应已移走")
+            self.assertTrue(outside.exists(), "家目录外的文件不能动")
+            trashed = list((home / ".Trash").iterdir())
+            self.assertEqual(len(trashed), 1)
 

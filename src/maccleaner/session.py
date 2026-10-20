@@ -41,7 +41,8 @@ REVEAL_PATH = re.compile(r'data-reveal-path="([^"]+)"')
 # 侧栏在任何页面都可见 ⇒ 任何等待都必须能接住它们，否则用户在子流程里点侧栏会"没反应"
 # （2026-10-18 真浏览器实测：点了更新页后再点卸载，队列里的动作没人取）。
 NAV_ACTIONS: tuple[str, ...] = (
-    "home", "uninstall-list", "updates-open", "skills-open", "disk-open", "system-open", "history-open"
+    "home", "uninstall-list", "updates-open", "orphans-open", "skills-open",
+    "disk-open", "system-open", "history-open",
 )
 
 
@@ -68,6 +69,9 @@ class SessionDeps:
     open_app: Callable[[str], None] | None = None
     # 自带 Sparkle 更新器的应用列表（随更新结果一起渲染）。
     sparkle_apps: Callable[[], list[dict[str, Any]]] = lambda: []
+    # 孤儿残留体检：扫描与清理（清理只允许页面出现过的路径）。
+    orphans_scan: Callable[[], dict[str, Any]] | None = None
+    orphans_apply: Callable[[list[str]], dict[str, Any]] | None = None
     # 只读的"看一眼"页面（磁盘/系统）。
     disk: Callable[[], dict[str, Any]] = lambda: {}
     # 磁盘钻取：传目录路径，返回下一级条目。
@@ -209,7 +213,7 @@ class InteractiveSession:
                 if pending is None:
                     action = self.bridge.wait_for_action(
                         ("start", "home", "cancel", "uninstall-list", "updates-open", "skills-open",
-                         "disk-open", "system-open", "history-open"),
+                         "disk-open", "system-open", "history-open", "orphans-open"),
                         timeout=timeout or self.IDLE_TIMEOUT_SECONDS,
                     )
                     if action is None:
@@ -225,6 +229,13 @@ class InteractiveSession:
                     continue
                 if kind == "cancel":
                     return self._finish("cancelled", pages.render_cancelled_html({}))
+
+                if kind == "orphans-open":
+                    # 点侧栏要交回主循环处理（否则会停在孤儿页，用户以为点不动）。
+                    outcome = self._run_orphans()
+                    if outcome:
+                        pending = outcome
+                    continue
 
                 if kind == "history-open":
                     readout = self._safe(self.deps.history_report, default={})
@@ -645,6 +656,55 @@ class InteractiveSession:
                 current = ""
                 continue
             current = str((action.get("payload") or {}).get("path", ""))
+
+    def _run_orphans(self) -> None:
+        """孤儿残留体检：扫描 → 勾选 → 移入废纸篓。"""
+        scan = getattr(self.deps, "orphans_scan", None)
+        apply_ = getattr(self.deps, "orphans_apply", None)
+        if scan is None:
+            self._serve("orphans", pages.render_orphans_html({}))
+            return
+        # 要跑 lsregister（4-5 秒）：先出进度页，否则点了像没反应。
+        self._serve("orphans", pages.render_progress_html(
+            {"title": "残留体检", "body": "正在比对已安装应用",
+             "message": "正在读 LaunchServices 注册表（应用装在哪都能认出来）…",
+             "detail": "只读，不会动任何文件。", "nav": "orphans"},
+            stage="orphans",
+        ))
+        found = self._safe(scan, default={})
+        while True:
+            self._serve("orphans", pages.render_orphans_html(found))
+            action = self._wait_or_nav(("orphans-apply", "orphans-open", "cancel"), self.ACTION_TIMEOUT_SECONDS)
+            if action is not None and "nav" in action:
+                return str(action["nav"])
+            if action is None or action["action"] == "cancel":
+                self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
+                return None
+            if action["action"] == "orphans-open":
+                found = self._safe(scan, default={})
+                continue
+            wanted = [
+                str(value)
+                for value in (action.get("payload") or {}).get("paths") or []
+                # 只允许清**当前页面出现过的**路径（与会话的 reveal 白名单同源）。
+                if str(value) in self._visible_paths
+            ]
+            if not wanted:
+                found = {**found, "message": "先勾选要清理的项"}
+                continue
+            if apply_ is None:
+                found = {**found, "message": "清理不可用"}
+                continue
+            result = self._safe(lambda: apply_(wanted), default={})
+            self._serve("orphans", pages.render_orphans_result_html(result))
+            back = self._wait_or_nav(("orphans-open", "cancel"), self.ACTION_TIMEOUT_SECONDS)
+            if back is not None and "nav" in back:
+                return str(back["nav"])
+            if back is not None and back["action"] == "orphans-open":
+                found = self._safe(scan, default={})
+                continue
+            self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
+            return None
 
     # ---- 公共 ----
 

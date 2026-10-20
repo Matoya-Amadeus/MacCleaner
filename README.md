@@ -48,11 +48,12 @@ python3 -m build --no-isolation
 
 ## 界面
 
-双击 `~/Applications/MacCleaner.app`，或 `maccleaner ui`。侧栏 7 个入口：
+双击 `~/Applications/MacCleaner.app`，或 `maccleaner ui`。侧栏 8 个入口：
 
 - **Mac 清理**：扫描 → 逐条勾选 → 确认 → 完成
 - **软件卸载**：单个看残留，或多选批量卸
 - **软件更新**：按来源分组；自带 Sparkle 的应用先走应用内更新
+- **残留体检**：应用删了但缓存/日志/容器还在？反向扫出来（默认不勾）
 - **磁盘**：整机占比，可一层层点进去
 - **系统状态**：负载、内存、最吃 CPU 的进程
 - **清理历史**：每次清理的回执

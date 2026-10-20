@@ -91,7 +91,7 @@ class LandingPageTests(unittest.TestCase):
             {"recoverable_bytes": 4096, "actual_freed_bytes": 0, "failed_count": 1, "skipped_count": 2}
         )
         self.assertEqual(page.count('class="stat"'), 3, "可恢复/失败/跳过三格")
-        self.assertIn("4.00 KiB", page)
+        self.assertIn("4 KiB", page)
         self.assertIn(">1<", page)
         self.assertIn(">2<", page)
 
@@ -335,12 +335,37 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn("更新源可疑", page, "指向 0.0.0.0 的 feed 要标出来")
         self.assertIn("在应用内更新", page)
 
+    def test_orphan_page_lists_items_unchecked_by_default(self) -> None:
+        """孤儿残留页：默认不勾、显示路径与体积、按钮走 orphans-apply。"""
+        from maccleaner.ui.pages import render_orphans_html
+
+        page = render_orphans_html({
+            "items": [
+                {"name": "com.gone.app", "path": "/Users/x/Library/Caches/com.gone.app",
+                 "bytes": 4096, "modified": "2026-09-01"},
+            ],
+            "total": 1, "bytes": 4096, "installed": 78,
+        })
+        self.assertIn('data-stage="orphans"', page)
+        self.assertIn("data-orphan-path", page)
+        self.assertNotRegex(page, r'data-orphan-path="[^"]+"[^>]*checked', "默认不该勾选")
+        self.assertIn("orphans-apply", page)
+        self.assertIn("已装 78 个应用", page)
+        self.assertIn("com.gone.app", page)
+
+    def test_orphan_empty_state_explains_what_was_scanned(self) -> None:
+        from maccleaner.ui.pages import render_orphans_html
+
+        page = render_orphans_html({"items": [], "total": 0, "bytes": 0, "installed": 78})
+        self.assertIn("没有发现孤儿残留", page)
+        self.assertIn("Containers", page, "空态要说明扫过哪些位置")
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")
         self.assertEqual(
-            nav.count('data-nav-action="'), 7,
-            "七个真实入口（清理/卸载/更新/磁盘/系统/历史/技能）",
+            nav.count('data-nav-action="'), 8,
+            "八个真实入口（清理/卸载/更新/残留体检/磁盘/系统/历史/技能）",
         )
         self.assertNotIn("待实现", nav, "四项都已实现，不该再有待实现徽标")
         self.assertNotIn("Protection", nav, "不出现我们没有的分类")
@@ -417,7 +442,7 @@ class RemainingPagesTests(unittest.TestCase):
 
         page = render_completion_html({"recoverable_bytes": 4096, "actual_freed_bytes": 0, "receipt_path": "/r.json"})
         self.assertIn('data-stage="complete"', page)
-        self.assertIn("4.00 KiB", page, "头条数字必须是可恢复字节，而不是 0")
+        self.assertIn("4 KiB", page, "头条数字必须是可恢复字节，而不是 0")
         self.assertIn("清空废纸篓后释放", page)
         self.assertIn("/r.json", page, "回执路径要可见")
 

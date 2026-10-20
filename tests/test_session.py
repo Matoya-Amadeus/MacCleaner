@@ -126,7 +126,7 @@ class CleanupFlowTests(unittest.TestCase):
 
             self.assertEqual(driver.action("confirm"), 202)
             complete = driver.wait_page('data-stage="complete"')
-            self.assertIn("4.00 KiB", complete, "完成页头条是可恢复字节")
+            self.assertIn("4 KiB", complete, "完成页头条是可恢复字节")
 
             # 完成页是可交互的（打开废纸篓/再看一眼），会话不会立刻结束；
             # 这里发一个 cancel 等价"关窗"，终态必须仍是 complete。
@@ -454,6 +454,63 @@ class UpdatesFlowTests(unittest.TestCase):
             self.assertEqual(driver.action("system-open"), 202)
             driver.wait_page('data-stage="system"', timeout=5)
 
+            driver.action("cancel")
+            driver.join()
+
+
+    def test_orphans_flow_scans_then_trashes_selected(self) -> None:
+        """残留体检：进页 → 勾选 → 移入废纸篓；只允许页面出现过的路径。"""
+        applied: list[list[str]] = []
+
+        def scan():
+            return {
+                "items": [{"name": "com.gone.app", "path": "/home/Library/Caches/com.gone.app",
+                           "bytes": 1024, "modified": "2026-09-01"}],
+                "total": 1, "bytes": 1024, "installed": 12,
+            }
+
+        def apply_(paths):
+            applied.append(list(paths))
+            return {"moved": [{"path": paths[0], "bytes": 1024}], "failed": [], "count": 1, "bytes": 1024}
+
+        with tempfile.TemporaryDirectory(prefix="session-orphans-", ignore_cleanup_errors=True) as tmp:
+            driver = _Driver(_deps(orphans_scan=scan, orphans_apply=apply_), Path(tmp))
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+
+            self.assertEqual(driver.action("orphans-open"), 202)
+            page = driver.wait_page('data-stage="orphans"', timeout=5)
+            self.assertIn("data-orphan-path", page)
+
+            self.assertEqual(driver.action("orphans-apply", {"paths": ["/home/Library/Caches/com.gone.app"]}), 202)
+            driver.wait_page("已移入废纸篓", timeout=5)
+            self.assertEqual(applied, [["/home/Library/Caches/com.gone.app"]])
+
+            driver.action("cancel")
+            driver.join()
+
+    def test_orphans_refuses_paths_that_were_not_on_the_page(self) -> None:
+        """白名单：页面没出现过的路径，即使前端伪造也不执行。"""
+        applied: list[list[str]] = []
+
+        def scan():
+            return {"items": [{"name": "com.visible.app", "path": "/home/Library/Caches/com.visible.app",
+                               "bytes": 1, "modified": ""}], "total": 1, "bytes": 1, "installed": 1}
+
+        def apply_(paths):
+            applied.append(list(paths))
+            return {"moved": [], "failed": [], "count": 0, "bytes": 0}
+
+        with tempfile.TemporaryDirectory(prefix="session-orphans-guard-", ignore_cleanup_errors=True) as tmp:
+            driver = _Driver(_deps(orphans_scan=scan, orphans_apply=apply_), Path(tmp))
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+            driver.action("orphans-open")
+            driver.wait_page('data-stage="orphans"', timeout=5)
+            driver.action("orphans-apply", {"paths": ["/home/Library/Caches/com.evil.app"]})
+            page = driver.wait_page("先勾选要清理的项", timeout=5)
+            self.assertIn('data-stage="orphans"', page)
+            self.assertEqual(applied, [], "伪造路径必须被白名单拦下")
             driver.action("cancel")
             driver.join()
 

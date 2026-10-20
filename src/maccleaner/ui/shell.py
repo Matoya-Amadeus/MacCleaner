@@ -48,6 +48,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         (
             NavItem("uninstall", "软件卸载", "uninstall-list"),
             NavItem("updates", "软件更新", "updates-open"),
+            NavItem("orphans", "残留体检", "orphans-open"),
         ),
     ),
     NavGroup(
@@ -92,6 +93,14 @@ _RUNTIME_JS = """
     const upBtn = document.querySelector('[data-bridge-action="updates-apply"]');
     if (upBtn && updates.length) upBtn.disabled = picked(updates) === 0;
 
+    const orphans = Array.from(document.querySelectorAll('[data-orphan-path]'));
+    const orphanLabel = document.getElementById('mc-orphans-count');
+    if (orphanLabel && orphans.length) {
+      orphanLabel.textContent = '已选 ' + picked(orphans) + ' / ' + orphans.length;
+    }
+    const orphanBtn = document.querySelector('[data-bridge-action="orphans-apply"]');
+    if (orphanBtn && orphans.length) orphanBtn.disabled = picked(orphans) === 0;
+
     // 三态同步：全选框必须反映真实状态（部分选中 = indeterminate）。
     // 不做这件事时，取消一整组后主框仍是"已勾选"，再点一下反而把剩下的也清空。
     function sync(master, boxes) {
@@ -102,6 +111,7 @@ _RUNTIME_JS = """
     }
     sync(document.querySelector('[data-select-all-apps]'), apps);
     sync(document.querySelector('[data-select-all-updates]'), updates);
+    sync(document.querySelector('[data-select-all-orphans]'), orphans);
     document.querySelectorAll('[data-select-group]').forEach((master) => {
       const group = master.closest('.group');
       if (group) sync(master, Array.from(group.querySelectorAll('[data-update-id]')));
@@ -217,6 +227,12 @@ _RUNTIME_JS = """
       refreshSelection();
       return;
     }
+    const selectOrphans = event.target.closest('[data-select-all-orphans]');
+    if (selectOrphans) {
+      document.querySelectorAll('[data-orphan-path]').forEach(box => { box.checked = selectOrphans.checked; });
+      refreshSelection();
+      return;
+    }
     // 组头全选：只影响**这一组**内的行（共同区域的直接后果）。
     const selectGroup = event.target.closest('[data-select-group]');
     if (selectGroup) {
@@ -243,6 +259,12 @@ _RUNTIME_JS = """
     try { payload = button.dataset.bridgePayload ? JSON.parse(button.dataset.bridgePayload) : {}; } catch (e) {}
     // 清理的批准必须带**用户勾选的那几组**：不带就是"全部"，与界面上"我取消了几项"不符。
     if (action === 'approval') { payload.approved_ids = ids('[data-target-id]'); }
+    if (action === 'orphans-apply') {
+      payload.paths = Array.from(document.querySelectorAll('[data-orphan-path]'))
+        .filter(box => box.checked)
+        .map(box => box.dataset.orphanPath);
+      if (!payload.paths.length) { toast('先勾选要清理的项'); return; }
+    }
     if (action === 'confirm') {
       const risk = document.querySelector('[data-confirm-risk]');
       payload.confirmed_risk = !!(risk && risk.checked);
