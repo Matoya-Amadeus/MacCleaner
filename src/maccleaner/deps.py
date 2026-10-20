@@ -931,6 +931,20 @@ def _run_cmd(argv: list[str], *, timeout: float) -> tuple[int, str, str]:
     )
 
 
+
+def app_version(app_path: str) -> str:
+    """读某个 .app 的版本号（`CFBundleShortVersionString`，退回 `CFBundleVersion`）。
+
+    Sparkle 更新是**应用自己**完成的，我们只能对比前后版本号来判断是否真的更新了——
+    这比"点了按钮就当更新了"诚实。
+    """
+    try:
+        with (Path(app_path) / "Contents" / "Info.plist").open("rb") as handle:
+            data = plistlib.load(handle)
+    except (OSError, plistlib.InvalidFileException, ValueError):
+        return ""
+    return str(data.get("CFBundleShortVersionString") or data.get("CFBundleVersion") or "")
+
 def parse_cask_targets(payload: str) -> dict[str, str]:
     """`brew info --cask --json=v2` → `{app 路径: cask token}`。
 
@@ -1134,6 +1148,7 @@ def build_deps(
         open_app_store=_open_app_store,
         open_app=_open_app,
         uninstall_cask=lambda token: uninstall_cask(token),
+        app_version=app_version,
         sparkle_apps=lambda: sparkle_apps(home_path),
         orphans_scan=lambda: orphan_leftovers(
             home_path, cache_path=(state_path / "launchservices-ids.json") if state_path else None

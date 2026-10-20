@@ -74,6 +74,8 @@ class SessionDeps:
     orphans_apply: Callable[[list[str]], dict[str, Any]] | None = None
     # 用 Homebrew 卸载 cask（只在预览页显式点击时调用）。
     uninstall_cask: Callable[[str], dict[str, Any]] | None = None
+    # 读某个 .app 的版本号（判断 Sparkle 是否真的更新了）。
+    app_version: Callable[[str], str] | None = None
     # 只读的"看一眼"页面（磁盘/系统）。
     disk: Callable[[], dict[str, Any]] = lambda: {}
     # 磁盘钻取：传目录路径，返回下一级条目。
@@ -725,7 +727,42 @@ class InteractiveSession:
             self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
             return None
 
+    # ---- Sparkle 结果确认 ----
+
+    def _await_sparkle(self, target: str, version: str) -> dict[str, Any] | None:
+        """打开应用后停在这一页：用户点【检查是否已更新】就重新读版本号对比。
+
+        返回 `{"nav": kind}` 表示用户切走了；返回 `None` 表示结束这段交互、继续原流程。
+        """
+        reader = getattr(self.deps, "app_version", None)
+        name = Path(target).stem
+        state = {"kind": "opened", "current": ""}
+        while True:
+            self._serve("sparkle", pages.render_sparkle_result_html({
+                "name": name, "version": version,
+                "state": state["kind"], "current": state["current"],
+            }))
+            action = self.bridge.wait_for_action(
+                ("sparkle-verify",) + NAV_ACTIONS + ("reveal", "cancel"),
+                timeout=self.ACTION_TIMEOUT_SECONDS,
+            )
+            if action is None:
+                return None
+            if action["action"] == "reveal":
+                self._reveal(str((action.get("payload") or {}).get("path", "")))
+                continue
+            if action["action"] in NAV_ACTIONS:
+                return {"nav": action["action"]}
+            if action["action"] == "cancel":
+                return None
+            current = ""
+            if reader is not None:
+                current = str(self._safe(lambda: reader(target), default="") or "")
+            state["current"] = current
+            state["kind"] = "updated" if (current and current != version) else "unchanged"
+
     # ---- 公共 ----
+
 
     def _wait_or_nav(
         self, kinds: tuple[str, ...], timeout: float
@@ -749,10 +786,17 @@ class InteractiveSession:
                 target = str((action.get("payload") or {}).get("path", ""))
                 opener = getattr(self.deps, "open_app", None)
                 if opener is not None and target and target in self._visible_paths:
+                    version = ""
+                    reader = getattr(self.deps, "app_version", None)
+                    if reader is not None:
+                        version = str(self._safe(lambda: reader(target), default="") or "")
                     try:
                         opener(target)
                     except Exception:  # noqa: BLE001
                         pass
+                    outcome = self._await_sparkle(target, version)
+                    if outcome is not None:
+                        return outcome
                 continue
             if action["action"] == "open-app-store":
                 opener = getattr(self.deps, "open_app_store", None)

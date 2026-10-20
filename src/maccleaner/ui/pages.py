@@ -753,6 +753,44 @@ def render_uninstall_complete_html(result: dict[str, Any], *, interactive: bool 
 # --------------------------------------------------------------------------- 更新
 
 
+def render_sparkle_result_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
+    """Sparkle 应用"打开之后"的结果页：可以点【检查是否已更新】读回版本对比。
+
+    为什么要有这一步：`open` 只负责把应用拉起来，更新是它自己做的，
+    我们无法同步拿到结果；不核对版本就说"已更新"是在骗人。
+    """
+    data = payload or {}
+    name = str(data.get("name") or "应用")
+    before = str(data.get("version") or "")
+    current = str(data.get("current") or "")
+    state = str(data.get("state") or "opened")
+
+    if state == "updated":
+        message = f"{name} 已更新：{before} → {current}"
+        detail = "版本号已变化，说明它自己完成了更新。"
+    elif state == "unchanged":
+        message = f"{name} 版本没变（还是 {before or '未知'}）"
+        detail = ("它可能没有自动检查更新：在应用菜单里点【检查更新】，"
+                  "或回到更新页用 App Store。")
+    else:
+        message = f"已打开 {name}（当前 {before or '未知版本'}）"
+        detail = ("等它自己检查更新；几十秒后点【检查是否已更新】读回版本号。"
+                  "如果你的应用没有自动检查，菜单里通常有【检查更新】。")
+
+    actions = _actions(
+        _button("检查是否已更新", "sparkle-verify", primary=True),
+        _button("回到更新页", "updates-open"),
+    ) if interactive else ""
+    return state_page(
+        {"message": message, "detail": detail},
+        stage="sparkle",
+        title="应用内更新",
+        body="",
+        actions=actions,
+        current="updates",
+    )
+
+
 def render_updates_list_html(
     payload: dict[str, Any], *, interactive: bool = True, notice: str = ""
 ) -> str:
@@ -1456,6 +1494,7 @@ def render_system_html(payload: dict[str, Any] | None = None, *, interactive: bo
 
 __all__ = [
     "render_disk_browse_html",
+    "render_sparkle_result_html",
     "render_uninstall_cask_result_html",
     "render_orphans_html",
     "render_orphans_result_html",

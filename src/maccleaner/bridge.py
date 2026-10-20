@@ -50,6 +50,7 @@ ACTIONS = frozenset(
         "skills-open",
         "reveal",
         "open-app",
+        "sparkle-verify",
         "open-app-store",
         "disk-open",
         "disk-back",

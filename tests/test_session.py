@@ -550,6 +550,67 @@ class UpdatesFlowTests(unittest.TestCase):
             driver.action("cancel")
             driver.join()
 
+
+    def test_sparkle_update_is_verified_by_reading_version_back(self) -> None:
+        """点【在应用内更新】后要能核对版本：变了→已更新，没变→提示它没自动检查。
+
+        为什么不能"打开就当更新了"：Sparkle 更新是应用自己完成的，我们同步拿不到结果。
+        """
+        opened: list[str] = []
+        versions = iter(["1.0", "2.0"])
+
+        def updates_check():
+            return {"items": [], "count": 0, "notes": [], "sparkle": [
+                {"name": "Demo", "path": "/Applications/Demo.app", "version": "1.0",
+                 "feed": "https://example.com/appcast.xml"}]}
+
+        def app_version(_path):
+            return next(versions, "2.0")
+
+        with tempfile.TemporaryDirectory(prefix="session-sparkle-", ignore_cleanup_errors=True) as tmp:
+            driver = _Driver(
+                _deps(updates_check=updates_check, open_app=opened.append, app_version=app_version),
+                Path(tmp),
+            )
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+
+            driver.action("updates-open")
+            driver.wait_page('data-stage="updates"', timeout=5)
+            driver.action("open-app", {"path": "/Applications/Demo.app"})
+            page = driver.wait_page('data-stage="sparkle"', timeout=5)
+            self.assertIn("已打开 Demo", page)
+            self.assertEqual(opened, ["/Applications/Demo.app"])
+
+            driver.action("sparkle-verify")
+            page = driver.wait_page("已更新：1.0 → 2.0", timeout=5)
+            self.assertIn("已更新", page)
+
+            driver.action("cancel")
+            driver.join()
+
+    def test_sparkle_verify_reports_when_version_did_not_change(self) -> None:
+        def updates_check():
+            return {"items": [], "count": 0, "notes": [], "sparkle": [
+                {"name": "Demo", "path": "/Applications/Demo.app", "version": "1.0", "feed": ""}]}
+
+        with tempfile.TemporaryDirectory(prefix="session-sparkle-same-", ignore_cleanup_errors=True) as tmp:
+            driver = _Driver(
+                _deps(updates_check=updates_check, open_app=lambda _p: None, app_version=lambda _p: "1.0"),
+                Path(tmp),
+            )
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+            driver.action("updates-open")
+            driver.wait_page('data-stage="updates"', timeout=5)
+            driver.action("open-app", {"path": "/Applications/Demo.app"})
+            driver.wait_page('data-stage="sparkle"', timeout=5)
+            driver.action("sparkle-verify")
+            page = driver.wait_page("版本没变", timeout=5)
+            self.assertIn("检查更新", page, "要告诉用户去应用菜单里手动检查")
+            driver.action("cancel")
+            driver.join()
+
 class NavigationTests(unittest.TestCase):
     def test_uninstall_entry_lists_apps(self) -> None:
         with tempfile.TemporaryDirectory(prefix="session-unin-") as tmp:
