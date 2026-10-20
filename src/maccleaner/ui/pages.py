@@ -101,7 +101,11 @@ def _display_path(path: str) -> str:
 
 
 def _rows(
-    items: Iterable[dict[str, Any]], *, note_key: str = "reason", selectable: bool = False
+    items: Iterable[dict[str, Any]],
+    *,
+    note_key: str = "reason",
+    selectable: bool = False,
+    preselected: frozenset[str] = frozenset(),
 ) -> str:
     """列表行。
 
@@ -133,10 +137,11 @@ def _rows(
             target_id = html.escape(str(item.get("target_id", "") or ""))
             risky = bool(item.get("requires_confirmation"))
             # 默认**不勾**；高风险项连勾选框都不给（要在确认页单独确认）。
+            checked = " checked" if (not risky and target_id and str(item.get("target_id")) in preselected) else ""
             box = (
                 '<input type="checkbox" disabled data-risk="1">'
                 if risky
-                else f'<input type="checkbox" data-target-id="{target_id}">'
+                else f'<input type="checkbox" data-target-id="{target_id}"{checked}>'
             )
             risk_note = (
                 '<span class="pill risk">高风险 · 确认页单独确认</span>' if risky else ""
@@ -330,6 +335,7 @@ def _review_groups_html(
     *,
     interactive: bool,
     system: dict[str, Any] | None = None,
+    preselected: frozenset[str] = frozenset(),
 ) -> str:
     """把候选按组折叠：每组一个 details，展开就是这一组的具体条目。"""
     buckets: dict[str, list[dict[str, Any]]] = {}
@@ -354,7 +360,8 @@ def _review_groups_html(
             f'<span class="meta">{len(items)} 项 · {human_bytes(size)}</span>'
             "</summary>"
             f'<p class="group-hint meta">{hint}</p>'
-            f'<div class="rows">{"".join(_rows(items, selectable=interactive))}</div>'
+            f'<div class="rows">'
+            f'{"".join(_rows(items, selectable=interactive, preselected=preselected))}</div>'
             "</details>"
         )
     return "".join(blocks)
@@ -390,7 +397,11 @@ def _present_review_groups(
 
 
 def render_review_html(
-    payload: dict[str, Any], *, interactive: bool = True, notice: str = ""
+    payload: dict[str, Any],
+    *,
+    interactive: bool = True,
+    notice: str = "",
+    preselected: Sequence[str] | None = None,
 ) -> str:
     """审阅页：列出候选，**用户可以逐条不选**；没有候选时明确说"没找到"。
 
@@ -463,6 +474,7 @@ def render_review_html(
                 candidates,
                 interactive=interactive and bool(candidates),
                 system=payload.get("system"),
+                preselected=frozenset(str(x) for x in (preselected or ())),
             )
             + actions
         ),

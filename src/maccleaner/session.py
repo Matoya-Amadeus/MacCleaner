@@ -330,11 +330,14 @@ class InteractiveSession:
                 payload = review_payload(report)
                 notice = ""
                 selected: list[dict[str, Any]] = []
+                preselected: list[str] = []
                 while True:
                     reader = getattr(self.deps, "system_sizes_cached", None)
                     if reader is not None:
                         payload["system"] = self._safe(reader, default={})
-                    self._serve("review", pages.render_review_html(payload, notice=notice))
+                    self._serve("review", pages.render_review_html(
+                        payload, notice=notice, preselected=preselected,
+                    ))
                     action = self._wait_or_nav(
                         ("approval", "rescan", "cancel"), timeout or self.ACTION_TIMEOUT_SECONDS
                     )
@@ -359,23 +362,30 @@ class InteractiveSession:
                     if not selected:
                         notice = "至少勾选一组再清理；也可以点【取消】退出"
                         continue
-                    break
+
+                    # 确认页放在审阅循环里：这样【返回修改】能真的回到审阅页，
+                    # 而不是像以前那样 `return None`（页面停在确认页，用户以为按钮坏了）。
+                    self._serve("confirming", pages.render_confirmation_html({
+                        "selected_count": len(selected),
+                        "selected_bytes": sum(int(item.get("allocated_bytes") or 0) for item in selected),
+                    }))
+                    decision = self._wait_or_nav(
+                        ("confirm", "back", "cancel"), timeout or self.ACTION_TIMEOUT_SECONDS
+                    )
+                    if decision is not None and "nav" in decision:
+                        return None
+                    if decision is None or decision["action"] == "cancel":
+                        return self._finish("cancelled", pages.render_cancelled_html({}))
+                    if decision["action"] == "back":
+                        # 回审阅页，**保留刚才勾选的那几组**（否则用户得重新点一遍）。
+                        preselected = [str(c.get("target_id") or "") for c in selected]
+                        notice = ""
+                        continue
+                    break                    # confirm → 去清理
+
                 if not selected:
                     continue                 # 重新扫描分支：回到外层重扫
-                break                        # 有勾选 → 结束扫描循环，进入确认（少了这句会重扫、把确认页盖掉）
-
-            _html = pages.render_confirmation_html({
-                "selected_count": len(selected),
-                "selected_bytes": sum(int(item.get("allocated_bytes") or 0) for item in selected),
-            })
-            self._serve("confirming", _html)
-            decision = self._wait_or_nav(("confirm", "back", "cancel"), timeout or self.ACTION_TIMEOUT_SECONDS)
-            if decision is not None and "nav" in decision:
-                return None
-            if decision is None or decision["action"] == "cancel":
-                return self._finish("cancelled", pages.render_cancelled_html({}))
-            if decision["action"] == "back":
-                return None
+                break                        # 有勾选且已确认 → 结束扫描循环
 
             self._serve("cleaning", pages.render_progress_html(
                 {"title": "正在清理", "body": "正在清理", "message": "正在清理，请不要关闭窗口…",

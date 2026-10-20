@@ -646,6 +646,28 @@ class UpdatesFlowTests(unittest.TestCase):
             driver.action("cancel")
             driver.join()
 
+
+    def test_back_from_confirmation_returns_to_review_with_selection(self) -> None:
+        """确认页【返回修改】要真的回到审阅页，并保留刚才的勾选。
+
+        之前实现是 `return None`：页面停在确认页不动，用户以为按钮坏了（2026-10-20 真机反馈）。
+        """
+        with tempfile.TemporaryDirectory(prefix="session-back-", ignore_cleanup_errors=True) as tmp:
+            driver = _Driver(_deps(), Path(tmp))
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+            driver.action("start")
+            driver.wait_page('data-stage="review"')
+            driver.action("approval", {"approved_ids": ["home-caches"]})
+            driver.wait_page('data-stage="confirming"')
+
+            driver.action("back")
+            page = driver.wait_page('data-stage="review"', timeout=5)
+            self.assertIn('data-target-id="home-caches" checked', page, "返回后要保留勾选")
+
+            driver.action("cancel")
+            driver.join()
+
 class NavigationTests(unittest.TestCase):
     def test_uninstall_entry_lists_apps(self) -> None:
         with tempfile.TemporaryDirectory(prefix="session-unin-") as tmp:
