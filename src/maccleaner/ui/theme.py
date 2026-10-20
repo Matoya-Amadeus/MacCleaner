@@ -229,7 +229,9 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);height:100vh
 .review-split{display:grid;grid-template-columns:224px minmax(0,1fr);gap:var(--sp-4);align-items:start}
 .review-detail{min-width:0}
 .panel{min-width:0}
-.rail{display:flex;flex-direction:column;gap:2px;
+/* 左栏固定：右侧列表滚动时它不动（2026-10-20 用户两次强调"中间栏不跟着滑"）。 */
+.rail{position:sticky;top:var(--sp-4);align-self:start;max-height:calc(100vh - 120px);
+  overflow-y:auto;display:flex;flex-direction:column;gap:2px;
   padding-right:var(--sp-3);border-right:1px solid var(--line)}
 .rail-item{display:flex;align-items:center;gap:7px;width:100%;text-align:left;
   appearance:none;border:0;background:transparent;color:var(--text-2);cursor:pointer;

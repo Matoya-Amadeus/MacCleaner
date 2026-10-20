@@ -170,6 +170,13 @@ def _app_icon(uri: Any) -> str:
     return f'<img class="app-ico" src="{html.escape(text)}" alt="" width="22" height="22">'
 
 
+# 应用分类的展示顺序（卸载页左栏）：最常清理的排前面，"其它"垫底。
+# 放在页面层而不是 deps：这是**展示顺序**，不是数据事实（deps 只负责把
+# LSApplicationCategoryType 映射成中文名）。
+_APP_CATEGORY_ORDER: tuple[str, ...] = (
+    "浏览器", "开发工具", "社交与通讯", "效率办公", "设计与图像", "影音", "游戏", "阅读资讯", "系统工具", "其它",
+)
+
 def _rows(
     items: Iterable[dict[str, Any]],
     *,
@@ -806,17 +813,24 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
             "</div>"
             f'<div class="row-actions">{size_text}{button}</div></div>'
         )
-        initial = name.strip()[:1].upper()
-        key = initial if (initial.isascii() and initial.isalpha()) else "#"
+        # 按 macOS 官方应用分类分组（2026-10-20 用户要求"按照分类，不要按照字母"）。
+        key = str(app.get("category") or "其它")
         buckets.setdefault(key, []).append(row)
 
     groups: list[str] = []
-    for key in sorted(buckets, key=lambda item: (item == "#", item)):
+
+    def category_rank(label: str) -> tuple[int, str]:
+        try:
+            return (_APP_CATEGORY_ORDER.index(label), "")
+        except ValueError:
+            return (len(_APP_CATEGORY_ORDER), label)
+
+    for key in sorted(buckets, key=category_rank):
         rows = buckets[key]
         groups.append(
             f'<details class="group review" open data-group data-group-key="{html.escape(key)}"'
             f' data-letter="{html.escape(key)}">'
-            f'<summary><span class="group-name">{key}</span>'
+            f'<summary><span class="group-name">{html.escape(key)}</span>'
             f'<span class="meta">{len(rows)} 个</span></summary>'
             f'<div class="rows">{"".join(rows)}</div></details>'
         )
@@ -833,9 +847,9 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
         )
 
     if groups:
-        letters = sorted(buckets, key=lambda item: (item == "#", item))
+        categories = sorted(buckets, key=category_rank)
         rail_items: list[tuple[str, str, str, str]] = [("all", "全部", "doc", "")]
-        for key in letters:
+        for key in categories:
             rail_items.append((key, key, "doc", f"{len(buckets[key])} 个"))
         detail = (
             '<div class="review-detail">'
@@ -865,11 +879,10 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
         },
         stage="uninstall-list",
         title="软件卸载",
-        body="选择一个应用",
+        body="",
+        with_header=False,
         actions=body,
         current="uninstall",
-        subtitle="先看残留清单，确认后才移入废纸篓（可恢复）",
-        meta=f"{len(apps)} 个应用" if apps else "",
     )
 
 
@@ -1171,7 +1184,7 @@ def render_updates_list_html(
             else ""
         )
         groups.append(
-            '<details class="group" open><summary>'
+            f'<details class="group review" open data-group-key="{html.escape(label)}"><summary>'
             f'<span class="group-name">{html.escape(label)}</span>'
             f'<span class="meta">{len(rows)} 项</span>'
             f"{group_box}</summary>"
@@ -1218,7 +1231,6 @@ def render_updates_list_html(
             '<div class="toolbar-left">'
             '<label class="checkbox-inline"><input type="checkbox" data-select-all-updates checked>'
             "<span>全选</span></label>"
-            '<span class="meta" id="mc-updates-count"></span></div>'
             '<div class="toolbar-right">'
             + _button("重新检查", "updates-refresh")
             # App Store 应用绕不开 Apple ID：mas 用不了时把更新页打开，让系统自己装。
@@ -1227,7 +1239,6 @@ def render_updates_list_html(
                 if any(str(item.get("manager")) == "mas" for item in items)
                 else ""
             )
-            + _button("更新所选", "updates-apply", primary=True)
             + "</div>"
         )
         if notice:
@@ -1236,7 +1247,7 @@ def render_updates_list_html(
     sparkle_block = ""
     if sparkle_rows:
         sparkle_block = (
-            '<details class="group" open><summary>'
+            '<details class="group review" open data-group-key="sparkle"><summary>'
             '<span class="group-name">自带更新（Sparkle）</span>'
             f'<span class="meta">{len(sparkle_rows)} 个</span></summary>'
             f'<div class="rows">{"".join(sparkle_rows)}</div></details>'
@@ -1245,6 +1256,36 @@ def render_updates_list_html(
     body = sparkle_block + ("".join(groups) if groups else empty_block(
         "check", "已经是最新的", "没有发现可升级的第三方软件。"
     ))
+    sources: list[tuple[str, str, str, str]] = [("all", "全部", "box", "")]
+    if sparkle_rows:
+        sources.append(("sparkle", "自带更新", "globe", f"{len(sparkle_rows)} 个"))
+    for group in payload.get("groups") or []:
+        if isinstance(group, dict) and group.get("items"):
+            label = str(group.get("label") or group.get("manager") or "")
+            if label:
+                sources.append((label, label, "terminal", f"{len(group['items'])} 项"))
+
+    detail = (
+        '<div class="review-detail">'
+        + (f'<div class="review-head">{toolbar}</div>' if toolbar else "")
+        + body
+        + notes
+        + (
+            '<div class="review-footer">'
+            '<div class="review-sum">'
+            '<span class="review-sum-main" id="mc-updates-count">已选 0 项</span>'
+            f'<span class="review-sum-total">共 {len(items) + len(sparkle_rows)} 项</span>'
+            "</div>"
+            '<button class="button primary" type="button" data-bridge-action="updates-apply"'
+            ' id="mc-updates-btn">更新</button>'
+            "</div>"
+            if (sparkle_rows or items) and interactive
+            else ""
+        )
+        + "</div>"
+    )
+    page_body = '<div class="review-split">' + _rail(sources) + detail + "</div>" if sources else body
+
     return state_page(
         {
             "message": f"可升级 {len(items)} 项，按来源分了 {len(groups)} 组"
@@ -1260,9 +1301,9 @@ def render_updates_list_html(
         },
         stage="updates",
         title="软件更新",
-        body="可升级的第三方软件",
-        toolbar=toolbar,
-        actions=body + notes,
+        body="",
+        with_header=False,
+        actions=page_body,
         current="updates",
     )
 
@@ -1516,6 +1557,20 @@ def render_disk_browse_html(payload: dict[str, Any] | None = None, *, interactiv
     )
 
 
+def _orphan_bucket(path: str) -> str:
+    """把残留路径归到"藏在哪个目录"，作为分组维度。"""
+    parts = [part for part in Path(path).parts if part]
+    if "Library" in parts:
+        index = parts.index("Library")
+        if index + 1 < len(parts):
+            name = parts[index + 1]
+            return {
+                "Saved Application State": "Saved State",
+                "Application Support": "Application Support",
+            }.get(name, name)
+    return "其它"
+
+
 def render_orphans_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
     """孤儿残留体检（学 Pearcleaner 的 orphan scan）。
 
@@ -1527,12 +1582,14 @@ def render_orphans_html(payload: dict[str, Any] | None = None, *, interactive: b
     total = int(data.get("total", len(items)) or 0)
     total_bytes = int(data.get("bytes", 0) or 0)
 
-    rows: list[str] = []
+    buckets: dict[str, list[str]] = {}
     for item in items:
         path = str(item.get("path", ""))
         size = int(item.get("bytes", 0) or 0)
         name = str(item.get("name", ""))
-        rows.append(
+        # 按"藏在哪个目录"分组：用户判断"能不能删"靠的是这个（缓存可删、容器要小心）。
+        bucket = _orphan_bucket(path)
+        buckets.setdefault(bucket, []).append(
             f'<div class="row" data-select-row data-sort-text="{html.escape(name.lower())}" data-sort-bytes="{size}"'
             f' data-reveal-path="{html.escape(path)}">'
             '<label class="checkbox-only">'
@@ -1545,22 +1602,28 @@ def render_orphans_html(payload: dict[str, Any] | None = None, *, interactive: b
             f'<span class="meta value">{human_bytes(size)}</span></div>'
         )
 
+    groups_html = "".join(
+        f'<details class="group review" open data-group-key="{html.escape(key)}">'
+        f'<summary><span class="group-name">{html.escape(key)}</span>'
+        f'<span class="meta">{len(bucket_rows)} 项</span></summary>'
+        f'<div class="rows">{"".join(bucket_rows)}</div></details>'
+        for key, bucket_rows in buckets.items()
+    )
+
     toolbar = ""
     if interactive and items:
         toolbar = (
             '<div class="toolbar-left">'
             '<label class="checkbox-inline"><input type="checkbox" data-select-all-orphans>'
             "<span>全选</span></label>"
-            '<span class="meta" id="mc-orphans-count"></span></div>'
             '<div class="toolbar-right">'
             + _button("重新扫描", "orphans-open")
-            + _button("移入废纸篓", "orphans-apply", primary=True)
             + "</div>"
         )
 
     body = (
-        '<div class="rows" data-sortable>' + "".join(rows) + "</div>"
-        if rows
+        groups_html
+        if items
         else empty_block(
             "check",
             "没有发现孤儿残留",
@@ -1588,11 +1651,31 @@ def render_orphans_html(payload: dict[str, Any] | None = None, *, interactive: b
         stage="orphans",
         title="残留体检",
         body="",
-        toolbar=toolbar,
-        actions=body,
+        with_header=False,
+        actions=(
+            '<div class="review-split">'
+            + _rail(
+                [("all", "全部", "box", "")]
+                + [(key, key, "doc", f"{len(rows)} 项") for key, rows in buckets.items()]
+            )
+            + '<div class="review-detail">'
+            + (f'<div class="review-head">{toolbar}</div>' if toolbar else "")
+            + body
+            + (
+                '<div class="review-footer">'
+                '<div class="review-sum">'
+                '<span class="review-sum-main" id="mc-orphans-count">已选 0 项</span>'
+                f'<span class="review-sum-total">共 {total} 项 · {human_bytes(total_bytes)}</span>'
+                "</div>"
+                '<button class="button primary" type="button" data-bridge-action="orphans-apply"'
+                ' id="mc-orphans-btn">移入废纸篓</button>'
+                "</div>"
+                if items and interactive
+                else ""
+            )
+            + "</div></div>"
+        ),
         current="orphans",
-        subtitle="应用删了，残留还在？这里找那些没人认领的",
-        meta=f"已装 {int(data.get('installed', 0) or 0)} 个应用",
     )
 
 

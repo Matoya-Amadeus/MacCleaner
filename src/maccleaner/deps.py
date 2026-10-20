@@ -41,6 +41,47 @@ def _context(home: Path, root: Path, **overrides: Any) -> StorageContext:
     return StorageContext(home=home, root=root, **overrides)
 
 
+APP_CATEGORY_LABELS: dict[str, str] = {
+    "public.app-category.developer-tools": "开发工具",
+    "public.app-category.productivity": "效率办公",
+    "public.app-category.graphics-design": "设计与图像",
+    "public.app-category.photography": "设计与图像",
+    "public.app-category.video": "影音",
+    "public.app-category.music": "影音",
+    "public.app-category.entertainment": "影音",
+    "public.app-category.games": "游戏",
+    "public.app-category.social-networking": "社交与通讯",
+    "public.app-category.news": "阅读资讯",
+    "public.app-category.education": "教育",
+    "public.app-category.finance": "财务",
+    "public.app-category.business": "效率办公",
+    "public.app-category.utilities": "系统工具",
+    "public.app-category.reference": "阅读资讯",
+    "public.app-category.medical": "其它",
+    "public.app-category.weather": "其它",
+}
+
+# 展示顺序：用户最常清理的排在前面，"其它"垫底。
+APP_CATEGORY_ORDER: tuple[str, ...] = (
+    "浏览器", "开发工具", "社交与通讯", "效率办公", "设计与图像", "影音", "游戏", "阅读资讯", "系统工具", "其它",
+)
+
+_BROWSER_HINTS = ("safari", "chrome", "firefox", "edge", "brave", "arc", "opera", "vivaldi")
+
+
+def app_category_label(raw: str, *, name: str = "", bundle_id: str = "") -> str:
+    """把 `LSApplicationCategoryType` 映射成中文分类。
+
+    为什么不用字母分组（2026-10-20 用户要求"按照分类，不要按照字母"）：
+    A–Z 只能帮你找已知名字的应用，帮不了"我想看看有哪些开发工具占地方"。
+    """
+    key = str(raw or "").strip()
+    label = APP_CATEGORY_LABELS.get(key, "")
+    haystack = f"{name} {bundle_id}".lower()
+    if any(hint in haystack for hint in _BROWSER_HINTS):
+        return "浏览器"
+    return label or "其它"
+
 def list_applications(
     *, home: Path | None = None, limit: int = 60, with_sizes: bool = False
 ) -> list[dict[str, Any]]:
@@ -69,6 +110,11 @@ def list_applications(
                     "bundle_id": identity.get("bundle_id", ""),
                     "path": str(path),
                     "source": "system" if base == Path("/Applications") else "user",
+                    "category": app_category_label(
+                        identity.get("category", ""),
+                        name=str(identity.get("name") or ""),
+                        bundle_id=str(identity.get("bundle_id") or ""),
+                    ),
                 }
             )
             if len(apps) >= limit:

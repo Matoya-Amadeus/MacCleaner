@@ -105,7 +105,7 @@ _RUNTIME_JS = """
 
     const upLabel = document.getElementById('mc-updates-count');
     if (upLabel && updates.length) {
-      upLabel.textContent = '已选 ' + picked(updates) + ' / ' + updates.length;
+      upLabel.textContent = '已选 ' + picked(updates) + ' 项';
     }
     const reviewBoxes = Array.from(document.querySelectorAll('[data-target-id]'))
       .filter(box => !box.hasAttribute('data-risky'));
@@ -128,7 +128,10 @@ _RUNTIME_JS = """
     }
 
     const upBtn = document.querySelector('[data-bridge-action="updates-apply"]');
-    if (upBtn && updates.length) upBtn.disabled = picked(updates) === 0;
+    if (upBtn && updates.length) {
+      upBtn.disabled = picked(updates) === 0;
+      upBtn.textContent = picked(updates) > 0 ? '更新 ' + picked(updates) + ' 项' : '更新';
+    }
 
     const larges = Array.from(document.querySelectorAll('[data-large-path]'));
     const largeLabel = document.getElementById('mc-large-count');

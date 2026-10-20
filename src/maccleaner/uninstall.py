@@ -469,6 +469,8 @@ def read_app_identity(app_path: str | Path) -> dict[str, str]:
     if isinstance(data, dict):
         identity["bundle_id"] = str(data.get("CFBundleIdentifier") or "").strip()
         identity["name"] = str(data.get("CFBundleName") or data.get("CFBundleDisplayName") or path.stem).strip()
+        # macOS 官方的应用分类（同一套 App Store 分类），用来按类别分组而不是按字母。
+        identity["category"] = str(data.get("LSApplicationCategoryType") or "").strip()
     return identity
 
 

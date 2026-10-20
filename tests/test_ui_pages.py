@@ -287,11 +287,11 @@ class LandingPageTests(unittest.TestCase):
         from maccleaner.ui.pages import render_uninstall_list_html, render_updates_list_html
 
         uninstall = render_uninstall_list_html({"apps": [
-            {"name": "Alpha", "bundle_id": "com.a", "path": "/A"},
-            {"name": "Beta", "bundle_id": "com.b", "path": "/B"},
-            {"name": "微信读书", "bundle_id": "com.w", "path": "/W"},
+            {"name": "Alpha", "bundle_id": "com.a", "path": "/A", "category": "开发工具"},
+            {"name": "Beta", "bundle_id": "com.b", "path": "/B", "category": "效率办公"},
+            {"name": "微信读书", "bundle_id": "com.w", "path": "/W", "category": "阅读资讯"},
         ]})
-        self.assertGreaterEqual(uninstall.count('data-group-key='), 3, "按首字母分组（中文归 #）")
+        self.assertGreaterEqual(uninstall.count("data-group-key="), 3, "按分类分组")
         self.assertIn("review-split", uninstall, "卸载页与审阅页同一套双栏")
         self.assertIn('class="rail-item', uninstall, "左栏字母分类")
         self.assertIn("data-filter", uninstall, "50 项要有搜索")
@@ -354,7 +354,8 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn("data-orphan-path", page)
         self.assertNotRegex(page, r'data-orphan-path="[^"]+"[^>]*checked', "默认不该勾选")
         self.assertIn("orphans-apply", page)
-        self.assertIn("已装 78 个应用", page)
+        self.assertIn("review-footer", page, "底部固定操作条")
+        self.assertIn("data-group-key=", page, "按目录分组")
         self.assertIn("com.gone.app", page)
 
     def test_orphan_empty_state_explains_what_was_scanned(self) -> None:
