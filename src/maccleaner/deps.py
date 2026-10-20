@@ -793,7 +793,8 @@ def disk_browse(
 def system_report() -> dict[str, Any]:
     """系统快照：负载 / 内存 / 磁盘 / CPU 核数 / 占用最高的进程（只读）。
 
-    **不做温度与风扇**：那需要 `powermetrics`（每次 sudo），不适合一个"打开就看"的页面。
+    电池与节流用 `pmset` / `ioreg`（**免 sudo**，实测 0.04s）；
+    **风扇转速不做**：那是 SMC 私有接口，第三方工具读它要额外权限，值也不稳定。
     """
     import shutil as _shutil
 
@@ -819,7 +820,19 @@ def system_report() -> dict[str, Any]:
                 )
     except (OSError, subprocess.SubprocessError, ValueError):
         processes = []
+    def _run_text(argv: list[str], timeout: float = 5.0) -> str:
+        try:
+            return subprocess.run(argv, capture_output=True, text=True, timeout=timeout).stdout
+        except (OSError, subprocess.SubprocessError):
+            return ""
+
+    power = parse_pmset_batt(_run_text(["/usr/bin/pmset", "-g", "batt"]))
+    battery = parse_battery_ioreg(_run_text(["/usr/sbin/ioreg", "-rn", "AppleSmartBattery"]))
+    thermal = parse_thermal(_run_text(["/usr/bin/pmset", "-g", "therm"]))
+
     return {
+        "power": {**power, **battery},
+        "thermal": thermal,
         "load": [round(load1, 2), round(load5, 2), round(load15, 2)],
         "cpu_count": os.cpu_count() or 0,
         "memory_total": mem_total,
@@ -827,6 +840,65 @@ def system_report() -> dict[str, Any]:
         "disk_total": int(disk.total),
         "disk_used": int(disk.used),
         "processes": processes,
+    }
+
+
+PMSET_BATT = re.compile(
+    r"(?P<percent>\d+)%;\s*(?P<state>[a-z ]+?);\s*(?:(?P<remaining>[\d:]+) remaining)?"
+)
+
+
+def parse_pmset_batt(text: str) -> dict[str, Any]:
+    """`pmset -g batt` 的两行输出 → 电量/状态/剩余。"""
+    source = ""
+    for line in (text or "").splitlines():
+        if "drawing from" in line:
+            source = "电池" if "'Battery" in line else ("电源" if "'AC" in line else "")
+            break
+    data: dict[str, Any] = {"source": source, "percent": None, "state": "", "remaining": ""}
+    match = PMSET_BATT.search(text or "")
+    if match:
+        data["percent"] = int(match.group("percent"))
+        data["state"] = (match.group("state") or "").strip()
+        data["remaining"] = (match.group("remaining") or "").strip()
+    return data
+
+
+IOREG_INT = re.compile(r'"(?P<key>CycleCount|MaxCapacity|DesignCapacity)"\s*=\s*(?P<value>\d+)')
+
+
+def parse_battery_ioreg(text: str) -> dict[str, Any]:
+    """从 `ioreg -rn AppleSmartBattery` 取循环次数与健康度。
+
+    健康度用 `BatteryData.FullChargeCapacity / DesignCapacity`：本机实测
+    `MaxCapacity=100` 只是百分比，拿它算健康度会永远得到 100%。
+    """
+    values: dict[str, int] = {}
+    for match in IOREG_INT.finditer(text or ""):
+        values[match.group("key")] = int(match.group("value"))
+    full = re.search(r'"FullChargeCapacity"=(\d+)', text or "")
+    design = values.get("DesignCapacity") or 0
+    full_capacity = int(full.group(1)) if full else 0
+    health = round(full_capacity / design * 100) if design and full_capacity else None
+    return {
+        "cycles": values.get("CycleCount"),
+        "health_percent": health,
+        "design_mah": design or None,
+        "full_mah": full_capacity or None,
+    }
+
+
+THERM_INT = re.compile(r"(?P<key>CPU_Speed_Limit|CPU_Scheduler_Limit)\s*=\s*(?P<value>\d+)")
+
+
+def parse_thermal(text: str) -> dict[str, Any]:
+    """`pmset -g therm`：有节流时才有 CPU_Speed_Limit；没有就是"未触发"。"""
+    values = {m.group("key"): int(m.group("value")) for m in THERM_INT.finditer(text or "")}
+    limit = values.get("CPU_Speed_Limit")
+    return {
+        "speed_limit": limit,
+        "scheduler_limit": values.get("CPU_Scheduler_Limit"),
+        "throttled": bool(limit is not None and limit < 100),
     }
 
 

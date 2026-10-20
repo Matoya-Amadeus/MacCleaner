@@ -584,3 +584,47 @@ class OrphanLeftoverTests(unittest.TestCase):
             trashed = list((home / ".Trash").iterdir())
             self.assertEqual(len(trashed), 1)
 
+class PowerParsingTests(unittest.TestCase):
+    """电池与节流解析（2026-10-20）：免 sudo，数据来自 pmset / ioreg。"""
+
+    def test_parse_pmset_batt(self) -> None:
+        from maccleaner.deps import parse_pmset_batt
+
+        text = (
+            "Now drawing from 'Battery Power'\n"
+            " -InternalBattery-0 (id=22151267)\t79%; discharging; 3:04 remaining present: true\n"
+        )
+        data = parse_pmset_batt(text)
+        self.assertEqual(data["percent"], 79)
+        self.assertEqual(data["source"], "电池")
+        self.assertEqual(data["state"], "discharging")
+        self.assertEqual(data["remaining"], "3:04")
+
+    def test_parse_battery_ioreg_uses_full_charge_capacity(self) -> None:
+        """健康度必须用 FullChargeCapacity/DesignCapacity。
+
+        本机 `MaxCapacity=100` 只是百分比；拿它算健康度会永远显示 100%（错的）。
+        """
+        from maccleaner.deps import parse_battery_ioreg
+
+        text = (
+            '  |   "MaxCapacity" = 100\n'
+            '  |   "CycleCount" = 986\n'
+            '  |   "BatteryData" = {"FullChargeCapacity"=6918,"DesignCapacity"=8694}\n'
+        )
+        data = parse_battery_ioreg(text)
+        self.assertEqual(data["cycles"], 986)
+        self.assertEqual(data["health_percent"], 80)
+        self.assertEqual(data["design_mah"], 8694)
+
+    def test_parse_thermal_reports_no_throttle_when_absent(self) -> None:
+        from maccleaner.deps import parse_thermal
+
+        idle = parse_thermal("Note: No thermal warning level has been recorded\n")
+        self.assertFalse(idle["throttled"])
+        self.assertIsNone(idle["speed_limit"])
+
+        hot = parse_thermal("CPU_Speed_Limit = 70\nCPU_Scheduler_Limit = 80\n")
+        self.assertTrue(hot["throttled"])
+        self.assertEqual(hot["speed_limit"], 70)
+

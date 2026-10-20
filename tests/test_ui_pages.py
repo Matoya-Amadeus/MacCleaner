@@ -181,10 +181,11 @@ class LandingPageTests(unittest.TestCase):
             "processes": [{"cpu": 12.5, "rss": 1024, "name": "python3"}],
         })
         self.assertIn('data-stage="system"', page)
-        self.assertEqual(page.count('class="stat"'), 3)
+        # 3 个基础格（负载/内存/CPU）+ 电池（未检测到）+ 节流（正常）
+        self.assertEqual(page.count('class="stat"'), 5)
         self.assertIn("12.5%", page)
         self.assertIn("python3", page)
-        self.assertIn("powermetrics", page, "要说明为什么没有温度/风扇")
+        self.assertIn("风扇转速不做", page, "要说明为什么没有风扇")
 
     def test_sidebar_has_disk_and_system_entries(self) -> None:
         from maccleaner.ui.shell import NAV_GROUPS
@@ -415,6 +416,28 @@ class LandingPageTests(unittest.TestCase):
         }
         for name, page in pages.items():
             self.assertIn("data-select-row", page, f"{name} 页缺少拖拽标记")
+
+    def test_system_page_shows_battery_health_and_throttle(self) -> None:
+        """电池/循环/节流要能显示（2026-10-20：免 sudo 读 pmset/ioreg）。"""
+        from maccleaner.ui.pages import render_system_html
+
+        page = render_system_html({
+            "load": [1, 2, 3], "cpu_count": 10, "memory_total": 1024, "memory_used": 512,
+            "processes": [],
+            "power": {"source": "电池", "percent": 79, "state": "discharging", "remaining": "3:04",
+                      "cycles": 986, "health_percent": 80, "design_mah": 8694},
+            "thermal": {"speed_limit": None, "throttled": False},
+        })
+        self.assertIn("79%", page)
+        self.assertIn("986 / 80%", page)
+        self.assertIn("未触发限制", page)
+
+        hot = render_system_html({
+            "load": [1, 2, 3], "cpu_count": 10, "memory_total": 1024, "memory_used": 512,
+            "processes": [], "power": {}, "thermal": {"speed_limit": 70, "throttled": True},
+        })
+        self.assertIn("70%", hot)
+        self.assertIn("CPU 速度上限", hot)
 
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:

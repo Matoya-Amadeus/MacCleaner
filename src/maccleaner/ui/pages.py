@@ -1332,9 +1332,9 @@ def render_disk_html(payload: dict[str, Any] | None = None, *, interactive: bool
 
 
 def render_system_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
-    """系统状态：负载 / 内存 / 进程（只读）。
+    """系统状态：负载 / 内存 / 电池 / 节流 / 进程（只读）。
 
-    **不做温度与风扇**：需要 `powermetrics`（每次 sudo），不适合"打开就看"的页面。
+    电池与节流走 `pmset`/`ioreg`（免 sudo）；**风扇不做**——SMC 私有接口，值也不稳定。
     """
     data = payload or {}
     load = list(data.get("load") or [0, 0, 0])
@@ -1345,6 +1345,41 @@ def render_system_html(payload: dict[str, Any] | None = None, *, interactive: bo
     mem_percent = (mem_used / mem_total * 100) if mem_total else 0.0
     load_percent = (float(load[0] or 0) / max(1, cpu_count) * 100) if cpu_count else 0.0
 
+    power = data.get("power") or {}
+    thermal = data.get("thermal") or {}
+    percent = power.get("percent")
+    state_text = {"charging": "充电中", "discharging": "放电中", "charged": "已充满",
+                  "finishing charge": "即将充满", "AC attached": "已接电源"}.get(
+        str(power.get("state") or "").lower(), str(power.get("state") or "")
+    )
+    if percent is not None:
+        battery_value = f"{int(percent)}%"
+        battery_meta = " · ".join(part for part in (
+            str(power.get("source") or ""), state_text,
+            (f"剩 {power.get('remaining')}" if power.get("remaining") else ""),
+        ) if part)
+    else:
+        battery_value, battery_meta = "—", "未检测到电池（台式机？）"
+    power_block = (
+        f'<div class="stat"><div class="k">电池</div><div class="v">{battery_value}</div>'
+        f'<div class="meta">{html.escape(battery_meta)}</div></div>'
+        + (
+            f'<div class="stat"><div class="k">循环 / 健康</div>'
+            f'<div class="v">{int(power["cycles"])} / {int(power["health_percent"])}%</div>'
+            f'<div class="meta">设计 {int(power["design_mah"] or 0)} mAh</div></div>'
+            if power.get("cycles") is not None and power.get("health_percent") is not None
+            else ""
+        )
+        + (
+            f'<div class="stat"><div class="k">性能节流</div>'
+            f'<div class="v">{int(thermal["speed_limit"])}%</div>'
+            f'<div class="meta">CPU 速度上限</div></div>'
+            if thermal.get("speed_limit") is not None
+            else '<div class="stat"><div class="k">性能节流</div><div class="v">正常</div>'
+            '<div class="meta">未触发限制</div></div>'
+        )
+    )
+
     stats = (
         '<div class="stats">'
         f'<div class="stat"><div class="k">1/5/15 分钟负载</div>'
@@ -1352,7 +1387,8 @@ def render_system_html(payload: dict[str, Any] | None = None, *, interactive: bo
         f'<div class="stat"><div class="k">内存</div>'
         f'<div class="v">{human_bytes(mem_used)} / {human_bytes(mem_total)}</div></div>'
         f'<div class="stat"><div class="k">CPU 核数</div><div class="v">{cpu_count}</div></div>'
-        "</div>"
+        + power_block
+        + "</div>"
     )
     rows = "".join(
         '<div class="row"><div style="min-width:0">'
@@ -1364,7 +1400,7 @@ def render_system_html(payload: dict[str, Any] | None = None, *, interactive: bo
     return state_page(
         {
             "message": f"内存占用 {mem_percent:.0f}%，1 分钟负载 {load[0] if load else 0}",
-            "detail": "温度与风扇需要 sudo（powermetrics），这里不采集；进程按 CPU 排序。",
+            "detail": "电池与节流免 sudo 读取；风扇转速不做（SMC 私有接口，值也不稳定）。进程按 CPU 排序。",
         },
         stage="system",
         title="系统状态",
@@ -1374,7 +1410,7 @@ def render_system_html(payload: dict[str, Any] | None = None, *, interactive: bo
         + '<div class="group-title">占用最高的进程</div>' + rows
         + (_actions(_button("刷新", "system-open")) if interactive else ""),
         current="system",
-        subtitle="负载 / 内存 / 进程（只读）",
+        subtitle="负载 / 内存 / 电池 / 进程（只读）",
         meta="",
     )
 
