@@ -537,7 +537,9 @@ def render_completion_html(payload: dict[str, Any], *, interactive: bool = True)
     caveat = "（已移入废纸篓，清空废纸篓后释放）" if via_trash else ""
     receipt = str(payload.get("receipt_path", "") or "")
     buttons = (
-        _actions(_button("再看一眼", "rescan"), _button("打开废纸篓", "open-trash", primary=True))
+        # 只留【打开废纸篓】："再看一眼"点了只是重扫，用户看完结果不会退回清单，
+        # 属于无效按钮（2026-10-20 用户要求删掉）。
+        _actions(_button("打开废纸篓", "open-trash", primary=True))
         if interactive
         else ""
     )

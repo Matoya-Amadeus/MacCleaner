@@ -128,7 +128,7 @@ class CleanupFlowTests(unittest.TestCase):
             complete = driver.wait_page('data-stage="complete"')
             self.assertIn("4.10 KB", complete, "完成页头条是可恢复字节")
 
-            # 完成页是可交互的（打开废纸篓/再看一眼），会话不会立刻结束；
+            # 完成页是可交互的（打开废纸篓），会话不会立刻结束；
             # 这里发一个 cancel 等价"关窗"，终态必须仍是 complete。
             driver.action("cancel")
 
