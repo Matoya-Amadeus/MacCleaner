@@ -78,6 +78,8 @@ class SessionDeps:
     app_version: Callable[[str], str] | None = None
     # 已安装浏览器的图标（data URI），给"浏览器缓存"那一行配真实图标。
     browser_icons: Callable[[], dict[str, str]] | None = None
+    # 批量取应用图标（卸载列表 / Sparkle 行）。
+    app_icons: Callable[[list[str]], dict[str, str]] | None = None
     # 大文件视图：扫描 + 移入废纸篓。
     large_files: Callable[[], dict[str, Any]] | None = None
     trash_paths: Callable[[list[str]], dict[str, Any]] | None = None
@@ -316,6 +318,20 @@ class InteractiveSession:
         finally:
             self._release_lock()
 
+    def _attach_icons(self, items: list[dict[str, Any]]) -> None:
+        """给带 `path` 的行补 `icon`（取不到就不补，页面退回内置 SVG）。"""
+        reader = getattr(self.deps, "app_icons", None)
+        if reader is None:
+            return
+        paths = [str(item.get("path") or "") for item in items if str(item.get("path") or "")]
+        if not paths:
+            return
+        icons = self._safe(lambda: reader(paths), default={}) or {}
+        for item in items:
+            uri = icons.get(str(item.get("path") or ""))
+            if uri:
+                item["icon"] = uri
+
     # ---- 清理链路 ----
 
     def _run_cleanup(self, timeout: float | None) -> dict[str, Any] | None:
@@ -477,6 +493,7 @@ class InteractiveSession:
                 stage="uninstalling",
             ))
             apps = self._safe(self.deps.apps, default=[])
+            self._attach_icons(apps)
             self._serve("uninstalling", pages.render_uninstall_list_html({"apps": apps}))
             while True:
                 action = self._wait_or_nav(
@@ -659,6 +676,7 @@ class InteractiveSession:
             found = self.deps.updates_check()
             notice = ""
             while True:
+                self._attach_icons([app for app in (found.get("sparkle") or []) if isinstance(app, dict)])
                 self._serve("updates", pages.render_updates_list_html(found, notice=notice))
                 action = self._wait_or_nav(
                     ("updates-apply", "updates-refresh", "cancel"), self.ACTION_TIMEOUT_SECONDS

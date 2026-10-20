@@ -215,6 +215,10 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);height:100vh
 /* 分组图标用主题色：一行里最重要的是"这是哪一类"，颜色帮眼睛先分组。 */
 .group > summary .ico{opacity:.95;color:var(--accent)}
 
+/* 单个真实应用图标（卸载列表 / Sparkle 行）。 */
+.app-ico{width:22px;height:22px;border-radius:5px;flex:none;
+  box-shadow:0 0 0 1px var(--line);background:var(--surface)}
+
 /* 真实应用图标叠放：多个浏览器时并排，最多 4 个。 */
 .ico-stack{display:inline-flex;align-items:center;flex:none}
 .ico-stack img{width:18px;height:18px;border-radius:4px;margin-left:-5px;

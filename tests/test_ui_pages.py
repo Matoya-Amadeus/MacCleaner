@@ -575,6 +575,24 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn('src="data:image/png;base64,AAA"', page)
         self.assertNotIn("javascript:", page, "非图片前缀必须被过滤")
 
+    def test_uninstall_and_updates_rows_show_app_icons_safely(self) -> None:
+        """卸载行/Sparkle 行显示真实图标；非 data:image/ 前缀一律过滤。"""
+        from maccleaner.ui.pages import render_uninstall_list_html, render_updates_list_html
+
+        uri = "data:image/png;base64,AAA"
+        uninstall = render_uninstall_list_html({"apps": [
+            {"name": "Demo", "bundle_id": "com.demo", "path": "/Applications/Demo.app", "icon": uri},
+            {"name": "Evil", "bundle_id": "com.evil", "path": "/Applications/Evil.app",
+             "icon": "javascript:alert(1)"},
+        ]})
+        self.assertIn('class="app-ico"', uninstall)
+        self.assertIn(f'src="{uri}"', uninstall)
+        self.assertNotIn("javascript:", uninstall)
+
+        updates = render_updates_list_html({"items": [], "sparkle": [
+            {"name": "Demo", "path": "/Applications/Demo.app", "version": "1.0", "feed": "", "icon": uri}]})
+        self.assertIn('class="app-ico"', updates)
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")

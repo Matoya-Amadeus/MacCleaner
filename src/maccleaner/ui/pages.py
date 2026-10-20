@@ -159,6 +159,14 @@ def _kind_icon(kind: str) -> str:
     return _icon(_KIND_ICONS.get(str(kind or ""), "box"))
 
 
+def _app_icon(uri: Any) -> str:
+    """真实应用图标（base64 PNG）。只接受 `data:image/` 前缀，挡掉任意 URI 注入。"""
+    text = str(uri or "")
+    if not text.startswith("data:image/"):
+        return ""
+    return f'<img class="app-ico" src="{html.escape(text)}" alt="" width="22" height="22">'
+
+
 def _rows(
     items: Iterable[dict[str, Any]],
     *,
@@ -709,7 +717,8 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
             '<label class="checkbox-only">'
             + (checkbox or '<span style="width:16px"></span>')
             + "</label>"
-            '<div style="min-width:0;flex:1">'
+            + _app_icon(app.get("icon"))
+            + '<div style="min-width:0;flex:1">'
             f"<strong>{html.escape(name)}</strong>"
             f'<div class="meta">{html.escape(bundle)}</div>'
             "</div>"
@@ -1096,7 +1105,8 @@ def render_updates_list_html(
         )
         sparkle_rows.append(
             f'<div class="row" data-reveal-path="{html.escape(path)}">'
-            '<div style="min-width:0;flex:1">'
+            + _app_icon(app.get("icon"))
+            + '<div style="min-width:0;flex:1">'
             f'<strong>{html.escape(str(app.get("name") or ""))}</strong>'
             f'<div class="meta">{html.escape(str(app.get("version") or ""))} · {html.escape(hint)}</div>'
             "</div>"

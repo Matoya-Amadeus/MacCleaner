@@ -899,3 +899,22 @@ class AppIconTests(unittest.TestCase):
             second = browser_icons(cache)
         self.assertEqual(first, second)
 
+class BatchIconTests(unittest.TestCase):
+    """批量图标（2026-10-20）：卸载列表 50 个应用只该付一次 1.3s，之后走缓存。"""
+
+    def test_icons_for_returns_data_uris_and_caches(self) -> None:
+        from maccleaner.deps import icons_for, list_applications
+
+        apps = list_applications(home=Path.home())
+        paths = [app["path"] for app in apps]
+        with tempfile.TemporaryDirectory(prefix="appicons-") as tmp:
+            cache = Path(tmp) / "app-icons.json"
+            first = icons_for(paths, cache)
+            if not first:
+                self.skipTest("这台机器没有可取图标的 .app")
+            self.assertTrue(cache.is_file(), "要落盘缓存，否则每次进卸载页都等 1.3s")
+            second = icons_for(paths, cache)
+            for uri in first.values():
+                self.assertTrue(uri.startswith("data:image/png;base64,"))
+        self.assertEqual(first, second, "缓存命中应返回同样的结果")
+

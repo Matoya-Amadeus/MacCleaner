@@ -1194,7 +1194,7 @@ def app_icon_data_uri(app_path: str, *, size: int = 32) -> str:
             candidate = resources / (name if name.endswith(".icns") else name + ".icns")
             if candidate.is_file():
                 icon = candidate
-    except (OSError, plistlib.InvalidFileException, ValueError):
+    except Exception:  # noqa: BLE001 - 有的应用 Info.plist 本身是坏的（实测 ExpatError）
         icon = None
     if icon is None:
         try:
@@ -1224,6 +1224,54 @@ def app_icon_data_uri(app_path: str, *, size: int = 32) -> str:
         return ""
     return "data:image/png;base64," + base64.b64encode(payload).decode("ascii")
 
+
+
+def icons_for(
+    paths: Sequence[str], cache_path: Path | None = None, *, ttl: int = ICON_CACHE_TTL
+) -> dict[str, str]:
+    """批量取应用图标：`{app 路径: data URI}`，按路径 + mtime 缓存。
+
+    39 个应用 × ~30ms ≈ 1.2s，所以**必须**缓存（否则每次进卸载页都要等）。
+    只处理真实存在的 `.app`，取不到就跳过（页面退回内置 SVG 图标）。
+    """
+    entries: dict[str, Any] = {}
+    if cache_path is not None:
+        try:
+            cached = json.loads(Path(cache_path).read_text(encoding="utf-8"))
+            entries = cached.get("apps") or {}
+        except (OSError, json.JSONDecodeError):
+            entries = {}
+    now = time.time()
+    icons: dict[str, str] = {}
+    dirty = False
+    for raw in paths:
+        bundle = Path(str(raw))
+        if not bundle.is_dir():
+            continue
+        try:
+            mtime = bundle.stat().st_mtime
+        except OSError:
+            continue
+        entry = entries.get(str(bundle))
+        if isinstance(entry, dict) and entry.get("mtime") == mtime and entry.get("uri"):
+            if now - float(entry.get("at") or 0) <= ttl:
+                icons[str(bundle)] = str(entry["uri"])
+                continue
+        uri = app_icon_data_uri(str(bundle))
+        if not uri:
+            continue
+        icons[str(bundle)] = uri
+        entries[str(bundle)] = {"mtime": mtime, "uri": uri, "at": now}
+        dirty = True
+    if cache_path is not None and dirty:
+        try:
+            Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+            tmp = Path(cache_path).with_suffix(".tmp")
+            tmp.write_text(json.dumps({"apps": entries}, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, cache_path)
+        except OSError:
+            pass
+    return icons
 
 def browser_icons(cache_path: Path | None = None, *, ttl: int = ICON_CACHE_TTL) -> dict[str, str]:
     """已安装浏览器的 `{名称: data URI}`；按应用 mtime 缓存，装/升级后自动刷新。"""
@@ -1470,6 +1518,9 @@ def build_deps(
         open_app=_open_app,
         uninstall_cask=lambda token: uninstall_cask(token),
         app_version=app_version,
+        app_icons=lambda paths: icons_for(
+            list(paths), (state_path / "app-icons.json") if state_path else None
+        ),
         browser_icons=lambda: browser_icons(
             (state_path / "browser-icons.json") if state_path else None
         ),
