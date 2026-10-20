@@ -52,7 +52,7 @@ python3 -m build --no-isolation
 
 Open `~/Applications/MacCleaner.app`, or run `maccleaner ui`. Eight entries in the sidebar:
 
-- **Mac Cleanup**: scan → tick items → confirm → done
+- **Mac Cleanup**: scan → tick items → confirm → done; includes installers (.dmg/.pkg) and iOS backups
 - **Uninstall**: inspect leftovers one by one, or batch-uninstall
 - **Updates**: grouped by source; apps with Sparkle update themselves first
 - **Orphans**: leftovers whose app is gone (caches/logs/containers), unchecked by default

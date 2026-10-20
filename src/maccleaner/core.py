@@ -360,6 +360,77 @@ def remove_path(source: Path) -> None:
         source.unlink(missing_ok=True)
 
 
+def _glob_matches(
+    root: Path, patterns: Sequence[str], cutoff_ts: float, *, children_only: bool
+) -> list[tuple[Path, int]]:
+    """按文件名通配匹配（且早于 cutoff）的候选，`children_only` 时只看直接子项。
+
+    为什么需要它：`~/Downloads/*.dmg` 这类目标只该动**安装包**，不能碰同一目录里的
+    文档；而 iOS 备份是"每个子目录一个备份"，必须整目录搬走，不能删里面的文件。
+    """
+    import fnmatch
+
+    found: list[tuple[Path, int]] = []
+    if not root.exists():
+        return found
+
+    def size_of(path: Path) -> int:
+        if path.is_dir() and not path.is_symlink():
+            return int(tree_stats(path, cutoff_ts=None)["total_bytes"])
+        try:
+            return int(path.stat().st_size)
+        except OSError:
+            return 0
+
+    def older(path: Path) -> bool:
+        try:
+            return file_older_than(path.stat(), cutoff_ts)
+        except OSError:
+            return False
+
+    if children_only:
+        try:
+            children = list(root.iterdir())
+        except OSError:
+            return found
+        for child in children:
+            if any(fnmatch.fnmatch(child.name, pattern) for pattern in patterns) and older(child):
+                found.append((child, size_of(child)))
+        return found
+
+    for dirpath, _dirnames, filenames in os.walk(root):
+        current = Path(dirpath)
+        for filename in filenames:
+            if not any(fnmatch.fnmatch(filename, pattern) for pattern in patterns):
+                continue
+            candidate = current / filename
+            if older(candidate):
+                found.append((candidate, size_of(candidate)))
+    return found
+
+
+def _glob_stats(
+    roots: Sequence[Path], patterns: Sequence[str], cutoff_ts: float, *, children_only: bool
+) -> dict[str, Any]:
+    total_bytes = 0
+    eligible_bytes = 0
+    count = 0
+    for root in roots:
+        for path, size in _glob_matches(root, patterns, cutoff_ts, children_only=children_only):
+            total_bytes += size
+            eligible_bytes += size
+            count += 1
+    return {
+        "total_bytes": total_bytes,
+        "eligible_bytes": eligible_bytes,
+        "total_files": count,
+        "eligible_files": count,
+        "count": count,
+        "newest_mtime": None,
+        "oldest_mtime": None,
+    }
+
+
 def tree_stats(root: Path, *, cutoff_ts: float | None) -> dict[str, Any]:
     total_bytes = 0
     eligible_bytes = 0
@@ -1288,6 +1359,39 @@ class StorageManager:
                 validation_patterns=("~/.Trash",),
             ),
             make(
+                "installers",
+                "安装包（.dmg / .pkg）",
+                "user-files",
+                "trash_glob",
+                [home / "Downloads"],
+                risk="high",
+                requires_confirmation=True,
+                source_layer="user_data",
+                min_age_days=max(self.context.days_to_keep, 30),
+                rollback_strategy="trash",
+                metadata={
+                    "patterns": ["*.dmg", "*.pkg", "*.iso"],
+                    "label": "Downloads 里的安装包",
+                },
+            ),
+            make(
+                "ios-backups",
+                "iOS 备份",
+                "user-files",
+                "trash_glob",
+                [home / "Library" / "Application Support" / "MobileSync" / "Backup"],
+                risk="high",
+                requires_confirmation=True,
+                source_layer="user_data",
+                min_age_days=max(self.context.days_to_keep, 30),
+                rollback_strategy="trash",
+                metadata={
+                    "patterns": ["*"],
+                    "children_only": True,
+                    "label": "每个子目录是一份 iPhone/iPad 备份",
+                },
+            ),
+            make(
                 "downloads",
                 "Downloads",
                 "user-files",
@@ -1622,7 +1726,14 @@ class StorageManager:
                     continue
                 exists = True
                 existing_paths.append(str(path))
-                stats = tree_stats(path, cutoff_ts=cutoff_ts if target.kind != "command" else None)
+                if target.kind == "trash_glob":
+                    patterns = tuple(target.metadata.get("patterns") or ())
+                    stats = _glob_stats(
+                        [path], patterns, cutoff_ts,
+                        children_only=bool(target.metadata.get("children_only")),
+                    )
+                else:
+                    stats = tree_stats(path, cutoff_ts=cutoff_ts if target.kind != "command" else None)
                 total_bytes += int(stats["total_bytes"])
                 eligible_bytes += int(stats["eligible_bytes"])
                 total_files += int(stats["total_files"])
@@ -1996,6 +2107,34 @@ class StorageManager:
                         item.status = "cleaned"
                         item.reason = "command completed"
                 if should_apply:
+                    actual_reclaimed += reclaimed
+                    changed_targets.add(target.target_id)
+                continue
+
+            if target.kind == "trash_glob":
+                matches = []
+                for path in target.paths:
+                    matches.extend(
+                        _glob_matches(
+                            path,
+                            tuple(target.metadata.get("patterns") or ()),
+                            time.time() - _effective_cutoff_seconds(target, days_to_keep=self.context.days_to_keep),
+                            children_only=bool(target.metadata.get("children_only")),
+                        )
+                    )
+                reclaimed = 0
+                for candidate, size in matches:
+                    if not (self.context.dry_run or not self.context.apply):
+                        try:
+                            move_to_trash(candidate, self.context.home)
+                        except OSError:
+                            continue
+                    reclaimed += size
+                item.actual_bytes = reclaimed
+                item.status = "planned" if (self.context.dry_run or not self.context.apply) else "cleaned"
+                label = str(target.metadata.get("label") or "匹配项")
+                item.reason = f"{len(matches)} 个{label}" if matches else "没有匹配项"
+                if not (self.context.dry_run or not self.context.apply):
                     actual_reclaimed += reclaimed
                     changed_targets.add(target.target_id)
                 continue
