@@ -45,3 +45,7 @@ license-files = ["LICENSE"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# 残留规则是数据文件，必须跟着包走（否则装完读不到，只剩代码里的兜底两条）。
+[tool.setuptools.package-data]
+maccleaner = ["data/*.json"]

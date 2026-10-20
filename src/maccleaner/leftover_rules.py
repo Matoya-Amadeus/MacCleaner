@@ -9,9 +9,13 @@
 `*` 厂商级 22 次命中里有**跨应用误伤**（例如 Antigravity 的包里出现 `com.google.GeminiMacOS`），
 所以它只能算"按名称匹配"，**默认不勾选**，且要排除已装应用的 bundle id。
 
+规则现在放在 **`data/leftover-rules.json`**（数据），代码里只留兜底。这样
+`scripts/learn_leftover_rules.py --emit-rules` 的产出可以直接提交成 PR 来扩语料；
+每条规则都必须带 `evidence`（采样数 + 命中的应用），不允许凭猜添加。
+
 诚实结论：现有 `discover_related_paths` 已覆盖绝大多数；本模块只补真正的缺口
 （Sparkle 的 `.ShipIt` 更新残留等）。要达到 Pearcleaner 那种"800 应用实测"，
-需要持续把 `learn_leftover_rules.py --json` 的产出积累成语料，不是靠猜。
+需要持续采样积累，不是靠猜。
 """
 from __future__ import annotations
 
@@ -46,7 +50,9 @@ class VariantRule:
     note: str = ""
 
 
-RULES: tuple[VariantRule, ...] = (
+# 代码里的兜底：`data/leftover-rules.json` 缺失/损坏时仍能工作。
+# 数据文件是"可积累的语料"，代码兜底是"坏数据也不能崩"的保险，两者不冲突。
+DEFAULT_RULES: tuple[VariantRule, ...] = (
     VariantRule(
         "cache-shipit",
         "Caches",
@@ -55,15 +61,68 @@ RULES: tuple[VariantRule, ...] = (
         "exact",
         "Sparkle 自动更新留下的临时目录",
     ),
-    VariantRule(
-        "cache-updater",
-        "Caches",
-        "{bundle_id}-updater",
-        "cache-updater",
-        "exact",
-        "应用自带更新器留下的缓存",
-    ),
+    # `{bundle_id}-updater` 曾经写在这里，但本机 50 个应用采样 **0 命中**，
+    # 按"每条规则必须有证据"的口径删掉了（2026-10-20）。等采样器真的命中再加回来。
 )
+
+RULES_FILE = "data/leftover-rules.json"
+SAFE_FOLDERS = frozenset({"Caches", "Preferences", "Logs", "Application Support", "Containers"})
+CONFIDENCE = frozenset({"exact", "name-match"})
+
+
+def _validate(item: dict, index: int) -> VariantRule | None:
+    """校验单条规则；任何可疑字段直接丢弃（宁可少一条规则，也不能越出 ~/Library）。"""
+    try:
+        rule = VariantRule(
+            rule_id=str(item["id"]),
+            folder=str(item["folder"]),
+            template=str(item["template"]),
+            kind=str(item["kind"]),
+            confidence=str(item["confidence"]),
+            note=str(item.get("note") or ""),
+        )
+    except (KeyError, TypeError):
+        return None
+    if rule.folder not in SAFE_FOLDERS:
+        return None
+    if "{bundle_id}" not in rule.template:
+        return None
+    if "/" in rule.template or ".." in rule.template or rule.template.startswith("."):
+        return None
+    if rule.confidence not in CONFIDENCE:
+        return None
+    return rule
+
+
+def load_rules(text: str | None = None) -> tuple[VariantRule, ...]:
+    """从 JSON 文本加载规则；传入 None 时读包内数据文件，读不到就用兜底。
+
+    为什么规则要做成数据（2026-10-20）：Pearcleaner 的 800+ 应用覆盖是靠长期实测攒出来的；
+    把规则外置后，`scripts/learn_leftover_rules.py --emit-rules` 的输出可以直接提交成 PR，
+    不用改代码。
+    """
+    if text is None:
+        try:
+            from importlib.resources import files
+
+            text = files("maccleaner").joinpath(RULES_FILE).read_text(encoding="utf-8")
+        except (OSError, ModuleNotFoundError):
+            return DEFAULT_RULES
+    try:
+        import json as _json
+
+        payload = _json.loads(text)
+        rules = [
+            rule
+            for index, item in enumerate(payload.get("rules") or [])
+            if isinstance(item, dict) and (rule := _validate(item, index)) is not None
+        ]
+    except (ValueError, AttributeError):
+        return DEFAULT_RULES
+    return tuple(rules) or DEFAULT_RULES
+
+
+RULES: tuple[VariantRule, ...] = load_rules()
 
 
 def _is_protected(path: Path) -> bool:

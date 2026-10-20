@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 import sys
 from collections import Counter
 from pathlib import Path
@@ -30,6 +31,7 @@ def candidates(home: Path, bundle_id: str, name: str) -> dict[str, Path]:
     if bundle_id:
         rules["cache.bundle"] = library / "Caches" / bundle_id
         rules["cache.shipit"] = library / "Caches" / f"{bundle_id}.ShipIt"
+        rules["cache.updater"] = library / "Caches" / f"{bundle_id}-updater"
         rules["support.bundle"] = library / "Application Support" / bundle_id
         rules["prefs.bundle"] = library / "Preferences" / f"{bundle_id}.plist"
         rules["savedstate.bundle"] = library / "Saved Application State" / f"{bundle_id}.savedState"
@@ -70,6 +72,8 @@ def vendor_wide(home: Path, bundle_id: str, known: set[str]) -> list[Path]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--emit-rules", action="store_true",
+                        help="输出可直接提交到 data/leftover-rules.json 的规则（只含有证据的）")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--limit", type=int, default=80)
     args = parser.parse_args()
@@ -112,6 +116,35 @@ def main() -> int:
                 "would_add": extra,
             }
         )
+
+    if getattr(args, "emit_rules", False):
+        # 只输出**有证据**的规则：命中数挂在 evidence 里，可直接提交成 PR 扩语料。
+        emitted = []
+        for rule_id, folder, template, kind in (
+            ("cache-shipit", "Caches", "{bundle_id}.ShipIt", "cache-shipit"),
+            ("cache-updater", "Caches", "{bundle_id}-updater", "cache-updater"),
+        ):
+            key = "cache.shipit" if rule_id == "cache-shipit" else "cache.updater"
+            samples = [item for item in per_app if key in (item.get("rules") or [])]
+            if not samples:
+                continue
+            emitted.append(
+                {
+                    "id": rule_id,
+                    "folder": folder,
+                    "template": template,
+                    "kind": kind,
+                    "confidence": "exact",
+                    "note": "",
+                    "evidence": {
+                        "samples": len(samples),
+                        "apps": [item["bundle_id"] for item in samples][:10],
+                        "source": f"local-sample-{time.strftime('%Y-%m-%d')}",
+                    },
+                }
+            )
+        print(json.dumps({"version": 1, "rules": emitted}, ensure_ascii=False, indent=2))
+        return 0
 
     if args.json:
         print(json.dumps(

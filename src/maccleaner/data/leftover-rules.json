@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "updated": "2026-10-20",
+  "about": "卸载残留的变体规则。每条都必须来自真实采样（scripts/learn_leftover_rules.py --emit-rules），不允许凭猜测新增；采样 0 命中的候选（如 {bundle_id}-updater）已被删除，等有证据时再加回来。",
+  "rules": [
+    {
+      "id": "cache-shipit",
+      "folder": "Caches",
+      "template": "{bundle_id}.ShipIt",
+      "kind": "cache-shipit",
+      "confidence": "exact",
+      "note": "Sparkle 自动更新留下的临时目录",
+      "evidence": {
+        "samples": 1,
+        "apps": [
+          "com.tencent.codebuddycn"
+        ],
+        "source": "local-sample-2026-10-20"
+      }
+    }
+  ]
+}
