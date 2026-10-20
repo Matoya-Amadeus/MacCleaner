@@ -331,6 +331,7 @@ class InteractiveSession:
                 notice = ""
                 selected: list[dict[str, Any]] = []
                 preselected: list[str] = []
+                risky: list[dict[str, Any]] = []
                 while True:
                     reader = getattr(self.deps, "system_sizes_cached", None)
                     if reader is not None:
@@ -365,9 +366,18 @@ class InteractiveSession:
 
                     # 确认页放在审阅循环里：这样【返回修改】能真的回到审阅页，
                     # 而不是像以前那样 `return None`（页面停在确认页，用户以为按钮坏了）。
+                    # 只列**用户真的勾了**的高风险项（没勾就不该出现在确认页）。
+                    risky = [
+                        candidate for candidate in selected
+                        if candidate.get("requires_confirmation")
+                    ]
+                    # 标题只算"这次一定会清"的低风险项：高风险要等下面再确认一次，
+                    # 把它们算进 "共 X GB" 会让人以为不勾也会清（2026-10-20 截图发现）。
+                    certain = [c for c in selected if not c.get("requires_confirmation")]
                     self._serve("confirming", pages.render_confirmation_html({
-                        "selected_count": len(selected),
-                        "selected_bytes": sum(int(item.get("allocated_bytes") or 0) for item in selected),
+                        "selected_count": len(certain),
+                        "selected_bytes": sum(int(item.get("allocated_bytes") or 0) for item in certain),
+                        "risk_items": risky,
                     }))
                     decision = self._wait_or_nav(
                         ("confirm", "back", "cancel"), timeout or self.ACTION_TIMEOUT_SECONDS
@@ -406,7 +416,8 @@ class InteractiveSession:
                 if (confirmed_risk and risky)
                 else []
             )
-            approved_ids += [item for item in confirm_ids if item]
+            # 去重：高风险项在审阅页已勾选，确认页再确认一次会重复加入批准清单。
+            approved_ids = list(dict.fromkeys([*approved_ids, *(i for i in confirm_ids if i)]))
             cleaned = (
                 self.deps.clean_approved(approved_ids, confirm_ids)
                 if self.deps.clean_approved is not None

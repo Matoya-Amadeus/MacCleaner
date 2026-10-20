@@ -668,6 +668,44 @@ class UpdatesFlowTests(unittest.TestCase):
             driver.action("cancel")
             driver.join()
 
+
+    def test_risky_target_requires_selection_then_confirmation(self) -> None:
+        """高风险项：审阅页勾选 → 确认页列出 → 勾"我确认"才作为 confirm 传给内核。"""
+        calls: list[tuple[list[str], list[str]]] = []
+
+        def audit():
+            return {"mode": "audit", "plan_items": [
+                {"target_id": "home-caches", "name": "Home caches", "paths": ["~/Library/Caches/Demo"],
+                 "category": "cache", "estimated_bytes": 4096, "recoverable": True, "status": "planned"},
+                {"target_id": "docker-prune", "name": "Docker prune", "paths": ["~/Library/Containers/com.docker.docker"],
+                 "category": "docker", "estimated_bytes": 8192, "recoverable": False,
+                 "requires_confirmation": True, "risk": "high", "status": "planned"},
+            ]}
+
+        def clean(approved, confirm):
+            calls.append((list(approved), list(confirm)))
+            return {"mode": "clean", "actual_reclaimed_bytes": 0, "plan_items": [], "receipt": {}}
+
+        with tempfile.TemporaryDirectory(prefix="session-risky-", ignore_cleanup_errors=True) as tmp:
+            driver = _Driver(_deps(audit=audit, clean_approved=clean), Path(tmp))
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+            driver.action("start")
+            page = driver.wait_page('data-stage="review"')
+            self.assertIn('data-target-id="docker-prune"', page, "高风险项必须可勾")
+
+            driver.action("approval", {"approved_ids": ["home-caches", "docker-prune"]})
+            page = driver.wait_page('data-stage="confirming"')
+            self.assertIn("高风险项", page)
+            self.assertIn("data-confirm-risk", page)
+
+            driver.action("confirm", {"confirmed_risk": True})
+            driver.wait_page('data-stage="complete"', timeout=20)
+            self.assertEqual(calls, [(["home-caches", "docker-prune"], ["docker-prune"])])
+
+            driver.action("cancel")
+            driver.join()
+
 class NavigationTests(unittest.TestCase):
     def test_uninstall_entry_lists_apps(self) -> None:
         with tempfile.TemporaryDirectory(prefix="session-unin-") as tmp:

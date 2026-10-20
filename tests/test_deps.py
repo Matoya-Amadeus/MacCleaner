@@ -805,3 +805,31 @@ class BrowserCacheTargetTests(unittest.TestCase):
             report = scan_report(home=home, root=home, state_root=state)
         self.assertFalse(report.get("scan_cached_at"), "版本不一致时必须重扫")
 
+class SparseFileSizeTests(unittest.TestCase):
+    """稀疏文件不能按表观大小统计（2026-10-20 用户报"为什么有 2TB"）。
+
+    Docker Desktop 的 `Docker.raw` 表观 1.8 TB、实际只占 69 MB；按 `st_size` 统计
+    会把整页数字吹大两万倍。
+    """
+
+    def test_sparse_file_counts_allocated_not_apparent(self) -> None:
+        from maccleaner.core import tree_stats
+
+        with tempfile.TemporaryDirectory(prefix="sparse-") as tmp:
+            root = Path(tmp)
+            sparse = root / "Docker.raw"
+            with sparse.open("wb") as handle:
+                handle.truncate(10 * 2**30)          # 表观 10 GiB，几乎不占空间
+            stats = tree_stats(root, cutoff_ts=None)
+        self.assertEqual(stats["total_bytes"], 0, "纯稀疏文件实际不占空间，应算 0")
+        self.assertLess(stats["total_bytes"], 10 * 2**30, "绝不能按表观大小算")
+
+    def test_regular_file_uses_apparent_size(self) -> None:
+        from maccleaner.core import tree_stats
+
+        with tempfile.TemporaryDirectory(prefix="regular-") as tmp:
+            root = Path(tmp)
+            (root / "note.txt").write_bytes(b"z" * 1024)
+            stats = tree_stats(root, cutoff_ts=None)
+        self.assertEqual(stats["total_bytes"], 1024, "普通小文件按真实字节数，不要按 4KB 块")
+

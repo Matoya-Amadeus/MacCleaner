@@ -137,12 +137,10 @@ def _rows(
             target_id = html.escape(str(item.get("target_id", "") or ""))
             risky = bool(item.get("requires_confirmation"))
             # 默认**不勾**；高风险项连勾选框都不给（要在确认页单独确认）。
-            checked = " checked" if (not risky and target_id and str(item.get("target_id")) in preselected) else ""
-            box = (
-                '<input type="checkbox" disabled data-risk="1">'
-                if risky
-                else f'<input type="checkbox" data-target-id="{target_id}"{checked}>'
-            )
+            checked = " checked" if (target_id and str(item.get("target_id")) in preselected) else ""
+            # 高风险项**可以勾**（2026-10-20 用户反馈"点不动"）：勾了之后确认页还要再确认一次，
+            # 两道门都在。之前禁用勾选框，等于这一项永远清不掉。
+            box = f'<input type="checkbox" data-target-id="{target_id}"{checked}>' 
             risk_note = (
                 '<span class="pill risk">高风险 · 确认页单独确认</span>' if risky else ""
             )

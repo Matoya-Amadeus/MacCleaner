@@ -129,11 +129,12 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn("-webkit-backdrop-filter:blur(", STYLE, "WKWebView 需要前缀")
         self.assertIn("radial-gradient", STYLE, "没有背景层，玻璃看不出层次")
 
-    def test_review_rows_are_unchecked_by_default_and_risky_are_disabled(self) -> None:
-        """审阅页默认**不勾**，高风险项连勾选框都不给（2026-10-19 用户要求）。
+    def test_review_rows_unchecked_by_default_and_risky_rows_selectable(self) -> None:
+        """审阅页默认**不勾**；高风险项**可以勾**，但确认页还要再确认一次。
 
-        之前默认全勾，`~/Downloads` 与 Docker 数据（high risk，内核要求 confirm_targets）
-        一键就能删——这是危险的默认值。
+        2026-10-20 用户反馈"点不动"：之前把高风险行的勾选框设成 disabled，
+        结果这一项永远清不掉（勾不上 -> 不会进确认页 -> 不会执行）。
+        正确模型是两道门：审阅页勾选 + 确认页逐项确认。
         """
         from maccleaner.ui.pages import render_review_html
 
@@ -146,8 +147,8 @@ class LandingPageTests(unittest.TestCase):
         ]})
         self.assertEqual(page.count('data-target-id="home-caches"'), 1)
         self.assertNotRegex(page, r'data-target-id="[^"]+"[^>]*checked', "默认不该勾选")
-        self.assertIn('data-risk="1"', page, "高风险项要禁用勾选")
-        self.assertNotIn('data-target-id="downloads"', page, "高风险项要留到确认页")
+        self.assertIn('data-target-id="downloads"', page, "高风险项也必须可勾（否则永远清不掉）")
+        self.assertIn("高风险 · 确认页单独确认", page)
         self.assertIn("确认页单独确认", page)
 
     def test_sidebar_clean_entry_is_navigation_not_scan(self) -> None:

@@ -378,7 +378,7 @@ def _glob_matches(
         if path.is_dir() and not path.is_symlink():
             return int(tree_stats(path, cutoff_ts=None)["total_bytes"])
         try:
-            return int(path.stat().st_size)
+            return _accounted_size(path.stat())
         except OSError:
             return 0
 
@@ -468,16 +468,16 @@ def tree_stats(root: Path, *, cutoff_ts: float | None) -> dict[str, Any]:
                 "newest_mtime": None,
                 "oldest_mtime": None,
             }
-        total_bytes += int(st.st_size)
+        total_bytes += _accounted_size(st)
         total_files += 1
-        eligible_bytes += int(st.st_size) if file_older_than(st, cutoff_ts) else 0
+        eligible_bytes += _accounted_size(st) if file_older_than(st, cutoff_ts) else 0
         eligible_files += 1 if file_older_than(st, cutoff_ts) else 0
         newest_mtime = float(st.st_mtime)
         oldest_mtime = float(st.st_mtime)
     else:
         for file_path, st in walk_files(root):
             total_files += 1
-            size = int(st.st_size)
+            size = _accounted_size(st)
             total_bytes += size
             newest_mtime = float(st.st_mtime) if newest_mtime is None else max(newest_mtime, float(st.st_mtime))
             oldest_mtime = float(st.st_mtime) if oldest_mtime is None else min(oldest_mtime, float(st.st_mtime))
@@ -524,6 +524,24 @@ def _read_container_bundle_id(container_path: Path) -> str:
         return str(data.get("MCMMetadataIdentifier", "") or "")
     except Exception:
         return ""
+
+
+
+def _accounted_size(st) -> int:  # noqa: ANN001 - os.stat_result
+    """单个文件"算多大"：取**表观大小与实际分配块的较小值**。
+
+    为什么不能只用 `st_size`（2026-10-20 用户报"为什么有 2TB"）：
+    Docker Desktop 的 `Docker.raw` 是**稀疏文件**——表观 1.8 TB，实际只占 69 MB。
+    只按 `st_size` 统计会把整页数字吹大 2 万倍。
+    也不能只用 `st_blocks*512`：小文件会按 4 KB 块算，1 KB 的文件被算成 4 KB。
+    """
+    apparent = int(getattr(st, "st_size", 0) or 0)
+    if not hasattr(st, "st_blocks"):
+        return apparent          # 没有块信息（罕见文件系统）才退回表观大小
+    allocated = int(getattr(st, "st_blocks", 0) or 0) * 512
+    # 注意：`st_blocks == 0` 表示"这块空间根本没被分配"（纯稀疏），此时就是 0，不能退回表观大小。
+    return min(apparent, allocated)
+
 
 
 def _allocated_bytes(path: Path) -> int:
@@ -602,7 +620,7 @@ def _cleanup_tree(
                 continue
             if file_older_than(stat_result, cutoff_ts):
                 if not dry_run and not trash:
-                    reclaimed += int(stat_result.st_size)
+                    reclaimed += _accounted_size(stat_result)
                 record(root)
                 if not dry_run:
                     if trash:
@@ -631,7 +649,7 @@ def _cleanup_tree(
                 if not file_older_than(stat_result, cutoff_ts):
                     continue
                 if not dry_run and not trash:
-                    reclaimed += int(stat_result.st_size)
+                    reclaimed += _accounted_size(stat_result)
                 record(candidate)
                 if not dry_run:
                     if trash:
