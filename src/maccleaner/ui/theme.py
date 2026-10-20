@@ -229,7 +229,7 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);height:100vh
 .review-split{display:grid;grid-template-columns:224px minmax(0,1fr);gap:var(--sp-4);align-items:start}
 .review-detail{min-width:0}
 .panel{min-width:0}
-.rail{position:sticky;top:0;display:flex;flex-direction:column;gap:2px;
+.rail{display:flex;flex-direction:column;gap:2px;
   padding-right:var(--sp-3);border-right:1px solid var(--line)}
 .rail-item{display:flex;align-items:center;gap:7px;width:100%;text-align:left;
   appearance:none;border:0;background:transparent;color:var(--text-2);cursor:pointer;
@@ -247,6 +247,28 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);height:100vh
   .rail-item{width:auto;white-space:nowrap}
   .rail-item .rail-meta{display:none}
 }
+
+/* 左栏的【返回】与分类之间留一道分隔 */
+.rail-back{margin-bottom:var(--sp-2);color:var(--text-2)}
+.rail-back:hover{color:var(--accent)}
+/* 审阅/卸载页的卡片至少要撑满一屏：否则 sticky bottom 会贴在卡片底，
+   看起来像"浮在列表中间"而不是固定在窗口下方（2026-10-20 截图发现）。 */
+html[data-stage=review] .state.card,
+html[data-stage=uninstall-list] .state.card{min-height:calc(100vh - 104px);
+  padding-bottom:calc(var(--sp-5) + 64px)}
+
+/* 底部固定操作条：左边已选/共，右边主按钮（参考 CleanMyMac） */
+/* 固定在窗口底部（不是卡片底部）：left 让开 208px 侧栏。 */
+.review-footer{position:fixed;left:208px;right:0;bottom:0;z-index:20;
+  display:flex;align-items:center;gap:var(--sp-4);
+  padding:var(--sp-3) var(--sp-5);
+  background:color-mix(in srgb, var(--surface) 92%, transparent);
+  -webkit-backdrop-filter:saturate(160%) blur(12px);backdrop-filter:saturate(160%) blur(12px);
+  border-top:1px solid var(--line-strong)}
+.review-sum{flex:1;display:flex;align-items:baseline;gap:10px;min-width:0}
+.review-sum-main{font-size:var(--fs-title-m);font-weight:700;font-variant-numeric:tabular-nums}
+.review-sum-total{color:var(--muted);font-size:var(--fs-meta)}
+.review-footer .button{min-width:132px}
 
 /* 审阅页头部固定：全选 + 筛选 + 已选空间，滚动时不消失（2026-10-20 用户要求）。 */
 .review-head{position:sticky;top:0;z-index:8;background:var(--surface);

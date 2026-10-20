@@ -98,7 +98,10 @@ _RUNTIME_JS = """
       appLabel.textContent = '已选 ' + picked(apps) + ' / ' + apps.length;
     }
     const appBtn = document.querySelector('[data-bridge-action="uninstall-batch"]');
-    if (appBtn && apps.length) appBtn.disabled = picked(apps) === 0;
+    if (appBtn && apps.length) {
+      appBtn.disabled = picked(apps) === 0;
+      appBtn.textContent = picked(apps) > 0 ? '卸载 ' + picked(apps) + ' 个' : '卸载';
+    }
 
     const upLabel = document.getElementById('mc-updates-count');
     if (upLabel && updates.length) {
@@ -116,6 +119,12 @@ _RUNTIME_JS = """
         return sum + Number(row ? row.dataset.sortBytes : 0);
       }, 0);
       pickedLabel.textContent = '已选 ' + humanBytes(total);
+      // 主按钮直接写"清理 2.08 GB"：用户不用自己算会释放多少。
+      const cleanBtn = document.getElementById('mc-clean-btn');
+      if (cleanBtn) {
+        cleanBtn.disabled = total <= 0;
+        cleanBtn.textContent = total > 0 ? '清理 ' + humanBytes(total) : '清理';
+      }
     }
 
     const upBtn = document.querySelector('[data-bridge-action="updates-apply"]');

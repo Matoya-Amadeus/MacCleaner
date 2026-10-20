@@ -225,6 +225,7 @@ class InteractiveSession:
 
             pending: str | None = None
             pending_payload: dict[str, Any] = {}
+            self._review_state: dict[str, Any] | None = None
             while True:
                 if pending is None:
                     action = self.bridge.wait_for_action(
@@ -240,7 +241,15 @@ class InteractiveSession:
                 kind, pending = pending, None
                 payload_now, pending_payload = pending_payload, {}
                 if kind == "home":
-                    # 侧栏"Mac 清理"只是回落地页，**不触发扫描**（扫描必须由落地页按钮发起）。
+                    # 有上次的审阅结果就**回到那一屏**（"上次从什么状态走，就回到什么状态"）；
+                    # 否则回落地页。扫描必须由按钮发起，这里不会偷偷重扫。
+                    if self._review_state:
+                        outcome = self._run_cleanup(timeout, resume=True)
+                        if isinstance(outcome, dict):
+                            return outcome
+                        if isinstance(outcome, str):
+                            pending = outcome
+                        continue
                     self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
                     continue
                 if kind == "cancel":
@@ -334,18 +343,26 @@ class InteractiveSession:
 
     # ---- 清理链路 ----
 
-    def _run_cleanup(self, timeout: float | None) -> dict[str, Any] | None:
+    def _run_cleanup(
+        self, timeout: float | None, *, resume: bool = False
+    ) -> dict[str, Any] | str | None:
         try:
             from .ui.adapter import review_payload
 
             force = False
+            payload: dict[str, Any] | None = None
+            if resume:
+                payload = (self._review_state or {}).get("payload")
             while True:
-                self._serve("scanning", pages.render_progress_html(
-                    {"message": "重新扫描中…" if force else "正在扫描，请稍候…"}
-                ))
-                scanner = self.deps.rescan if (force and self.deps.rescan) else self.deps.audit
-                report = scanner()
-                payload = review_payload(report)
+                if payload is None:
+                    self._serve("scanning", pages.render_progress_html(
+                        {"message": "重新扫描中…" if force else "正在扫描，请稍候…"}
+                    ))
+                    scanner = self.deps.rescan if (force and self.deps.rescan) else self.deps.audit
+                    report = scanner()
+                    payload = review_payload(report)
+                    # 记住这一屏：用户切到别的入口再点「Mac 清理」时，回到同一份结果。
+                    self._review_state = {"payload": payload}
                 notice = ""
                 selected: list[dict[str, Any]] = []
                 preselected: list[str] = []
@@ -368,13 +385,18 @@ class InteractiveSession:
                         ("approval", "rescan", "cancel"), timeout or self.ACTION_TIMEOUT_SECONDS
                     )
                     if action is not None and "nav" in action:
-                        return None          # 用户切到别的入口，交回主循环
+                        target = str(action["nav"])
+                        if target == "home":
+                            # 审阅页【返回】= 退出这次清理流程，下次进来重新扫。
+                            self._review_state = None
+                        return target
                     if action is None:
                         return None
                     if action["action"] == "cancel":
                         return self._finish("cancelled", pages.render_cancelled_html({}))
                     if action["action"] == "rescan":
                         force = True         # 用户点【重新扫描】→ 必须绕过缓存
+                        payload = None
                         break
                     # 只认用户在页面上勾选的那几组：全不勾不等于全部。
                     chosen = {
@@ -422,6 +444,7 @@ class InteractiveSession:
                     continue                 # 重新扫描分支：回到外层重扫
                 break                        # 有勾选且已确认 → 结束扫描循环
 
+            self._review_state = None
             self._serve("cleaning", pages.render_progress_html(
                 {"title": "正在清理", "body": "正在清理", "message": "正在清理，请不要关闭窗口…",
                  "detail": "文件一律移入废纸篓，可从废纸篓恢复。"},

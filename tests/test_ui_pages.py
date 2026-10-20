@@ -82,7 +82,7 @@ class LandingPageTests(unittest.TestCase):
         page = render_review_html({"candidates": []})
         self.assertIn('class="empty"', page)
         self.assertIn("没有找到可清理的内容", page)
-        self.assertIn("data-bridge-action=\"rescan\"", page, "空结果要给下一步")
+        self.assertIn('data-bridge-action="cancel"', page, "空结果要能退出回去")
 
     def test_completion_shows_three_stats(self) -> None:
         from maccleaner.ui.pages import render_completion_html
@@ -236,8 +236,7 @@ class LandingPageTests(unittest.TestCase):
             {"name": "Z", "bundle_id": "z", "path": "/Z", "allocated_bytes": 10},
             {"name": "A", "bundle_id": "a", "path": "/A", "allocated_bytes": 900},
         ]})
-        self.assertIn('data-sort="bytes"', uninstall)
-        self.assertIn("data-sortable", uninstall)
+        # 卸载页改成"左栏字母 + 搜索"，不再放排序条；行本身仍带排序键。
         self.assertEqual(uninstall.count('data-sort-bytes="'), 2, "每行都要有排序键")
 
         review = render_review_html({"candidates": [
@@ -292,10 +291,12 @@ class LandingPageTests(unittest.TestCase):
             {"name": "Beta", "bundle_id": "com.b", "path": "/B"},
             {"name": "微信读书", "bundle_id": "com.w", "path": "/W"},
         ]})
-        self.assertGreaterEqual(uninstall.count('class="group"'), 3, "按首字母分组（中文归 #）")
-        self.assertIn('class="toolbar"', uninstall, "工具条要 sticky 在内容顶部")
+        self.assertGreaterEqual(uninstall.count('data-group-key='), 3, "按首字母分组（中文归 #）")
+        self.assertIn("review-split", uninstall, "卸载页与审阅页同一套双栏")
+        self.assertIn('class="rail-item', uninstall, "左栏字母分类")
         self.assertIn("data-filter", uninstall, "50 项要有搜索")
         self.assertIn("data-select-all-apps", uninstall)
+        self.assertIn("review-footer", uninstall, "底部固定卸载条")
 
         updates = render_updates_list_html({"items": [
             {"name": "aom", "manager": "brew", "kind": "formula", "installed": "1", "available": "2"},
@@ -609,8 +610,9 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn("review-split", page)
         self.assertIn('class="rail"', page)
         self.assertIn("review-detail", page)
-        # 全部 + 三个实际分组
-        self.assertEqual(page.count('class="rail-item'), 4)
+        # 【返回】+ 全部 + 三个实际分组
+        self.assertEqual(page.count('class="rail-item'), 5)
+        self.assertIn('data-nav-action="home"', page, "左栏顶部要有返回")
         self.assertIn("1 · 2.05 KB", page.replace("2.05 KB", "2.05 KB"), )
         self.assertIn('data-filter-group="browser"', page)
         self.assertNotIn("chips", page, "胶囊筛选已被左栏取代")
@@ -702,7 +704,7 @@ class RemainingPagesTests(unittest.TestCase):
 
         page = render_review_html({"candidates": []})
         self.assertIn("没有找到可清理的内容", page)
-        self.assertIn("data-bridge-action=\"rescan\"", page, "空结果要能重扫")
+        self.assertIn('data-bridge-action="cancel"', page, "空结果要能退出")
 
     def test_confirmation_restates_count_and_size(self) -> None:
         from maccleaner.ui.pages import render_confirmation_html

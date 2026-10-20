@@ -490,6 +490,10 @@ def _rail(items: list[tuple[str, str, str, str]]) -> str:
     """
     if len(items) < 2:
         return ""
+    return '<aside class="rail" aria-label="分类">' + _rail_body(items) + "</aside>"
+
+
+def _rail_body(items: list[tuple[str, str, str, str]]) -> str:
     buttons = []
     for index, (key, label, icon_name, meta) in enumerate(items):
         active = " is-on" if index == 0 else ""
@@ -498,7 +502,7 @@ def _rail(items: list[tuple[str, str, str, str]]) -> str:
             f'<button class="rail-item{active}" type="button" data-filter-group="{key}">'
             f'{_icon(icon_name)}<span class="rail-name">{html.escape(label)}</span>{meta_html}</button>'
         )
-    return '<aside class="rail" aria-label="分类">' + "".join(buttons) + "</aside>"
+    return "".join(buttons)
 
 
 def _review_rail(
@@ -526,7 +530,13 @@ def _review_rail(
     for key, label in groups:
         count, total = sizes.get(key, (0, 0))
         items.append((key, label, _GROUP_ICONS.get(key, "box"), f"{count} · {human_bytes(total)}"))
-    return _rail(items)
+    back = (
+        '<button class="rail-item rail-back" type="button" data-nav-action="home">'
+        '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M14 6l-6 6 6 6"/></svg><span class="rail-name">返回</span></button>'
+    )
+    return ('<aside class="rail" aria-label="分类">' + back + _rail_body(items) + "</aside>") if len(items) >= 2 else ""
 
 
 def render_review_html(
@@ -567,14 +577,20 @@ def render_review_html(
         stamp = _time.strftime("%H:%M", _time.localtime(cached_at))
         detail += f" 数据来自 {stamp} 的扫描（点【重新扫描】可强制刷新）。"
     # 有候选时也要能【重新扫描】：只给"开始清理"会把人锁死在一次结果上。
+    # 底部固定条（2026-10-20 用户要求，参考 CleanMyMac）：左边显示"已选 / 共"，
+    # 右边一个主按钮，按钮文字带上可清理的空间；不再放"取消/重新扫描"——
+    # 返回走左栏顶部的【返回】，重扫走落地页。
     actions = (
-        _actions(
-            _button("取消", "cancel"),
-            _button("重新扫描", "rescan"),
-            _button("开始清理", "approval", primary=True),
-        )
+        '<div class="review-footer">'
+        '<div class="review-sum">'
+        '<span class="review-sum-main" id="mc-picked-bytes">已选 0 B</span>'
+        f'<span class="review-sum-total">共 {human_bytes(total)}</span>'
+        "</div>"
+        '<button class="button primary" type="button" data-bridge-action="approval" id="mc-clean-btn">'
+        "清理</button>"
+        "</div>"
         if (interactive and candidates)
-        else _actions(_button("退出", "cancel"), _button("重新扫描", "rescan", primary=interactive))
+        else _actions(_button("退出", "cancel"))
     )
     empty = (
         empty_block("check", "没有找到可清理的内容", "你的 Mac 现在挺干净。可以稍后再扫一次，或先去看看卸载残留。")
@@ -593,7 +609,7 @@ def render_review_html(
             f'<input type="checkbox" data-select-all{sel_all_checked}>'
             '<div><strong>全选（不含高风险）</strong>'
             '<div class="meta">低风险项已默认勾选；高风险项需要自己勾，并在确认页再确认一次</div></div>'
-            '<span class="meta value" id="mc-picked-bytes">已选 0 B</span></label>'
+            "</label>"
             if candidates and interactive
             else ""
         )
@@ -798,7 +814,8 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
     for key in sorted(buckets, key=lambda item: (item == "#", item)):
         rows = buckets[key]
         groups.append(
-            f'<details class="group" open data-group data-letter="{html.escape(key)}">'
+            f'<details class="group review" open data-group data-group-key="{html.escape(key)}"'
+            f' data-letter="{html.escape(key)}">'
             f'<summary><span class="group-name">{key}</span>'
             f'<span class="meta">{len(rows)} 个</span></summary>'
             f'<div class="rows">{"".join(rows)}</div></details>'
@@ -812,24 +829,33 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
             "<span>全选</span></label>"
             '<input class="search" type="search" placeholder="搜索名称或 bundle id"'
             ' data-filter aria-label="搜索应用">'
-            '<span class="meta" id="mc-selected-count"></span></div>'
-            '<div class="toolbar-right">'
-            + sort_bar()
-            + _button("批量卸载所选", "uninstall-batch", primary=True)
-            + "</div>"
+            "</div>"
         )
 
     if groups:
-        index = "".join(
-            f'<button type="button" data-jump="{html.escape(key)}" aria-label="跳到 {html.escape(key)}">'
-            f"{html.escape(key)}</button>"
-            for key in sorted(buckets, key=lambda item: (item == "#", item))
+        letters = sorted(buckets, key=lambda item: (item == "#", item))
+        rail_items: list[tuple[str, str, str, str]] = [("all", "全部", "doc", "")]
+        for key in letters:
+            rail_items.append((key, key, "doc", f"{len(buckets[key])} 个"))
+        detail = (
+            '<div class="review-detail">'
+            + (f'<div class="review-head">{toolbar}</div>' if toolbar else "")
+            + f'<div>{"".join(groups)}</div>'
+            + (
+                '<div class="review-footer">'
+                '<div class="review-sum">'
+                '<span class="review-sum-main" id="mc-selected-count">已选 0 个</span>'
+                f'<span class="review-sum-total">共 {len(apps)} 个应用</span>'
+                "</div>"
+                '<button class="button primary" type="button" data-bridge-action="uninstall-batch"'
+                ' id="mc-uninstall-btn">卸载</button>'
+                "</div>"
+                if interactive
+                else ""
+            )
+            + "</div>"
         )
-        body = (
-            '<div class="list-with-index">'
-            f'<div class="groups">{"".join(groups)}</div>'
-            f'<nav class="alpha" aria-label="字母索引">{index}</nav></div>'
-        )
+        body = '<div class="review-split">' + _rail(rail_items) + detail + "</div>"
     else:
         body = empty_block("check", "没有找到应用", "换一个入口，或稍后再来。")
     return state_page(
@@ -840,7 +866,6 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
         stage="uninstall-list",
         title="软件卸载",
         body="选择一个应用",
-        toolbar=toolbar,
         actions=body,
         current="uninstall",
         subtitle="先看残留清单，确认后才移入废纸篓（可恢复）",
