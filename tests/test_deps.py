@@ -649,3 +649,69 @@ class CaskDetectionTests(unittest.TestCase):
 
         self.assertEqual(parse_cask_targets("{not json"), {})
 
+class LargeFilesTests(unittest.TestCase):
+    """大文件视图（2026-10-20）：只列阈值以上的文件，删除只走废纸篓。"""
+
+    def test_lists_only_files_above_threshold(self) -> None:
+        from maccleaner.deps import large_files
+
+        with tempfile.TemporaryDirectory(prefix="large-") as tmp:
+            home = Path(tmp)
+            downloads = home / "Downloads"
+            downloads.mkdir()
+            (downloads / "big.bin").write_bytes(b"z" * (2 * 2**20))
+            (downloads / "small.txt").write_text("x", encoding="utf-8")
+            # find -size 以 1M 为最小粒度，这里用 1 MB 阈值避免依赖块大小
+            report = large_files(home, min_bytes=1 * 2**20)
+        names = [item["name"] for item in report["items"]]
+        self.assertEqual(names, ["big.bin"], f"只该列大文件，实际：{names}")
+        self.assertGreaterEqual(report["bytes"], 2 * 2**20)
+
+    def test_trash_paths_moves_and_refuses_outside_home(self) -> None:
+        from maccleaner.deps import trash_paths
+
+        with tempfile.TemporaryDirectory(prefix="large-trash-") as tmp:
+            home = Path(tmp) / "home"
+            (home / "Downloads").mkdir(parents=True)
+            target = home / "Downloads" / "big.bin"
+            target.write_bytes(b"z" * 1024)
+            outside = Path(tmp) / "outside.bin"
+            outside.write_bytes(b"z" * 1024)
+
+            result = trash_paths(home, [str(target), str(outside)])
+            self.assertEqual(result["count"], 1, result)
+            self.assertEqual(len(result["failed"]), 1, "越界路径必须被拒")
+            self.assertFalse(target.exists())
+            self.assertTrue(outside.exists())
+
+
+class SystemSizeTests(unittest.TestCase):
+    """系统级目录测量：只读、可缓存；**绝不**在测试里触发授权框。"""
+
+    def test_parse_du_output(self) -> None:
+        from maccleaner.deps import _parse_du
+
+        sizes = _parse_du("1024\t/Library/Logs\n2048\t/var/log\n")
+        self.assertEqual(sizes, {"/Library/Logs": 1024 * 1024, "/var/log": 2048 * 1024})
+
+    def test_cache_hit_avoids_measuring_again(self) -> None:
+        from maccleaner.deps import system_sizes
+
+        with tempfile.TemporaryDirectory(prefix="syssize-") as tmp:
+            cache = Path(tmp) / "system-sizes.json"
+            cache.write_text(
+                json.dumps({"at": time.time(), "admin": True, "sizes": {"/Library/Logs": 123}}),
+                encoding="utf-8",
+            )
+            data = system_sizes(cache)
+        self.assertTrue(data["cached"])
+        self.assertTrue(data["admin"])
+        self.assertEqual(data["sizes"], {"/Library/Logs": 123})
+
+    def test_unauthorized_result_is_flagged(self) -> None:
+        from maccleaner.deps import system_sizes
+
+        data = system_sizes(None)
+        self.assertFalse(data["admin"], "没授权时必须标 admin=False")
+        self.assertIn("未授权", str(data["note"]))
+

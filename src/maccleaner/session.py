@@ -42,7 +42,7 @@ REVEAL_PATH = re.compile(r'data-reveal-path="([^"]+)"')
 # （2026-10-18 真浏览器实测：点了更新页后再点卸载，队列里的动作没人取）。
 NAV_ACTIONS: tuple[str, ...] = (
     "home", "uninstall-list", "updates-open", "orphans-open", "skills-open",
-    "disk-open", "system-open", "history-open",
+    "disk-open", "large-open", "system-open", "history-open",
 )
 
 
@@ -76,6 +76,12 @@ class SessionDeps:
     uninstall_cask: Callable[[str], dict[str, Any]] | None = None
     # 读某个 .app 的版本号（判断 Sparkle 是否真的更新了）。
     app_version: Callable[[str], str] | None = None
+    # 大文件视图：扫描 + 移入废纸篓。
+    large_files: Callable[[], dict[str, Any]] | None = None
+    trash_paths: Callable[[list[str]], dict[str, Any]] | None = None
+    # 系统级目录体积：只测量（第二次可走一次性授权）。
+    system_sizes: Callable[[], dict[str, Any]] | None = None
+    system_sizes_admin: Callable[[], dict[str, Any]] | None = None
     # 只读的"看一眼"页面（磁盘/系统）。
     disk: Callable[[], dict[str, Any]] = lambda: {}
     # 磁盘钻取：传目录路径，返回下一级条目。
@@ -217,7 +223,7 @@ class InteractiveSession:
                 if pending is None:
                     action = self.bridge.wait_for_action(
                         ("start", "home", "cancel", "uninstall-list", "updates-open", "skills-open",
-                         "disk-open", "system-open", "history-open", "orphans-open"),
+                         "disk-open", "large-open", "system-open", "history-open", "orphans-open"),
                         timeout=timeout or self.IDLE_TIMEOUT_SECONDS,
                     )
                     if action is None:
@@ -234,6 +240,11 @@ class InteractiveSession:
                 if kind == "cancel":
                     return self._finish("cancelled", pages.render_cancelled_html({}))
 
+                if kind == "large-open":
+                    outcome = self._run_large_files()
+                    if outcome:
+                        pending = outcome
+                    continue
                 if kind == "orphans-open":
                     # 点侧栏要交回主循环处理（否则会停在孤儿页，用户以为点不动）。
                     outcome = self._run_orphans()
@@ -663,16 +674,35 @@ class InteractiveSession:
         while True:
             if not current or browse is None:
                 # 空目标 = 总览（刷新按钮也用它），**不要**退化成"主目录"。
-                self._serve("disk", pages.render_disk_html(self._safe(self.deps.disk, default={})))
+                overview = dict(self._safe(self.deps.disk, default={}))
+                reader = getattr(self.deps, "system_sizes", None)
+                if reader is not None:
+                    overview["system"] = self._safe(reader, default={})
+                self._serve("disk", pages.render_disk_html(overview))
             else:
                 readout = self._safe(lambda: browse(current), default={})
                 self._serve("disk", pages.render_disk_browse_html(readout))
-            action = self._wait_or_nav(("disk-open", "disk-back", "cancel"), self.ACTION_TIMEOUT_SECONDS)
+            action = self._wait_or_nav(
+                ("disk-open", "disk-back", "system-sizes", "cancel"), self.ACTION_TIMEOUT_SECONDS
+            )
             if action is not None and "nav" in action:
                 return str(action["nav"])
             if action is None or action["action"] == "cancel":
                 self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
                 return None
+            if action["action"] == "system-sizes":
+                # 一次性授权（系统标准密码框），只测量不删除；结果写缓存，本次会话不再弹。
+                measure = getattr(self.deps, "system_sizes_admin", None)
+                self._serve("disk", pages.render_progress_html(
+                    {"title": "磁盘", "body": "正在测量系统目录",
+                     "message": "若弹出授权框，请输入密码（只用来读体积，不会删文件）…",
+                     "detail": "同一次会话只需授权一次。", "nav": "disk"},
+                    stage="disk",
+                ))
+                if measure is not None:
+                    self._safe(measure, default={})
+                current = ""
+                continue
             if action["action"] == "disk-back":
                 current = ""
                 continue
@@ -722,6 +752,47 @@ class InteractiveSession:
             if back is not None and "nav" in back:
                 return str(back["nav"])
             if back is not None and back["action"] == "orphans-open":
+                found = self._safe(scan, default={})
+                continue
+            self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
+            return None
+
+    def _run_large_files(self) -> str | None:
+        """大文件视图：扫描 → 勾选 → 移入废纸篓。"""
+        scan = getattr(self.deps, "large_files", None)
+        apply_ = getattr(self.deps, "trash_paths", None)
+        if scan is None:
+            self._serve("large", pages.render_large_files_html({}))
+            return None
+        found = self._safe(scan, default={})
+        while True:
+            self._serve("large", pages.render_large_files_html(found))
+            action = self._wait_or_nav(("large-apply", "large-open", "cancel"), self.ACTION_TIMEOUT_SECONDS)
+            if action is not None and "nav" in action:
+                return str(action["nav"])
+            if action is None or action["action"] == "cancel":
+                self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
+                return None
+            if action["action"] == "large-open":
+                found = self._safe(scan, default={})
+                continue
+            wanted = [
+                str(value)
+                for value in (action.get("payload") or {}).get("paths") or []
+                if str(value) in self._visible_paths      # 只允许页面出现过的路径
+            ]
+            if not wanted:
+                found = {**found, "message": "先勾选要清理的文件"}
+                continue
+            if apply_ is None:
+                found = {**found, "message": "清理不可用"}
+                continue
+            result = self._safe(lambda: apply_(wanted), default={})
+            self._serve("large", pages.render_large_files_result_html(result))
+            back = self._wait_or_nav(("large-open", "cancel"), self.ACTION_TIMEOUT_SECONDS)
+            if back is not None and "nav" in back:
+                return str(back["nav"])
+            if back is not None and back["action"] == "large-open":
                 found = self._safe(scan, default={})
                 continue
             self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))

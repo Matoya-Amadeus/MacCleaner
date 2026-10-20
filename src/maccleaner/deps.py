@@ -904,6 +904,190 @@ def parse_thermal(text: str) -> dict[str, Any]:
 
 
 
+
+# ---- 大文件视图 ----
+
+LARGE_FILE_ROOTS = ("Downloads", "Desktop", "Documents", "Movies")
+LARGE_FILE_SKIP = frozenset({".git", "node_modules", ".Trash", "Library"})
+
+
+def large_files(
+    home: Path, *, min_bytes: int = 500 * 2**20, limit: int = 200, timeout: float = 15.0
+) -> dict[str, Any]:
+    """列出用户目录里的大文件（只读，默认 >500 MB）。
+
+    为什么用 `find` 而不是 `os.walk`：`~` 下的 Downloads/Documents 可能有几十万文件，
+    Python 遍历要十几秒；`find -size` 是系统实现，实测 0.2s（超时也只拿已完成的部分）。
+    """
+    home_path = Path(home)
+    roots = [home_path / name for name in LARGE_FILE_ROOTS if (home_path / name).is_dir()]
+    if not roots:
+        return {"items": [], "bytes": 0, "truncated": False, "scanned": 0}
+
+    megabytes = max(1, int(min_bytes / 2**20))
+    argv = ["/usr/bin/find", *map(str, roots), "-type", "f", "-size", f"+{megabytes}M"]
+    for name in LARGE_FILE_SKIP:
+        argv.extend(["-not", "-path", f"*/{name}/*"])
+    try:
+        completed = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        found = [line for line in (completed.stdout or "").splitlines() if line.strip()]
+        truncated = False
+    except subprocess.TimeoutExpired as exc:
+        # 超时也要用已经拿到的部分（`TimeoutExpired.stdout` 里是有的）
+        raw = exc.stdout or ""
+        found = [line for line in raw.decode("utf-8", "replace").splitlines() if line.strip()] if isinstance(raw, bytes) else [line for line in raw.splitlines() if line.strip()]
+        truncated = True
+    except (OSError, subprocess.SubprocessError):
+        return {"items": [], "bytes": 0, "truncated": False, "scanned": 0}
+
+    items: list[dict[str, Any]] = []
+    for raw in found[: limit * 4]:
+        path = Path(raw)
+        try:
+            stat_result = path.stat()
+        except OSError:
+            continue
+        if stat_result.st_size < min_bytes:
+            continue
+        items.append(
+            {
+                "name": path.name,
+                "path": str(path),
+                "bytes": int(stat_result.st_size),
+                "modified": time.strftime("%Y-%m-%d", time.localtime(stat_result.st_mtime)),
+            }
+        )
+    items.sort(key=lambda item: -int(item["bytes"]))
+    kept = items[:limit]
+    return {
+        "items": kept,
+        "bytes": sum(int(item["bytes"]) for item in kept),
+        "count": len(items),
+        "truncated": truncated or len(items) > limit,
+        "scanned": len(found),
+        "roots": [str(path).replace(str(home_path), "~") for path in roots],
+        "min_bytes": min_bytes,
+    }
+
+
+def trash_paths(home: Path, paths: Sequence[str]) -> dict[str, Any]:
+    """把点名要删的文件/目录移入废纸篓（只接受 home 内的路径）。"""
+    home_path = Path(home).resolve()
+    moved: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+    total_bytes = 0
+    for raw in paths:
+        target = Path(str(raw)).expanduser()
+        try:
+            resolved = target.resolve()
+        except OSError:
+            failed.append({"path": str(raw), "reason": "unresolvable"})
+            continue
+        if home_path not in resolved.parents:
+            failed.append({"path": str(raw), "reason": "outside home"})
+            continue
+        if not resolved.exists():
+            failed.append({"path": str(raw), "reason": "missing"})
+            continue
+        try:
+            size = int(resolved.stat().st_size) if resolved.is_file() else int(
+                _du_sizes([resolved], timeout=5).get(str(resolved), 0)
+            )
+        except OSError:
+            size = 0
+        try:
+            destination = move_to_trash(resolved, home_path)
+        except OSError as exc:
+            failed.append({"path": str(raw), "reason": str(exc)[:80]})
+            continue
+        total_bytes += size
+        moved.append({"path": str(resolved), "to": str(destination), "bytes": size})
+    return {"moved": moved, "failed": failed, "count": len(moved), "bytes": total_bytes}
+
+
+# ---- 系统级只读测量（需要一次管理员授权，**只测量不删除**） ----
+
+SYSTEM_SIZE_PATHS = ("/Library/Caches", "/Library/Logs", "/var/log", "/private/var/folders")
+SYSTEM_SIZE_TTL = 6 * 3600
+
+
+def _parse_du(output: str) -> dict[str, int]:
+    sizes: dict[str, int] = {}
+    for line in (output or "").splitlines():
+        parts = line.split("\t")
+        if len(parts) != 2:
+            continue
+        try:
+            kib = int(parts[0])
+        except ValueError:
+            continue
+        sizes[parts[1].strip()] = kib * 1024
+    return sizes
+
+
+def system_sizes(cache_path: Path | None = None, *, ttl: int = SYSTEM_SIZE_TTL) -> dict[str, Any]:
+    """读缓存；没有缓存就**无授权**量一遍（数字偏低），并标记 `admin=False`。
+
+    为什么"只测量不删除"：root 域没有"你的废纸篓"，删了不可恢复；而 `du` 只读，
+    一次密码换来准确数字，风险最低。
+    """
+    if cache_path is not None:
+        try:
+            cached = json.loads(Path(cache_path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            cached = None
+        if isinstance(cached, dict) and time.time() - float(cached.get("at") or 0) <= ttl:
+            return {**cached, "cached": True}
+
+    code, out, _ = _run_cmd(["/usr/bin/du", "-sk", *SYSTEM_SIZE_PATHS], timeout=15)
+    sizes = _parse_du(out)
+    return {
+        "at": time.time(),
+        "admin": False,
+        "cached": False,
+        "sizes": sizes,
+        "paths": list(SYSTEM_SIZE_PATHS),
+        "note": "未授权：系统目录读不全，数字可能明显偏低。",
+        "exit": code,
+    }
+
+
+def system_sizes_admin(cache_path: Path | None = None) -> dict[str, Any]:
+    """弹**一次**管理员授权，读准系统目录体积（只读，不删任何文件）。
+
+    用 `osascript ... with administrator privileges` 而不是让 Python 自己 sudo：
+    这样系统弹的是标准授权框，进程本身不提权；脚本里只有固定路径，没有用户输入。
+    """
+    quoted = " ".join(SYSTEM_SIZE_PATHS)
+    script = f'do shell script "/usr/bin/du -sk {quoted} 2>/dev/null" with administrator privileges'
+    try:
+        completed = subprocess.run(
+            ["/usr/bin/osascript", "-e", script], capture_output=True, text=True, timeout=180
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"at": time.time(), "admin": False, "cached": False, "sizes": {},
+                "paths": list(SYSTEM_SIZE_PATHS), "note": f"授权失败：{exc}", "exit": 1}
+    if completed.returncode != 0:
+        return {"at": time.time(), "admin": False, "cached": False, "sizes": {},
+                "paths": list(SYSTEM_SIZE_PATHS),
+                "note": (completed.stderr or "").strip()[:160] or "已取消授权", "exit": completed.returncode}
+    result = {
+        "at": time.time(),
+        "admin": True,
+        "cached": False,
+        "sizes": _parse_du(completed.stdout),
+        "paths": list(SYSTEM_SIZE_PATHS),
+        "note": "已授权读取（只测量，不删除任何文件）。",
+        "exit": 0,
+    }
+    if cache_path is not None:
+        try:
+            Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(cache_path).write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
+    return result
+
 CASK_INFO_TIMEOUT = 20.0
 
 
@@ -1149,6 +1333,14 @@ def build_deps(
         open_app=_open_app,
         uninstall_cask=lambda token: uninstall_cask(token),
         app_version=app_version,
+        large_files=lambda: large_files(home_path),
+        trash_paths=lambda paths: trash_paths(home_path, paths),
+        system_sizes=lambda: system_sizes(
+            (state_path / "system-sizes.json") if state_path else None
+        ),
+        system_sizes_admin=lambda: system_sizes_admin(
+            (state_path / "system-sizes.json") if state_path else None
+        ),
         sparkle_apps=lambda: sparkle_apps(home_path),
         orphans_scan=lambda: orphan_leftovers(
             home_path, cache_path=(state_path / "launchservices-ids.json") if state_path else None

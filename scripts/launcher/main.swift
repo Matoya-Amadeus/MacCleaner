@@ -311,6 +311,8 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
             ("disk", "disk-open", "", "document.querySelectorAll('.meter').length"),
             ("system", "system-open", "", "document.querySelectorAll('.stat').length"),
             ("history", "history-open", "", "document.querySelectorAll('.stat').length"),
+            // 大文件页：空列表也要有 stage 与空态。
+            ("large", "large-open", "", "document.querySelectorAll('.empty, [data-large-path]').length"),
             // 残留体检：首屏要能渲染（空列表也要有 stage），扫描会跑 lsregister，给它时间。
             ("orphans", "orphans-open", "", "document.querySelectorAll('.empty, .row').length"),
             // 侧栏"Mac 清理"现在只是**回落地页**（不再触发扫描）；扫描必须点落地页的按钮。

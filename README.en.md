@@ -50,13 +50,14 @@ python3 -m build --no-isolation
 
 ## The window
 
-Open `~/Applications/MacCleaner.app`, or run `maccleaner ui`. Eight entries in the sidebar:
+Open `~/Applications/MacCleaner.app`, or run `maccleaner ui`. Nine entries in the sidebar:
 
 - **Mac Cleanup**: scan → tick items → confirm → done; includes installers (.dmg/.pkg) and iOS backups
 - **Uninstall**: inspect leftovers one by one, or batch-uninstall
 - **Updates**: grouped by source; Sparkle apps update themselves first (version can be verified)
 - **Orphans**: leftovers whose app is gone (caches/logs/containers), unchecked by default
-- **Disk**: capacity + **treemap** (area = size); click a block to drill in
+- **Disk**: capacity + **treemap** (area = size); system folders can be measured once with admin (read-only)
+- **Large files**: anything over 500 MB in Downloads / Desktop / Documents / Movies, unchecked by default
 - **System**: load, memory, top CPU processes
 - **History**: one row per cleanup receipt
 - **Skills**: agent skills installed here

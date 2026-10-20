@@ -456,12 +456,37 @@ class LandingPageTests(unittest.TestCase):
         plain = render_uninstall_preview_html({"app": {"path": "/A.app", "name": "A"}, "items": []})
         self.assertNotIn("uninstall-cask", plain, "非 cask 应用不该出现这个按钮")
 
+    def test_large_files_page_lists_items_unchecked(self) -> None:
+        from maccleaner.ui.pages import render_large_files_html
+
+        page = render_large_files_html({
+            "items": [{"name": "big.bin", "path": "/Users/x/Downloads/big.bin",
+                       "bytes": 2 * 2**30, "modified": "2026-10-01"}],
+            "bytes": 2 * 2**30, "roots": ["~/Downloads"], "min_bytes": 500 * 2**20,
+        })
+        self.assertIn('data-stage="large"', page)
+        self.assertIn("data-large-path", page)
+        self.assertIn("2.00 GiB", page)
+        self.assertNotRegex(page, r'data-large-path="[^"]+"[^>]*checked', "默认不该勾选")
+
+    def test_disk_page_offers_admin_measurement_but_not_deletion(self) -> None:
+        """系统级目录：给一次性授权测量，**不提供**任何删除按钮。"""
+        from maccleaner.ui.pages import render_disk_html
+
+        page = render_disk_html({"total": 100, "used": 50, "free": 50, "percent": 50,
+                                 "sections": [], "system": {}})
+        self.assertIn("系统级目录", page)
+        self.assertIn("system-sizes", page)
+        block = page.split("系统级目录")[1][:400]
+        self.assertNotIn("移入废纸篓", block, "系统级目录不该出现删除动作")
+        self.assertNotIn('data-bridge-action="clean', block)
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")
         self.assertEqual(
-            nav.count('data-nav-action="'), 8,
-            "八个真实入口（清理/卸载/更新/残留体检/磁盘/系统/历史/技能）",
+            nav.count('data-nav-action="'), 9,
+            "九个真实入口（清理/卸载/更新/残留体检/磁盘/大文件/系统/历史/技能）",
         )
         self.assertNotIn("待实现", nav, "四项都已实现，不该再有待实现徽标")
         self.assertNotIn("Protection", nav, "不出现我们没有的分类")

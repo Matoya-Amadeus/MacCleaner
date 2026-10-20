@@ -1304,6 +1304,109 @@ def render_orphans_result_html(result: dict[str, Any] | None = None, *, interact
     )
 
 
+def render_large_files_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
+    """大文件视图：`~/Downloads`、桌面、文稿、影片里超过阈值的文件。
+
+    默认**不勾**；勾了才进废纸篓（可恢复）。列的是"你自己放进去的文件"，
+    所以不替用户判断该不该留——只按体积排好队。
+    """
+    data = payload or {}
+    items = [item for item in (data.get("items") or []) if isinstance(item, dict)]
+    total_bytes = int(data.get("bytes", 0) or 0)
+    min_mb = int(int(data.get("min_bytes", 0) or 0) / 2**20) or 500
+
+    rows: list[str] = []
+    for item in items:
+        path = str(item.get("path", ""))
+        size = int(item.get("bytes", 0) or 0)
+        rows.append(
+            f'<div class="row" data-select-row data-sort-text="{html.escape(str(item.get("name", "")).lower())}"'
+            f' data-sort-bytes="{size}" data-reveal-path="{html.escape(path)}">'
+            '<label class="checkbox-only">'
+            f'<input type="checkbox" data-large-path="{html.escape(path)}"></label>'
+            '<div style="min-width:0;flex:1">'
+            f'<strong>{html.escape(str(item.get("name", "")))}</strong>'
+            f'<div class="meta">{html.escape(_display_path(path))}'
+            + (f" · {html.escape(str(item.get('modified') or ''))}" if item.get("modified") else "")
+            + "</div></div>"
+            f'<span class="meta value">{human_bytes(size)}</span></div>'
+        )
+
+    toolbar = ""
+    if interactive and items:
+        toolbar = (
+            '<div class="toolbar-left">'
+            '<label class="checkbox-inline"><input type="checkbox" data-select-all-large>'
+            "<span>全选</span></label>"
+            '<span class="meta" id="mc-large-count"></span></div>'
+            '<div class="toolbar-right">'
+            + _button("重新扫描", "large-open")
+            + _button("移入废纸篓", "large-apply", primary=True)
+            + "</div>"
+        )
+
+    body = (
+        '<div class="rows" data-sortable>' + "".join(rows) + "</div>"
+        if rows
+        else empty_block(
+            "check",
+            "没有发现大文件",
+            f"扫过 {', '.join(str(x) for x in (data.get('roots') or [])) or '常用目录'}，"
+            f"没有超过 {min_mb} MB 的文件。",
+        )
+    )
+    truncated = "（扫描超时或结果过多，只列了前一部分）" if data.get("truncated") else ""
+    return state_page(
+        {
+            "message": (
+                f"{len(items)} 个大文件，共 {human_bytes(total_bytes)}"
+                if items
+                else "没有发现大文件"
+            ),
+            "detail": f"阈值 {min_mb} MB；默认不勾，勾了才移入废纸篓（可恢复）。{truncated}",
+        },
+        stage="large",
+        title="大文件",
+        body="",
+        toolbar=toolbar,
+        actions=body,
+        current="large",
+        subtitle="按体积排队，不替你判断该不该留",
+    )
+
+
+def render_large_files_result_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
+    data = payload or {}
+    moved = [item for item in (data.get("moved") or []) if isinstance(item, dict)]
+    failed = [item for item in (data.get("failed") or []) if isinstance(item, dict)]
+    total_bytes = int(data.get("bytes", 0) or 0)
+    rows = "".join(
+        '<div class="row"><div style="min-width:0;flex:1">'
+        f'<strong>{html.escape(Path(str(item.get("path", ""))).name)}</strong>'
+        f'<div class="meta">{html.escape(_display_path(str(item.get("path", ""))))}</div></div>'
+        f'<span class="meta value">{human_bytes(int(item.get("bytes", 0) or 0))}</span></div>'
+        for item in moved
+    )
+    fails = "".join(
+        f'<p class="pill warn">{html.escape(str(item.get("path", "")))}：'
+        f'{html.escape(str(item.get("reason", "")))}</p>'
+        for item in failed
+    )
+    actions = _actions(
+        _button("再扫一次", "large-open"),
+        _button("打开废纸篓", "open-trash", ghost=True),
+    ) if interactive else ""
+    return state_page(
+        {"message": f"已移入废纸篓 {len(moved)} 个文件，共 {human_bytes(total_bytes)}",
+         "detail": "在废纸篓里右键「放回原处」即可恢复。"},
+        stage="large",
+        title="大文件",
+        body="",
+        actions=(rows + fails) if (rows or fails) else empty_block("check", "没有移动任何文件", "你什么都没勾。"),
+        current="large",
+    )
+
+
 def render_history_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
     """清理历史：直接读回执文件（时间/模式/条目/字节），只读。"""
     data = payload or {}
@@ -1389,6 +1492,38 @@ def render_disk_html(payload: dict[str, Any] | None = None, *, interactive: bool
             f'<span class="meta value">{human_bytes(size)}</span>{enter}</div>'
         )
 
+    # 系统级目录：root 拥有，不授权读不全（实测 /Library/Caches 会报 0）。
+    # **只测量，不删除**——root 域没有"你的废纸篓"，删了不可恢复。
+    system = data.get("system") or {}
+    sizes = system.get("sizes") or {}
+    if sizes:
+        sys_rows = "".join(
+            '<div class="row"><div style="min-width:0;flex:1">'
+            f'<strong>{html.escape(str(path))}</strong>'
+            f'<div class="meta">{"已授权读取（只测量）" if system.get("admin") else "未授权：可能读不全"}</div></div>'
+            f'<span class="meta value">{human_bytes(int(size or 0))}</span></div>'
+            for path, size in sizes.items()
+        )
+        system_block = (
+            '<div class="group-title">系统级目录（只测量，不删除）</div>'
+            + sys_rows
+            + (
+                _button(
+                    "重新测量（需管理员授权一次）" if system.get("admin") else "用管理员授权测量一次（只读）",
+                    "system-sizes",
+                )
+                if interactive
+                else ""
+            )
+            + (f'<p class="muted">{html.escape(str(system.get("note") or ""))}</p>' if system.get("note") else "")
+        )
+    else:
+        system_block = (
+            '<div class="group-title">系统级目录（只测量，不删除）</div>'
+            '<p class="muted">/Library/Caches、/var/log 属于 root：不授权读不到准确体积。</p>'
+            + (_button("用管理员授权测量一次（只读）", "system-sizes", ghost=True) if interactive else "")
+        )
+
     return state_page(
         {
             "message": f"已用 {human_bytes(used)}，可用 {human_bytes(free)}",
@@ -1400,7 +1535,7 @@ def render_disk_html(payload: dict[str, Any] | None = None, *, interactive: bool
         hero=f"{percent:.0f}%",
         actions=_meter(percent, tone="warn") + sort_bar()
         + f'<div class="rows" data-sortable>{"".join(rows)}</div>'
-
+        + system_block
         + (_actions(_button("刷新", "disk-open")) if interactive else ""),
         current="disk",
         subtitle="整机容量与常用目录占用（只读）",
@@ -1494,6 +1629,8 @@ def render_system_html(payload: dict[str, Any] | None = None, *, interactive: bo
 
 __all__ = [
     "render_disk_browse_html",
+    "render_large_files_html",
+    "render_large_files_result_html",
     "render_sparkle_result_html",
     "render_uninstall_cask_result_html",
     "render_orphans_html",

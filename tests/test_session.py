@@ -611,6 +611,41 @@ class UpdatesFlowTests(unittest.TestCase):
             driver.action("cancel")
             driver.join()
 
+
+    def test_large_files_flow_trashes_selected_and_rejects_forged_paths(self) -> None:
+        applied: list[list[str]] = []
+
+        def scan():
+            return {"items": [{"name": "big.bin", "path": "/home/Downloads/big.bin",
+                               "bytes": 2 * 2**20, "modified": "2026-10-01"}],
+                    "bytes": 2 * 2**20, "roots": ["~/Downloads"], "min_bytes": 1}
+
+        def trash(paths):
+            applied.append(list(paths))
+            return {"moved": [{"path": paths[0], "bytes": 2 * 2**20}], "failed": [], "count": 1,
+                    "bytes": 2 * 2**20}
+
+        with tempfile.TemporaryDirectory(prefix="session-large-", ignore_cleanup_errors=True) as tmp:
+            driver = _Driver(_deps(large_files=scan, trash_paths=trash), Path(tmp))
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+
+            driver.action("large-open")
+            page = driver.wait_page('data-stage="large"', timeout=5)
+            self.assertIn("data-large-path", page)
+
+            # 伪造路径必须被白名单拦下
+            driver.action("large-apply", {"paths": ["/home/Downloads/evil.bin"]})
+            driver.wait_page("先勾选要清理的文件", timeout=5)
+            self.assertEqual(applied, [])
+
+            driver.action("large-apply", {"paths": ["/home/Downloads/big.bin"]})
+            driver.wait_page("已移入废纸篓", timeout=5)
+            self.assertEqual(applied, [["/home/Downloads/big.bin"]])
+
+            driver.action("cancel")
+            driver.join()
+
 class NavigationTests(unittest.TestCase):
     def test_uninstall_entry_lists_apps(self) -> None:
         with tempfile.TemporaryDirectory(prefix="session-unin-") as tmp:

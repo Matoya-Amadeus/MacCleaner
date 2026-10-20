@@ -55,6 +55,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         "系统",
         (
             NavItem("disk", "磁盘", "disk-open"),
+            NavItem("large", "大文件", "large-open"),
             NavItem("system", "系统状态", "system-open"),
             NavItem("history", "清理历史", "history-open"),
         ),
@@ -93,6 +94,12 @@ _RUNTIME_JS = """
     const upBtn = document.querySelector('[data-bridge-action="updates-apply"]');
     if (upBtn && updates.length) upBtn.disabled = picked(updates) === 0;
 
+    const larges = Array.from(document.querySelectorAll('[data-large-path]'));
+    const largeLabel = document.getElementById('mc-large-count');
+    if (largeLabel && larges.length) largeLabel.textContent = '已选 ' + picked(larges) + ' / ' + larges.length;
+    const largeBtn = document.querySelector('[data-bridge-action="large-apply"]');
+    if (largeBtn && larges.length) largeBtn.disabled = picked(larges) === 0;
+
     const orphans = Array.from(document.querySelectorAll('[data-orphan-path]'));
     const orphanLabel = document.getElementById('mc-orphans-count');
     if (orphanLabel && orphans.length) {
@@ -112,6 +119,7 @@ _RUNTIME_JS = """
     sync(document.querySelector('[data-select-all-apps]'), apps);
     sync(document.querySelector('[data-select-all-updates]'), updates);
     sync(document.querySelector('[data-select-all-orphans]'), orphans);
+    sync(document.querySelector('[data-select-all-large]'), larges);
     document.querySelectorAll('[data-select-group]').forEach((master) => {
       const group = master.closest('.group');
       if (group) sync(master, Array.from(group.querySelectorAll('[data-update-id]')));
@@ -236,6 +244,12 @@ _RUNTIME_JS = """
       refreshSelection();
       return;
     }
+    const selectLarge = event.target.closest('[data-select-all-large]');
+    if (selectLarge) {
+      document.querySelectorAll('[data-large-path]').forEach(box => { box.checked = selectLarge.checked; });
+      refreshSelection();
+      return;
+    }
     const selectOrphans = event.target.closest('[data-select-all-orphans]');
     if (selectOrphans) {
       document.querySelectorAll('[data-orphan-path]').forEach(box => { box.checked = selectOrphans.checked; });
@@ -268,6 +282,12 @@ _RUNTIME_JS = """
     try { payload = button.dataset.bridgePayload ? JSON.parse(button.dataset.bridgePayload) : {}; } catch (e) {}
     // 清理的批准必须带**用户勾选的那几组**：不带就是"全部"，与界面上"我取消了几项"不符。
     if (action === 'approval') { payload.approved_ids = ids('[data-target-id]'); }
+    if (action === 'large-apply') {
+      payload.paths = Array.from(document.querySelectorAll('[data-large-path]'))
+        .filter(box => box.checked)
+        .map(box => box.dataset.largePath);
+      if (!payload.paths.length) { toast('先勾选要清理的文件'); return; }
+    }
     if (action === 'orphans-apply') {
       payload.paths = Array.from(document.querySelectorAll('[data-orphan-path]'))
         .filter(box => box.checked)
