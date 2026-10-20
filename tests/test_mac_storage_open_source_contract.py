@@ -33,7 +33,7 @@ class FakeRunner:
         argv = tuple(args)
         self.responses[argv] = subprocess.CompletedProcess(list(argv), returncode, stdout, stderr)
 
-    def run(self, args, *, capture_output=True, text=True, check=False, cwd=None):  # noqa: ANN001
+    def run(self, args, *, capture_output=True, text=True, check=False, cwd=None, **kwargs):  # noqa: ANN001
         argv = tuple(args)
         if argv in self.responses:
             return self.responses[argv]

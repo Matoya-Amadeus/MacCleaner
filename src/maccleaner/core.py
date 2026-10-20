@@ -948,18 +948,72 @@ def plan_item_to_dict(item: PlanItem) -> dict[str, Any]:
     }
 
 
+# 命令类目标（brew / docker / xcrun / flutter）的**硬超时**。
+# 2026-10-20 用户报"点清理一直转"：`brew cleanup` 会自动更新（走网络），
+# 网络一卡就永久阻塞在 subprocess 里，界面停在"正在清理"——超时是必须的兜底。
+COMMAND_TIMEOUT_SECONDS = 600
+
+
+def command_env() -> dict[str, str]:
+    """命令目标的子进程环境：关掉会自动联网/等待输入的开关。
+
+    - `HOMEBREW_NO_AUTO_UPDATE`：brew 默认会在每条命令前自动 update（可能几分钟甚至卡住）；
+    - `HOMEBREW_NO_ANALYTICS` / `NO_ENV_HINTS`：少联网、少噪声；
+    - `GIT_TERMINAL_PROMPT=0`：brew tap 走 git 时不要把进程卡在"输入用户名"；
+    - `DOCKER_CLI_HINTS=false`：docker 首次运行不要提示。
+    """
+    env = dict(os.environ)
+    env.update(
+        {
+            "HOMEBREW_NO_AUTO_UPDATE": "1",
+            "HOMEBREW_NO_ANALYTICS": "1",
+            "HOMEBREW_NO_ENV_HINTS": "1",
+            "GIT_TERMINAL_PROMPT": "0",
+            "DOCKER_CLI_HINTS": "false",
+        }
+    )
+    return env
+
+
+class CommandTimeoutResult:
+    """`subprocess.TimeoutExpired` 的替代返回值，形状与 `CompletedProcess` 一致。"""
+
+    returncode = 124
+    stdout = ""
+    stderr = ""
+
+    def __init__(self, timeout: float) -> None:
+        self.stdout = ""
+        self.stderr = f"timeout after {int(timeout)}s"
+
+
 class CommandRunner:
     def which(self, name: str) -> str | None:  # pragma: no cover - overridden by fake runner in tests
         return shutil.which(name)
 
-    def run(self, args, *, capture_output=True, text=True, check=False, cwd=None):  # noqa: ANN001
-        return subprocess.run(
-            list(args),
-            capture_output=capture_output,
-            text=text,
-            check=check,
-            cwd=cwd,
-        )
+    def run(  # noqa: ANN001
+        self,
+        args,
+        *,
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=None,
+        timeout: float | None = None,
+        env: dict[str, str] | None = None,
+    ):
+        try:
+            return subprocess.run(
+                list(args),
+                capture_output=capture_output,
+                text=text,
+                check=check,
+                cwd=cwd,
+                timeout=timeout,
+                env=env,
+            )
+        except subprocess.TimeoutExpired:
+            return CommandTimeoutResult(timeout or 0)
 
 
 class ScanCache:
@@ -1298,7 +1352,7 @@ class StorageManager:
                 required_tools=("xcrun",),
                 command=("xcrun", "simctl", "delete", "unavailable"),
                 dry_run_command=("xcrun", "simctl", "list", "devices"),
-                metadata={"command_label": "xcrun simctl delete unavailable"},
+                metadata={"timeout": 180, "command_label": "xcrun simctl delete unavailable"},
             ),
             make("playwright-cache", "Playwright cache", "browser-cache", "purge_tree", [home / "Library" / "Caches" / "ms-playwright"]),
             make("npm-cache", "npm cache", "package-cache", "purge_tree", [home / ".npm" / "_cacache"]),
@@ -1330,7 +1384,8 @@ class StorageManager:
                 required_tools=("brew",),
                 command=("brew", "cleanup", "--prune", str(self.context.days_to_keep)),
                 dry_run_command=("brew", "cleanup", "--dry-run", "--prune", str(self.context.days_to_keep)),
-                metadata={"command_label": "brew cleanup"},
+                # brew 在大缓存上可能跑几分钟，但不该无限等。
+                metadata={"command_label": "brew cleanup", "timeout": 300},
             ),
             make(
                 "docker-prune",
@@ -1344,7 +1399,7 @@ class StorageManager:
                 required_tools=("docker",),
                 command=("docker", "system", "prune", "-f"),
                 dry_run_command=("docker", "system", "df"),
-                metadata={"command_label": "docker system prune -f"},
+                metadata={"command_label": "docker system prune -f", "timeout": 600},
             ),
             make(
                 "trash",
@@ -2053,8 +2108,17 @@ class StorageManager:
         cmd = target.command
         if not cmd:
             return 0, ""
-        proc = self.runner.run(list(cmd), cwd=str(target.cwd) if target.cwd else None)
+        timeout = float(target.metadata.get("timeout") or COMMAND_TIMEOUT_SECONDS)
+        proc = self.runner.run(
+            list(cmd),
+            cwd=str(target.cwd) if target.cwd else None,
+            timeout=timeout,
+            env=command_env(),
+        )
         output = (proc.stdout or "").strip()
+        if proc.returncode == 124:
+            # 超时：交给上层标 failed，别让界面永远停在"正在清理"。
+            return 0, f"command failed (timeout {int(timeout)}s)"
         if proc.returncode != 0:
             return 0, output or f"command failed ({proc.returncode})"
         return 0, output
@@ -2145,7 +2209,12 @@ class StorageManager:
                     item.reason = "missing tool: flutter"
                     continue
                 if should_apply:
-                    proc = self.runner.run(list(target.command), cwd=str(target.cwd) if target.cwd else None)
+                    proc = self.runner.run(
+                        list(target.command),
+                        cwd=str(target.cwd) if target.cwd else None,
+                        timeout=COMMAND_TIMEOUT_SECONDS,
+                        env=command_env(),
+                    )
                     item.command_output = (proc.stdout or "").strip()
                     if proc.returncode != 0:
                         item.reason = f"flutter clean failed ({proc.returncode})"

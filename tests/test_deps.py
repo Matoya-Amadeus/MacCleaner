@@ -715,3 +715,48 @@ class SystemSizeTests(unittest.TestCase):
         self.assertFalse(data["admin"], "没授权时必须标 admin=False")
         self.assertIn("未授权", str(data["note"]))
 
+class CommandTimeoutTests(unittest.TestCase):
+    """命令目标必须有硬超时（2026-10-20 用户报"点清理一直转"）。
+
+    真因：`CommandRunner.run` 完全没设 timeout，而 `brew cleanup` 默认会先自动 update
+    （走网络），网络一卡就永久阻塞在 subprocess，界面停在"正在清理"。
+    """
+
+    def test_runner_returns_124_instead_of_blocking(self) -> None:
+        from maccleaner.core import CommandRunner
+
+        result = CommandRunner().run(["/bin/sleep", "5"], timeout=0.2)
+        self.assertEqual(result.returncode, 124, "超时必须返回 124，而不是一直等")
+        self.assertIn("timeout", str(result.stderr))
+
+    def test_command_env_disables_homebrew_auto_update(self) -> None:
+        from maccleaner.core import command_env
+
+        env = command_env()
+        self.assertEqual(env["HOMEBREW_NO_AUTO_UPDATE"], "1", "brew 自动更新会把清理卡住")
+        self.assertEqual(env["GIT_TERMINAL_PROMPT"], "0", "git 不能卡在用户名输入")
+
+    def test_execute_command_reports_timeout_as_failure(self) -> None:
+        from maccleaner import core as core_module
+
+        original = core_module.COMMAND_TIMEOUT_SECONDS
+        core_module.COMMAND_TIMEOUT_SECONDS = 0.2
+        try:
+            with tempfile.TemporaryDirectory(prefix="timeout-") as tmp:
+                home = Path(tmp)
+                manager = core_module.StorageManager(
+                    core_module.StorageContext(home=home, root=home, apply=True, dry_run=False)
+                )
+                target = core_module.CleanupTarget(
+                    target_id="slow", name="Slow", category="test", kind="command",
+                    paths=(home,), risk="low", recoverable=True, requires_confirmation=False,
+                    required_tools=(), command=("/bin/sleep", "5"), dry_run_command=(),
+                    cwd=None, min_age_days=7, source_layer="runtime_artifact",
+                    protection="normal", rollback_strategy="none",
+                    validation_patterns=(), metadata={},
+                )
+                _, output = manager._execute_command(target)
+        finally:
+            core_module.COMMAND_TIMEOUT_SECONDS = original
+        self.assertIn("timeout", output, f"超时要能被上层识别成失败：{output}")
+
