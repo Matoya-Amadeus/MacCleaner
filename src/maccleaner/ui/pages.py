@@ -473,6 +473,42 @@ def _present_review_groups(
     return [(key, label) for key, label, _hint, _categories in _REVIEW_GROUPS if key in present]
 
 
+def _review_rail(
+    groups: list[tuple[str, str]], candidates: list[dict[str, Any]], system: dict[str, Any] | None
+) -> str:
+    """左栏：固定的分类入口（图标 + 名称 + 数量/体积）。
+
+    为什么要左栏（2026-10-20）：筛选胶囊放上面时，滚动之后要回到顶部才能换类别；
+    竖在左边就一直在。右栏只负责滚动，两栏各干一件事。
+    """
+    if len(groups) < 2:
+        return ""
+    sizes: dict[str, tuple[int, int]] = {}
+    for candidate in candidates:
+        key = _review_group(candidate)
+        count, total = sizes.get(key, (0, 0))
+        sizes[key] = (count + 1, total + int(candidate.get("allocated_bytes", 0) or 0))
+    if system and (system.get("sizes") or {}):
+        sizes["system"] = (
+            len(system["sizes"]),
+            sum(int(value or 0) for value in system["sizes"].values()),
+        )
+
+    buttons = [
+        '<button class="rail-item is-on" type="button" data-filter-group="all">'
+        f'{_icon("box")}<span class="rail-name">全部</span></button>'
+    ]
+    for key, label in groups:
+        count, total = sizes.get(key, (0, 0))
+        buttons.append(
+            f'<button class="rail-item" type="button" data-filter-group="{key}">'
+            f'{_icon(_GROUP_ICONS.get(key, "box"))}'
+            f'<span class="rail-name">{html.escape(label)}</span>'
+            f'<span class="rail-meta">{count} · {human_bytes(total)}</span></button>'
+        )
+    return '<aside class="rail" aria-label="按类别筛选">' + "".join(buttons) + "</aside>"
+
+
 def render_review_html(
     payload: dict[str, Any],
     *,
@@ -536,8 +572,8 @@ def render_review_html(
             if candidates and interactive
             else ""
         )
-        + _review_filter_bar(_present_review_groups(candidates, payload.get("system")))
     )
+    groups = _present_review_groups(candidates, payload.get("system"))
     return state_page(
         {"message": "", "detail": ""},
         stage="review",
@@ -546,6 +582,9 @@ def render_review_html(
         with_header=False,
         actions=(
             empty
+            + '<div class="review-split">'
+            + _review_rail(groups, candidates, payload.get("system"))
+            + '<div class="review-detail">'
             + (f'<div class="review-head">{head}</div>' if head else "")
             + _review_groups_html(
                 candidates,
@@ -554,6 +593,7 @@ def render_review_html(
                 preselected=frozenset(str(x) for x in (preselected or ())),
             )
             + actions
+            + "</div></div>"
         ),
         current="clean",
     )

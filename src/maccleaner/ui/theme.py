@@ -225,14 +225,27 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);height:100vh
   box-shadow:0 0 0 1px var(--line);background:var(--surface)}
 .ico-stack img:first-child{margin-left:0}
 
-/* 筛选标签（审阅页）：一行小胶囊，替代原来的排序条。 */
-.chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 var(--sp-3)}
-.chip{appearance:none;border:1px solid var(--line-strong);background:var(--surface);
-  color:var(--text-2);font:500 var(--fs-meta)/1 var(--font);padding:6px 10px;
-  border-radius:999px;cursor:pointer}
-.chip:hover{background:var(--surface-2);color:var(--text)}
-.chip.is-on{background:var(--accent-soft);border-color:color-mix(in srgb, var(--accent) 45%, transparent);
-  color:var(--accent);font-weight:600}
+/* 审阅页双栏（2026-10-20）：左栏固定分类，右栏滚动明细。 */
+.review-split{display:grid;grid-template-columns:224px minmax(0,1fr);gap:var(--sp-4);align-items:start}
+.review-detail{min-width:0}
+.rail{position:sticky;top:0;display:flex;flex-direction:column;gap:2px;
+  padding-right:var(--sp-3);border-right:1px solid var(--line)}
+.rail-item{display:flex;align-items:center;gap:7px;width:100%;text-align:left;
+  appearance:none;border:0;background:transparent;color:var(--text-2);cursor:pointer;
+  padding:7px 8px;border-radius:var(--r-control);font:500 var(--fs-meta)/1.2 var(--font)}
+.rail-item:hover{background:var(--surface-2);color:var(--text)}
+.rail-item.is-on{background:var(--accent-soft);color:var(--accent)}
+.rail-item .rail-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rail-item .rail-meta{font-size:var(--fs-label);color:var(--muted);font-weight:400;
+  flex:none;font-variant-numeric:tabular-nums}
+/* 窄窗口（< 980px）时左栏横过来，避免把明细挤成一条线。 */
+@media(max-width:980px){
+  .review-split{grid-template-columns:1fr}
+  .rail{position:static;flex-direction:row;overflow-x:auto;border-right:0;
+    border-bottom:1px solid var(--line);padding:0 0 var(--sp-2)}
+  .rail-item{width:auto;white-space:nowrap}
+  .rail-item .rail-meta{display:none}
+}
 
 /* 审阅页头部固定：全选 + 筛选 + 已选空间，滚动时不消失（2026-10-20 用户要求）。 */
 .review-head{position:sticky;top:0;z-index:8;background:var(--surface);

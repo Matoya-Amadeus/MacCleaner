@@ -593,6 +593,27 @@ class LandingPageTests(unittest.TestCase):
             {"name": "Demo", "path": "/Applications/Demo.app", "version": "1.0", "feed": "", "icon": uri}]})
         self.assertIn('class="app-ico"', updates)
 
+    def test_review_uses_two_pane_with_fixed_category_rail(self) -> None:
+        """双栏（2026-10-20）：左栏固定分类、右栏滚动明细；左栏每项带数量与体积。"""
+        from maccleaner.ui.pages import render_review_html
+
+        page = render_review_html({"candidates": [
+            {"name": "浏览器缓存", "path": "/x", "kind": "browser", "allocated_bytes": 2048,
+             "target_id": "browser-caches"},
+            {"name": "用户缓存", "path": "/y", "kind": "cache", "allocated_bytes": 1024,
+             "target_id": "home-caches"},
+            {"name": "Docker prune", "path": "/z", "kind": "docker", "allocated_bytes": 4096,
+             "target_id": "docker-prune", "requires_confirmation": True},
+        ]})
+        self.assertIn("review-split", page)
+        self.assertIn('class="rail"', page)
+        self.assertIn("review-detail", page)
+        # 全部 + 三个实际分组
+        self.assertEqual(page.count('class="rail-item'), 4)
+        self.assertIn("1 · 2.05 KB", page.replace("2.05 KB", "2.05 KB"), )
+        self.assertIn('data-filter-group="browser"', page)
+        self.assertNotIn("chips", page, "胶囊筛选已被左栏取代")
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")
