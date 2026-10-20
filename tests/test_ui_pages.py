@@ -512,6 +512,25 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn("目录占用", page)
         self.assertIn("可勾选", page)
 
+    def test_review_uses_filter_chips_not_sort_bar(self) -> None:
+        """审阅页用「筛选」而不是排序（2026-10-20 用户要求：排序没用）。
+
+        同时确认副标题与右上角计数已移除——那两句对判断"该不该清"没有帮助。
+        """
+        from maccleaner.ui.pages import render_review_html
+
+        page = render_review_html({"candidates": [
+            {"name": "Home caches", "path": "/x", "kind": "cache", "allocated_bytes": 1,
+             "target_id": "home-caches"},
+            {"name": "浏览器缓存", "path": "/y", "kind": "browser", "allocated_bytes": 2,
+             "target_id": "browser-caches"},
+        ]})
+        self.assertIn('data-filter-group="all"', page)
+        self.assertIn('data-filter-group="browser"', page)
+        self.assertNotIn('data-sort="', page, "排序按钮应已移除")
+        self.assertNotIn("只读预览", page)
+        self.assertNotIn("组 · 可勾选", page)
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")

@@ -356,6 +356,35 @@ def _review_groups_html(
     return "".join(blocks)
 
 
+def _review_filter_bar(groups: list[tuple[str, str]]) -> str:
+    """审阅页的筛选标签：「全部」+ 实际出现的分组名。
+
+    为什么不用排序（2026-10-20 用户明确要求）：清理清单本来就按体积/分组排好了，
+    排序按钮对"我该不该清这一组"没有帮助，只占地方。筛选才有用——只想看浏览器或开发工具时。
+    """
+    if len(groups) < 2:
+        return ""
+    chips = ['<button class="chip is-on" type="button" data-filter-group="all">全部</button>']
+    chips += [
+        f'<button class="chip" type="button" data-filter-group="{html.escape(key)}">'
+        f"{html.escape(label)}</button>"
+        for key, label in groups
+    ]
+    return '<div class="chips" role="tablist" aria-label="按类型筛选">' + "".join(chips) + "</div>"
+
+
+def _present_review_groups(
+    candidates: list[dict[str, Any]], system: dict[str, Any] | None
+) -> list[tuple[str, str]]:
+    """返回页面上**真实存在**的分组 (key, label)，顺序与展示顺序一致。"""
+    present: set[str] = set()
+    for candidate in candidates:
+        present.add(_review_group(candidate))
+    if (system or {}).get("sizes"):
+        present.add("system")
+    return [(key, label) for key, label, _hint, _categories in _REVIEW_GROUPS if key in present]
+
+
 def render_review_html(
     payload: dict[str, Any], *, interactive: bool = True, notice: str = ""
 ) -> str:
@@ -419,7 +448,7 @@ def render_review_html(
                 if candidates and interactive
                 else ""
             )
-            + sort_bar()
+            + _review_filter_bar(_present_review_groups(candidates, payload.get("system")))
             + _review_groups_html(
                 candidates,
                 interactive=interactive and bool(candidates),
@@ -428,8 +457,6 @@ def render_review_html(
             + actions
         ),
         current="clean",
-        subtitle="只读预览：点【开始清理】之前不会动任何文件" if candidates else "",
-        meta=f"{len(candidates)} 组 · 可勾选 {human_bytes(selectable_total)}" if candidates else "",
     )
 
 

@@ -209,6 +209,15 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);height:100vh
 .group > summary:hover{background:color-mix(in srgb, var(--surface-2) 70%, var(--surface))}
 .group > summary .group-name{flex:1;letter-spacing:.02em}
 .group > summary .meta{color:var(--muted);font-weight:400}
+/* 筛选标签（审阅页）：一行小胶囊，替代原来的排序条。 */
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 var(--sp-3)}
+.chip{appearance:none;border:1px solid var(--line-strong);background:var(--surface);
+  color:var(--text-2);font:500 var(--fs-meta)/1 var(--font);padding:6px 10px;
+  border-radius:999px;cursor:pointer}
+.chip:hover{background:var(--surface-2);color:var(--text)}
+.chip.is-on{background:var(--accent-soft);border-color:color-mix(in srgb, var(--accent) 45%, transparent);
+  color:var(--accent);font-weight:600}
+
 /* 审阅页分组（2026-10-20）：组头略大、组内缩进，形成"组 > 条目"的层级。 */
 .group.review > summary{padding:9px 12px;font-size:var(--fs-summary)}
 .group.review .group-hint{margin:4px 0 8px;padding-left:12px}

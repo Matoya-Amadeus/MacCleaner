@@ -487,6 +487,19 @@ _RUNTIME_JS = """
     });
   });
 
+  // 筛选标签：只显示选中的分组；「全部」恢复。
+  document.addEventListener('click', (event) => {
+    const chip = event.target.closest('[data-filter-group]');
+    if (!chip) return;
+    const key = chip.dataset.filterGroup;
+    document.querySelectorAll('[data-group-key]').forEach((group) => {
+      group.style.display = (key === 'all' || group.dataset.groupKey === key) ? '' : 'none';
+    });
+    document.querySelectorAll('[data-filter-group]').forEach((other) => {
+      other.classList.toggle('is-on', other === chip);
+    });
+  });
+
   document.addEventListener('click', closeMenu);
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenu(); });
 
