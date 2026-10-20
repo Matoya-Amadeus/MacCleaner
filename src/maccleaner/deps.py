@@ -172,6 +172,11 @@ def history_report(
 SCAN_CACHE_SECONDS = 300
 
 
+# 扫描缓存的结构版本：新增/删除清理目标时必须 +1，否则旧缓存里根本没有新目标
+# （2026-10-20 实测：加了 browser-caches 后，缓存仍返回旧报告，页面上永远看不到浏览器组）。
+SCAN_CACHE_VERSION = 2
+
+
 def _cache_path(state_root: Path) -> Path:
     return state_root / "scan-cache.json"
 
@@ -234,7 +239,11 @@ def scan_report(
         if isinstance(entry, dict):
             age = time.time() - float(entry.get("scanned_at") or 0)
             paths = entry.get("paths") or []
-            if age <= ttl_seconds and _signature(paths, home) == entry.get("signature"):
+            if (
+                age <= ttl_seconds
+                and int(entry.get("version") or 0) == SCAN_CACHE_VERSION
+                and _signature(paths, home) == entry.get("signature")
+            ):
                 report = entry.get("report") or {}
                 if isinstance(report, dict):
                     return {**report, "scan_cached_at": float(entry.get("scanned_at") or 0)}
@@ -258,6 +267,7 @@ def scan_report(
             "scanned_at": time.time(),
             "paths": _watched_paths(report),
             "signature": _signature(_watched_paths(report), home),
+            "version": SCAN_CACHE_VERSION,
             "report": report,
         }
         try:
@@ -1052,6 +1062,26 @@ def system_sizes(cache_path: Path | None = None, *, ttl: int = SYSTEM_SIZE_TTL) 
     }
 
 
+def system_sizes_cached(cache_path: Path | None, *, ttl: int = SYSTEM_SIZE_TTL) -> dict[str, Any]:
+    """**只读缓存**的系统目录体积：不发 `du`，不弹授权。
+
+    为什么不在页面加载时跑 `du`（2026-10-20 真机自测）：首次进磁盘页同步跑
+    `du -sk /private/var/folders`，磁盘一忙就会阻塞 20 多秒（实测 8s+15s 两个超时叠加），
+    页面像卡死。测量只该发生在用户**点击授权按钮**那一刻。
+    """
+    if cache_path is None:
+        return {}
+    try:
+        cached = json.loads(Path(cache_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(cached, dict):
+        return {}
+    if time.time() - float(cached.get("at") or 0) > ttl:
+        return {}
+    return {**cached, "cached": True}
+
+
 def system_sizes_admin(cache_path: Path | None = None) -> dict[str, Any]:
     """弹**一次**管理员授权，读准系统目录体积（只读，不删任何文件）。
 
@@ -1335,6 +1365,9 @@ def build_deps(
         app_version=app_version,
         large_files=lambda: large_files(home_path),
         trash_paths=lambda paths: trash_paths(home_path, paths),
+        system_sizes_cached=lambda: system_sizes_cached(
+            (state_path / "system-sizes.json") if state_path else None
+        ),
         system_sizes=lambda: system_sizes(
             (state_path / "system-sizes.json") if state_path else None
         ),

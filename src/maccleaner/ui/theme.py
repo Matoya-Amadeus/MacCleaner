@@ -209,6 +209,12 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);height:100vh
 .group > summary:hover{background:color-mix(in srgb, var(--surface-2) 70%, var(--surface))}
 .group > summary .group-name{flex:1;letter-spacing:.02em}
 .group > summary .meta{color:var(--muted);font-weight:400}
+/* 审阅页分组（2026-10-20）：组头略大、组内缩进，形成"组 > 条目"的层级。 */
+.group.review > summary{padding:9px 12px;font-size:var(--fs-summary)}
+.group.review .group-hint{margin:4px 0 8px;padding-left:12px}
+.group.review .rows{padding-left:8px}
+.group.review[data-group-key="system"] > summary{color:var(--muted)}
+
 /* 组内第一行不画分隔线：组头已经是边界，再画一条会多出一道"假边界"。 */
 .group .rows .row:first-child{border-top:0}
 .row-actions{display:flex;align-items:center;gap:10px;flex:none}

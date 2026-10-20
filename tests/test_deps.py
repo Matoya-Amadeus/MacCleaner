@@ -760,3 +760,48 @@ class CommandTimeoutTests(unittest.TestCase):
             core_module.COMMAND_TIMEOUT_SECONDS = original
         self.assertIn("timeout", output, f"超时要能被上层识别成失败：{output}")
 
+class BrowserCacheTargetTests(unittest.TestCase):
+    """浏览器缓存目标（2026-10-20）：整目录搬走、不看保留期。
+
+    为什么：浏览器每天都重写缓存，按 7 天保留期筛永远是 0（本机实测 10,417 个文件
+    全部在 7 天内），功能等于不存在。
+    """
+
+    def test_target_moves_whole_paths_and_ignores_retention(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="browsercache-") as tmp:
+            home = Path(tmp)
+            cache = home / "Library" / "Caches" / "Firefox" / "Profiles" / "x" / "cache2"
+            cache.mkdir(parents=True)
+            (cache / "entry.bin").write_bytes(b"z" * 1024)   # 刚写入（未过保留期）
+
+            from maccleaner.core import StorageContext, StorageManager
+            from maccleaner.policy import discover_targets
+
+            manager = StorageManager(StorageContext(home=home, root=home, state_root=None))
+
+            targets = {target.target_id: target for target in discover_targets(manager)}
+            self.assertIn("browser-caches", targets)
+            target = targets["browser-caches"]
+            self.assertTrue(target.metadata.get("move_whole_paths"), "必须整目录搬，避免 1 万次移动")
+            self.assertEqual(target.min_age_days, 0, "浏览器缓存不该受保留期限制")
+
+            scan = manager.scan_targets([target])[0]
+            self.assertGreater(scan.eligible_bytes, 0, "刚写入的缓存也要能被统计")
+
+    def test_scan_cache_version_invalidates_old_cache(self) -> None:
+        """缓存结构版本不一致必须重扫（否则新目标永远不出现）。"""
+        from maccleaner.deps import SCAN_CACHE_VERSION, scan_report
+
+        with tempfile.TemporaryDirectory(prefix="scancache-") as tmp:
+            home = Path(tmp) / "home"
+            (home / "Library" / "Caches").mkdir(parents=True)
+            state = Path(tmp) / "state"
+            state.mkdir()
+            (state / "scan-cache.json").write_text(
+                json.dumps({"scanned_at": time.time(), "version": SCAN_CACHE_VERSION - 1,
+                            "signature": "x", "paths": [], "report": {"plan_items": []}}),
+                encoding="utf-8",
+            )
+            report = scan_report(home=home, root=home, state_root=state)
+        self.assertFalse(report.get("scan_cached_at"), "版本不一致时必须重扫")
+

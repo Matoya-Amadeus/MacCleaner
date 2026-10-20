@@ -76,6 +76,12 @@ _CATEGORY_LABEL = {
     "docker": "Docker 数据",
     "user-files": "你的文件",
     "simulator": "模拟器数据",
+    "browser": "浏览器",
+    "browser-cache": "浏览器组件",
+    "package-cache": "包管理器缓存",
+    "android": "Android 构建",
+    "ios": "iOS 构建",
+    "flutter": "Flutter 构建",
 }
 
 
@@ -262,6 +268,94 @@ def render_progress_html(payload: dict[str, Any] | None = None, *, stage: str = 
     )
 
 
+# 按"谁产生"分组（学 Mole 的分类法）：用户不需要知道 category，
+# 只需要知道"这是谁留下的、删了会怎样"。
+_REVIEW_GROUPS: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
+    ("system", "系统数据", "需管理员权限，本工具只测量不删除", ()),
+    ("browser", "浏览器", "浏览器留下的缓存（不含 Cookies / 登录数据）；默认不勾", ("browser",)),
+    ("app", "App 缓存与日志", "应用运行时生成，删了会重建", ("cache", "logs")),
+    ("dev", "开发工具", "Xcode / 包管理器 / 编辑器缓存", (
+        "xcode", "android", "ios", "ide", "package-cache", "homebrew", "flutter", "browser-cache",
+    )),
+    ("containers", "容器与虚拟机", "Docker 等运行时数据，删除后需要重新拉取", ("docker",)),
+    ("user", "你的文件", "Downloads、安装包、iOS 备份——删前自己确认", ("user-files",)),
+    ("trash", "废纸篓", "清空后不可恢复", ("__trash__",)),
+)
+
+
+def _review_group(candidate: dict[str, Any]) -> str:
+    if str(candidate.get("target_id") or "") == "trash":
+        return "trash"
+    category = str(candidate.get("kind") or "")
+    for key, _label, _hint, categories in _REVIEW_GROUPS:
+        if category in categories:
+            return key
+    return "app"
+
+
+def _review_system_html(system: dict[str, Any] | None, *, interactive: bool) -> str:
+    """系统数据组：只读（root 域不删），展开能看到每个目录的体积。"""
+    payload = system or {}
+    sizes = payload.get("sizes") or {}
+    if not sizes:
+        return ""
+    rows = "".join(
+        '<div class="row"><div style="min-width:0;flex:1">'
+        f'<strong>{html.escape(str(path))}</strong>'
+        f'<div class="meta">{"已授权读取（只测量）" if payload.get("admin") else "未授权：可能读不全"}</div></div>'
+        f'<span class="meta value">{human_bytes(int(size or 0))}</span></div>'
+        for path, size in sizes.items()
+    )
+    total = sum(int(value or 0) for value in sizes.values())
+    button = _button("用管理员授权测量一次（只读）", "system-sizes", ghost=True) if interactive else ""
+    return (
+        '<details class="group review" data-group-key="system">'
+        "<summary>"
+        '<span class="group-name">系统数据</span>'
+        f'<span class="meta">{len(sizes)} 项 · {human_bytes(total)} · 只测量不删除</span>'
+        "</summary>"
+        '<p class="group-hint meta">/Library/Caches、/var/log 属于 root：'
+        "不授权读不全，本工具不会删除它们。</p>"
+        f'<div class="rows">{rows}</div>{button}'
+        "</details>"
+    )
+
+
+def _review_groups_html(
+    candidates: list[dict[str, Any]],
+    *,
+    interactive: bool,
+    system: dict[str, Any] | None = None,
+) -> str:
+    """把候选按组折叠：每组一个 details，展开就是这一组的具体条目。"""
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    for candidate in candidates:
+        buckets.setdefault(_review_group(candidate), []).append(candidate)
+
+    blocks: list[str] = []
+    for key, label, hint, _categories in _REVIEW_GROUPS:
+        if key == "system":
+            block = _review_system_html(system, interactive=interactive)
+            if block:
+                blocks.append(block)
+            continue
+        items = buckets.get(key) or []
+        if not items:
+            continue
+        size = sum(int(item.get("allocated_bytes", 0) or 0) for item in items)
+        blocks.append(
+            f'<details class="group review" open data-group-key="{key}">'
+            "<summary>"
+            f'<span class="group-name">{label}</span>'
+            f'<span class="meta">{len(items)} 项 · {human_bytes(size)}</span>'
+            "</summary>"
+            f'<p class="group-hint meta">{hint}</p>'
+            f'<div class="rows">{"".join(_rows(items, selectable=interactive))}</div>'
+            "</details>"
+        )
+    return "".join(blocks)
+
+
 def render_review_html(
     payload: dict[str, Any], *, interactive: bool = True, notice: str = ""
 ) -> str:
@@ -272,12 +366,19 @@ def render_review_html(
     """
     candidates = [item for item in (payload.get("candidates") or []) if isinstance(item, dict)]
     total = sum(int(item.get("allocated_bytes", 0) or 0) for item in candidates)
+    selectable_total = sum(
+        int(item.get("allocated_bytes", 0) or 0)
+        for item in candidates
+        if _review_group(item) != "browser" and not item.get("requires_confirmation")
+    )
     # 空结果时不写 state-head/state-msg：结论交给下面的 empty 块，否则同一句话说三遍
     # （2026-10-19 截图里一眼看到三处重复）。
     body = "找到可清理的内容" if candidates else ""
     detail = (
-        f"共 {len(candidates)} 组候选，可恢复 {human_bytes(total)}；"
-        "点【开始清理】前会再让你确认一次，文件一律移入废纸篓（可恢复）。"
+        f"共 {len(candidates)} 组候选，目录占用 {human_bytes(total)}；"
+        f"其中可勾选 {human_bytes(selectable_total)}"
+        "（浏览器与系统数据默认不选，高风险项在确认页单独确认）。"
+        "文件一律移入废纸篓，可从废纸篓恢复。"
         if candidates
         else ""   # 空结果时这句交给 empty 块，避免同一屏说两遍
     )
@@ -312,18 +413,23 @@ def render_review_html(
             + (f'<p class="pill warn" role="status">{html.escape(notice)}</p>' if notice else "")
             + (
                 '<label class="row opt select-all"><input type="checkbox" data-select-all>'
-                '<div><strong>全选（不含高风险）</strong><div class="meta">默认不勾；高风险项在确认页单独确认</div></div>'
-                '<span class="meta value">' + human_bytes(total) + "</span></label>"
+                '<div><strong>全选（不含浏览器 / 系统数据）</strong>'
+                '<div class="meta">默认不勾；高风险项在确认页单独确认</div></div>'
+                '<span class="meta value">' + human_bytes(selectable_total) + "</span></label>"
                 if candidates and interactive
                 else ""
             )
             + sort_bar()
-            + f'<div class="rows" data-sortable>{_rows(candidates, selectable=interactive and bool(candidates))}</div>'
+            + _review_groups_html(
+                candidates,
+                interactive=interactive and bool(candidates),
+                system=payload.get("system"),
+            )
             + actions
         ),
         current="clean",
         subtitle="只读预览：点【开始清理】之前不会动任何文件" if candidates else "",
-        meta=f"{len(candidates)} 组 · {human_bytes(total)}" if candidates else "",
+        meta=f"{len(candidates)} 组 · 可勾选 {human_bytes(selectable_total)}" if candidates else "",
     )
 
 

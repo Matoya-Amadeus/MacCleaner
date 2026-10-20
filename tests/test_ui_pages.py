@@ -481,6 +481,37 @@ class LandingPageTests(unittest.TestCase):
         self.assertNotIn("移入废纸篓", block, "系统级目录不该出现删除动作")
         self.assertNotIn('data-bridge-action="clean', block)
 
+    def test_review_page_groups_by_producer_and_keeps_browser_unchecked(self) -> None:
+        """审阅页按"谁产生"分组（2026-10-20）；浏览器/系统数据默认不勾。"""
+        from maccleaner.ui.pages import render_review_html
+
+        page = render_review_html({
+            "candidates": [
+                {"name": "Home caches", "path": "/Users/x/Library/Caches", "kind": "cache",
+                 "allocated_bytes": 100, "target_id": "home-caches"},
+                {"name": "浏览器缓存", "path": "/Users/x/Library/Caches/Firefox", "kind": "browser",
+                 "allocated_bytes": 200, "target_id": "browser-caches"},
+                {"name": "Xcode DerivedData", "path": "/Users/x/Library/Developer/Xcode/DerivedData",
+                 "kind": "xcode", "allocated_bytes": 300, "target_id": "xcode-derived-data"},
+                {"name": "Docker prune", "path": "/Users/x/Library/Containers/com.docker.docker",
+                 "kind": "docker", "allocated_bytes": 400, "target_id": "docker-prune",
+                 "risk": "high", "requires_confirmation": True},
+            ],
+            "system": {"admin": False, "sizes": {"/Library/Logs": 1024}},
+        })
+        self.assertIn('data-group-key="browser"', page)
+        self.assertIn('data-group-key="system"', page)
+        self.assertIn('data-group-key="dev"', page)
+        self.assertIn('data-group-key="containers"', page)
+        # 系统数据组默认折叠且没有勾选框
+        system_block = page.split('data-group-key="system"')[1].split("</details>")[0]
+        self.assertNotIn("data-target-id", system_block, "系统数据只读，不能勾选")
+        # 浏览器默认不勾
+        self.assertNotRegex(page, r'data-target-id="browser-caches"[^>]*checked')
+        # 顶部口径：目录占用 vs 可勾选
+        self.assertIn("目录占用", page)
+        self.assertIn("可勾选", page)
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")

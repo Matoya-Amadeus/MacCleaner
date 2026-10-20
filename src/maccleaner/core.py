@@ -1414,6 +1414,26 @@ class StorageManager:
                 validation_patterns=("~/.Trash",),
             ),
             make(
+                "browser-caches",
+                "浏览器缓存",
+                "browser",
+                "purge_tree",
+                [
+                    home / "Library" / "Caches" / "Firefox",
+                    home / "Library" / "Caches" / "Google" / "Chrome",
+                    home / "Library" / "Caches" / "com.apple.Safari",
+                ],
+                risk="low",
+                # 浏览器缓存**每天都重写**：按 7 天保留期筛会永远是 0（本机实测 10,417 个文件
+                # 全部在 7 天内）。缓存删了会自动重建，所以整目录搬走、不看保留期。
+                min_age_days=0,
+                source_layer="runtime_artifact",
+                metadata={
+                    "label": "浏览器缓存（不含 Cookies / 登录数据）",
+                    "move_whole_paths": True,
+                },
+            ),
+            make(
                 "installers",
                 "安装包（.dmg / .pkg）",
                 "user-files",

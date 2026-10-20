@@ -81,6 +81,8 @@ class SessionDeps:
     trash_paths: Callable[[list[str]], dict[str, Any]] | None = None
     # 系统级目录体积：只测量（第二次可走一次性授权）。
     system_sizes: Callable[[], dict[str, Any]] | None = None
+    # 只读缓存（页面加载用）：不发 du、不弹授权。
+    system_sizes_cached: Callable[[], dict[str, Any]] | None = None
     system_sizes_admin: Callable[[], dict[str, Any]] | None = None
     # 只读的"看一眼"页面（磁盘/系统）。
     disk: Callable[[], dict[str, Any]] = lambda: {}
@@ -329,6 +331,9 @@ class InteractiveSession:
                 notice = ""
                 selected: list[dict[str, Any]] = []
                 while True:
+                    reader = getattr(self.deps, "system_sizes_cached", None)
+                    if reader is not None:
+                        payload["system"] = self._safe(reader, default={})
                     self._serve("review", pages.render_review_html(payload, notice=notice))
                     action = self._wait_or_nav(
                         ("approval", "rescan", "cancel"), timeout or self.ACTION_TIMEOUT_SECONDS
@@ -675,7 +680,7 @@ class InteractiveSession:
             if not current or browse is None:
                 # 空目标 = 总览（刷新按钮也用它），**不要**退化成"主目录"。
                 overview = dict(self._safe(self.deps.disk, default={}))
-                reader = getattr(self.deps, "system_sizes", None)
+                reader = getattr(self.deps, "system_sizes_cached", None)
                 if reader is not None:
                     overview["system"] = self._safe(reader, default={})
                 self._serve("disk", pages.render_disk_html(overview))
