@@ -218,6 +218,15 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);height:100vh
 .chip.is-on{background:var(--accent-soft);border-color:color-mix(in srgb, var(--accent) 45%, transparent);
   color:var(--accent);font-weight:600}
 
+/* 审阅页头部固定：全选 + 筛选 + 已选空间，滚动时不消失（2026-10-20 用户要求）。 */
+.review-head{position:sticky;top:0;z-index:8;background:var(--surface);
+  padding:var(--sp-3) 0 var(--sp-2);margin:0 0 var(--sp-2);
+  border-bottom:1px solid var(--line)}
+.review-head .row.select-all{margin-bottom:var(--sp-2)}
+/* 组头不悬浮：审阅页以"固定头部 + 分组"两层结构为主，组头再吸顶会打架。 */
+.group.review > summary{position:static;top:auto}
+.review-empty-note{margin:0 0 var(--sp-3);color:var(--muted);font-size:var(--fs-meta)}
+
 /* 审阅页分组（2026-10-20）：组头略大、组内缩进，形成"组 > 条目"的层级。 */
 .group.review > summary{padding:9px 12px;font-size:var(--fs-summary)}
 .group.review .group-hint{margin:4px 0 8px;padding-left:12px}

@@ -77,7 +77,7 @@ class LandingPageTests(unittest.TestCase):
 
     def test_empty_review_uses_empty_state_block(self) -> None:
         """空结果不能只剩一行灰字：要有结论 + 下一步（2026-10-19 组件精修）。"""
-        from maccleaner.ui.pages import render_review_html
+        from maccleaner.ui.pages import render_confirmation_html, render_review_html
 
         page = render_review_html({"candidates": []})
         self.assertIn('class="empty"', page)
@@ -91,7 +91,7 @@ class LandingPageTests(unittest.TestCase):
             {"recoverable_bytes": 4096, "actual_freed_bytes": 0, "failed_count": 1, "skipped_count": 2}
         )
         self.assertEqual(page.count('class="stat"'), 3, "可恢复/失败/跳过三格")
-        self.assertIn("4 KiB", page)
+        self.assertIn("4.10 KB", page)
         self.assertIn(">1<", page)
         self.assertIn(">2<", page)
 
@@ -236,7 +236,7 @@ class LandingPageTests(unittest.TestCase):
         ]})
         self.assertIn('data-sort="bytes"', uninstall)
         self.assertIn("data-sortable", uninstall)
-        self.assertEqual(uninstall.count("data-sort-bytes"), 2, "每行都要有排序键")
+        self.assertEqual(uninstall.count('data-sort-bytes="'), 2, "每行都要有排序键")
 
         review = render_review_html({"candidates": [
             {"name": "Big", "path": "~/x", "kind": "cache", "allocated_bytes": 500, "target_id": "t1"},
@@ -466,7 +466,7 @@ class LandingPageTests(unittest.TestCase):
         })
         self.assertIn('data-stage="large"', page)
         self.assertIn("data-large-path", page)
-        self.assertIn("2.00 GiB", page)
+        self.assertIn("2.15 GB", page)
         self.assertNotRegex(page, r'data-large-path="[^"]+"[^>]*checked', "默认不该勾选")
 
     def test_disk_page_offers_admin_measurement_but_not_deletion(self) -> None:
@@ -508,9 +508,10 @@ class LandingPageTests(unittest.TestCase):
         self.assertNotIn("data-target-id", system_block, "系统数据只读，不能勾选")
         # 浏览器默认不勾
         self.assertNotRegex(page, r'data-target-id="browser-caches"[^>]*checked')
-        # 顶部口径：目录占用 vs 可勾选
-        self.assertIn("目录占用", page)
-        self.assertIn("可勾选", page)
+        # 顶部说明块已删（用户要求），改为固定头部 + 筛选标签
+        self.assertIn("review-head", page)
+        self.assertIn('data-filter-group="all"', page)
+        self.assertNotIn("目录占用", page, "说明块已删")
 
     def test_review_uses_filter_chips_not_sort_bar(self) -> None:
         """审阅页用「筛选」而不是排序（2026-10-20 用户要求：排序没用）。
@@ -530,6 +531,20 @@ class LandingPageTests(unittest.TestCase):
         self.assertNotIn('data-sort="', page, "排序按钮应已移除")
         self.assertNotIn("只读预览", page)
         self.assertNotIn("组 · 可勾选", page)
+
+    def test_select_all_skips_browser_and_refreshes_picked_bytes(self) -> None:
+        """全选不勾浏览器组，并且要刷新"已选空间"（2026-10-20 实测两个都缺）。"""
+        from maccleaner.ui.pages import render_review_html
+
+        page = render_review_html({"candidates": [
+            {"name": "Home caches", "path": "/x", "kind": "cache", "allocated_bytes": 1,
+             "target_id": "home-caches"},
+            {"name": "浏览器缓存", "path": "/y", "kind": "browser", "allocated_bytes": 2,
+             "target_id": "browser-caches"},
+        ]})
+        self.assertIn("mc-picked-bytes", page)
+        self.assertIn('node.closest(\'[data-group-key="browser"]\')', page, "全选必须跳过浏览器组")
+        self.assertIn("refreshSelection();", page)
 
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
@@ -582,14 +597,16 @@ class RemainingPagesTests(unittest.TestCase):
     """其余页面（2026-10-18）：每页只钉"这一屏必须说清什么"。"""
 
     def test_review_lists_candidates_and_offers_approval(self) -> None:
-        from maccleaner.ui.pages import render_review_html
+        from maccleaner.ui.pages import render_confirmation_html, render_review_html
 
         page = render_review_html({"candidates": [
             {"path": "/Users/x/Library/Caches/a", "kind": "caches", "allocated_bytes": 2048},
         ]})
         self.assertIn('data-stage="review"', page)
         self.assertIn("data-bridge-action=\"approval\"", page)
-        self.assertIn("废纸篓", page, "要说明可恢复")
+        # 2026-10-20 用户要求删掉审阅页那段说明，所以"可恢复"改在**确认页**保证。
+        confirm = render_confirmation_html({"selected_count": 1, "selected_bytes": 2048})
+        self.assertIn("废纸篓", confirm, "确认页要说明可恢复")
 
     def test_review_without_candidates_says_so(self) -> None:
         from maccleaner.ui.pages import render_review_html
@@ -604,7 +621,7 @@ class RemainingPagesTests(unittest.TestCase):
         page = render_confirmation_html({"selected_count": 3, "selected_bytes": 3 * 1024 * 1024})
         self.assertIn('data-stage="confirming"', page)
         self.assertIn("3 组", page)
-        self.assertIn("3.00 MiB", page)
+        self.assertIn("3.15 MB", page)
         self.assertIn("data-bridge-action=\"confirm\"", page)
         self.assertIn("data-bridge-action=\"back\"", page)
 
@@ -613,7 +630,7 @@ class RemainingPagesTests(unittest.TestCase):
 
         page = render_completion_html({"recoverable_bytes": 4096, "actual_freed_bytes": 0, "receipt_path": "/r.json"})
         self.assertIn('data-stage="complete"', page)
-        self.assertIn("4 KiB", page, "头条数字必须是可恢复字节，而不是 0")
+        self.assertIn("4.10 KB", page, "头条数字必须是可恢复字节，而不是 0")
         self.assertIn("清空废纸篓后释放", page)
         self.assertIn("/r.json", page, "回执路径要可见")
 

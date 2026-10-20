@@ -24,15 +24,19 @@ from .shell import state_page
 
 
 def human_bytes(value: int | float) -> str:
+    """字节 → 人类单位，用**十进制**（1 KB = 1000 B）。
+
+    为什么不是 KiB/MiB（2026-10-20 用户要求）：Finder 和系统设置都用 MB/GB，
+    用户看到 "784.97 MiB" 会换算一次才知道多大；这里跟 Finder 对齐。
+    """
     number = float(max(0, int(value or 0)))
-    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
-        if number < 1024 or unit == "TiB":
-            # B / KiB 用整数：`1012.00 KiB` 的小数位没有信息量（2026-10-20 截图发现）。
-            if unit in ("B", "KiB"):
-                return f"{int(round(number))} {unit}"
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if number < 1000 or unit == "TB":
+            if unit == "B":
+                return f"{int(round(number))} B"
             return f"{number:.2f} {unit}"
-        number /= 1024
-    return f"{number:.2f} TiB"
+        number /= 1000
+    return f"{number:.2f} TB"
 
 
 def _button(
@@ -432,23 +436,29 @@ def render_review_html(
         if not candidates
         else ""
     )
+    # 头部固定（2026-10-20 用户要求：滚列表时这半部分一直在）。
+    # 标题区与"找到可清理的内容…"整块已删——它只是重复下面的数字。
+    head = (
+        (f'<p class="pill warn" role="status">{html.escape(notice)}</p>' if notice else "")
+        + (
+            '<label class="row opt select-all"><input type="checkbox" data-select-all>'
+            '<div><strong>全选（不含浏览器 / 系统数据）</strong>'
+            '<div class="meta">默认不勾；高风险项在确认页单独确认</div></div>'
+            '<span class="meta value" id="mc-picked-bytes">已选 0 B</span></label>'
+            if candidates and interactive
+            else ""
+        )
+        + _review_filter_bar(_present_review_groups(candidates, payload.get("system")))
+    )
     return state_page(
-        {"message": "逐组核对下面的清单，确认无误再开始清理" if candidates else "", "detail": detail},
+        {"message": "", "detail": ""},
         stage="review",
         title="审阅清单",
-        body=body,
+        body="",
+        with_header=False,
         actions=(
-            empty   # 空结果时的"没有找到可清理的内容"块（别在改写时漏掉）
-            + (f'<p class="pill warn" role="status">{html.escape(notice)}</p>' if notice else "")
-            + (
-                '<label class="row opt select-all"><input type="checkbox" data-select-all>'
-                '<div><strong>全选（不含浏览器 / 系统数据）</strong>'
-                '<div class="meta">默认不勾；高风险项在确认页单独确认</div></div>'
-                '<span class="meta value">' + human_bytes(selectable_total) + "</span></label>"
-                if candidates and interactive
-                else ""
-            )
-            + _review_filter_bar(_present_review_groups(candidates, payload.get("system")))
+            empty
+            + (f'<div class="review-head">{head}</div>' if head else "")
             + _review_groups_html(
                 candidates,
                 interactive=interactive and bool(candidates),

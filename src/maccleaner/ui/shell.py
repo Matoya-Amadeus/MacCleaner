@@ -75,6 +75,19 @@ _RUNTIME_JS = """
   let lastBox = null;
 
   // 统一刷新"已选 N / 共 M"，并按选择状态禁用主操作（两类列表共用）。
+  // 字节 → MB/GB（十进制，与 Finder 一致；Python 侧 human_bytes 同口径）。
+  function humanBytes(value){
+    let number = Number(value) || 0;
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    for (const unit of units) {
+      if (number < 1000 || unit === 'TB') {
+        return unit === 'B' ? Math.round(number) + ' B' : number.toFixed(2) + ' ' + unit;
+      }
+      number /= 1000;
+    }
+    return number.toFixed(2) + ' TB';
+  }
+
   function refreshSelection(){
     const apps = Array.from(document.querySelectorAll('[data-app-path]'));
     const updates = Array.from(document.querySelectorAll('[data-update-id]'));
@@ -91,6 +104,20 @@ _RUNTIME_JS = """
     if (upLabel && updates.length) {
       upLabel.textContent = '已选 ' + picked(updates) + ' / ' + updates.length;
     }
+    const reviewBoxes = Array.from(document.querySelectorAll('[data-target-id]'))
+      .filter(box => !box.closest('[data-group-key="browser"]'));
+    sync(document.querySelector('[data-select-all]'), reviewBoxes);
+
+    const pickedLabel = document.getElementById('mc-picked-bytes');
+    if (pickedLabel) {
+      const targets = Array.from(document.querySelectorAll('[data-target-id]:checked'));
+      const total = targets.reduce((sum, box) => {
+        const row = box.closest('[data-sort-bytes]');
+        return sum + Number(row ? row.dataset.sortBytes : 0);
+      }, 0);
+      pickedLabel.textContent = '已选 ' + humanBytes(total);
+    }
+
     const upBtn = document.querySelector('[data-bridge-action="updates-apply"]');
     if (upBtn && updates.length) upBtn.disabled = picked(updates) === 0;
 
@@ -269,7 +296,13 @@ _RUNTIME_JS = """
     // 全选框：只是前端联动，不产生动作（审阅页/更新页都可能用到）。
     const selectAll = event.target.closest('[data-select-all]');
     if (selectAll) {
-      document.querySelectorAll('[data-target-id]').forEach((node) => { node.checked = selectAll.checked; });
+      // 浏览器组**不跟着全选**（用户明确要求：浏览器默认不选）；
+      // 而且必须 refreshSelection，否则"已选空间"和按钮禁用状态不更新（2026-10-20 实测）。
+      document.querySelectorAll('[data-target-id]').forEach((node) => {
+        if (node.closest('[data-group-key="browser"]')) return;
+        node.checked = selectAll.checked;
+      });
+      refreshSelection();
       return;
     }
     // 两种按钮都要接：正文动作（data-bridge-action）与侧栏导航（data-nav-action）。
@@ -602,6 +635,7 @@ def state_page(
     meta: str = "",
     hero: str = "",
     toolbar: str = "",
+    with_header: bool = True,
 ) -> str:
     """拼一页：顶栏 + 侧栏 + 标题区 + 动作插槽 + 内联脚本。
 
@@ -610,6 +644,20 @@ def state_page(
     message = html.escape(str(payload.get("message", "") or ""))
     detail = html.escape(str(payload.get("detail", "") or ""))
     nav_html = render_nav(current) if with_nav else ""
+    header_html = (
+        f"""<header class="topbar">
+    <div class="brand">
+      <span class="mark">M</span>
+      <div>
+        <h1>{html.escape(title)}</h1>
+        {f'<p class="subtitle">{html.escape(subtitle)}</p>' if subtitle else ''}
+      </div>
+    </div>
+    {f'<div class="topmeta">{html.escape(meta)}</div>' if meta else ''}
+  </header>"""
+        if with_header
+        else ""
+    )
     page = f"""<!doctype html>
 <html lang="zh-CN" data-ui-schema="{UI_SCHEMA}" data-stage="{html.escape(stage)}">
 <head>
@@ -621,16 +669,7 @@ def state_page(
 <body class="{'has-nav' if with_nav else ''}">
 {NAV_SLOT}
 <main class="app">
-  <header class="topbar">
-    <div class="brand">
-      <span class="mark">M</span>
-      <div>
-        <h1>{html.escape(title)}</h1>
-        {f'<p class="subtitle">{html.escape(subtitle)}</p>' if subtitle else ''}
-      </div>
-    </div>
-    {f'<div class="topmeta">{html.escape(meta)}</div>' if meta else ''}
-  </header>
+  {header_html}
   <section class="state card">
     {f'<p class="state-head">{html.escape(body)}</p>' if body else ''}
     {f'<p class="hero">{html.escape(hero)}</p>' if hero else ''}
