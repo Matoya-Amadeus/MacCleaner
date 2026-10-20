@@ -16,6 +16,8 @@ import html
 import time
 from pathlib import Path
 from urllib.parse import urlparse
+
+from .treemap import squarify as treemap_squarify
 from typing import Any, Iterable, Sequence
 
 from .shell import state_page
@@ -974,6 +976,87 @@ def sort_bar(*, default: str = "bytes") -> str:
         f'<button type="button" class="sortbtn{" is-on" if default == "text" else ""}" '
         'data-sort="text" data-dir="asc">名称</button></div>'
     )
+def _treemap_svg(entries: list[dict[str, Any]], *, width: int = 1000, height: int = 300) -> str:
+    """把目录条目画成 squarified treemap（Mole `analyze` 那种一眼看懂的样子）。
+
+    只画面积够大的标签：小格子塞文字反而看不清，交给 hover 的 `<title>`。
+    """
+    positive = [item for item in entries if int(item.get("bytes", 0) or 0) > 0]
+    if len(positive) < 2:
+        return ""
+    positive.sort(key=lambda item: -int(item.get("bytes", 0) or 0))
+    total_bytes = sum(int(item.get("bytes", 0) or 0) for item in positive) or 1
+    # 面积小于 1% 的项画出来只有亚像素，点不到也看不清 → 聚合成"其它 N 项"。
+    # 列表里仍然是完整的一份（treemap 只是入口，不是唯一视图）。
+    usable = [item for item in positive if int(item.get("bytes", 0) or 0) / total_bytes >= 0.01][:12]
+    rest = positive[len(usable):]
+    rest_bytes = sum(int(item.get("bytes", 0) or 0) for item in rest)
+    rest_note = ""
+    # 余量 >= 2% 才值得画一块；否则画出来是 1px 的线，反而让人以为丢了数据。
+    if rest and rest_bytes / total_bytes >= 0.02:
+        usable = usable + [{
+            "name": f"其它 {len(rest)} 项",
+            "path": "",
+            "bytes": rest_bytes,
+            "is_dir": False,
+        }]
+    elif rest:
+        rest_note = f"另有 {len(rest)} 项合计 {human_bytes(rest_bytes)}（不足 2%），见下方列表。"
+    if len(usable) < 2:
+        return ""
+    rects = treemap_squarify([int(item.get("bytes", 0) or 0) for item in usable], width, height)
+    total = sum(int(item.get("bytes", 0) or 0) for item in usable) or 1
+
+    cells: list[str] = []
+    for index, (item, (x, y, w, h)) in enumerate(zip(usable, rects)):
+        if w <= 0 or h <= 0:
+            continue
+        path = str(item.get("path", ""))
+        is_dir = bool(item.get("is_dir"))
+        name = str(item.get("name", ""))
+        size = int(item.get("bytes", 0) or 0)
+        share = size / total
+        fill = "rgba(53,208,161,.18)" if index < 3 else "var(--surface-2)"
+        attrs = (
+            f' data-treemap-path="{html.escape(path)}" role="button" tabindex="0"'
+            ' aria-label="' + html.escape(f"{name} {human_bytes(size)}") + '"'
+            if is_dir
+            else ""
+        )
+        cursor = ' style="cursor:pointer"' if is_dir else ""
+        label = ""
+        if w >= 96 and h >= 40:
+            # 按宽度算能放几个字（12px 字体 ≈ 7px/字符）：不截断会压到隔壁色块上。
+            max_chars = max(4, int((w - 16) / 7))
+            shown = name if len(name) <= max_chars else name[: max_chars - 1] + "…"
+            label = (
+                f'<text x="{x + 8:.1f}" y="{y + 18:.1f}" fill="var(--text)" font-size="12"'
+                f' font-weight="600">{html.escape(shown)}</text>'
+                f'<text x="{x + 8:.1f}" y="{y + 33:.1f}" fill="var(--muted)" font-size="11">'
+                f"{human_bytes(size)} · {share * 100:.0f}%</text>"
+                if h >= 46
+                else f'<text x="{x + 8:.1f}" y="{y + 18:.1f}" fill="var(--text)" font-size="12"'
+                f' font-weight="600">{html.escape(shown)}</text>'
+            )
+        cells.append(
+            f'<g class="tm-cell"{attrs}{cursor}>'
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="4"'
+            f' fill="{fill}" stroke="var(--line-strong)" stroke-width="1"/>'
+            f"<title>{html.escape(name)} — {human_bytes(size)}（{share * 100:.0f}%）</title>"
+            f"{label}</g>"
+        )
+
+    return (
+        f'<div class="treemap"><svg viewBox="0 0 {width} {height}" '
+        'preserveAspectRatio="none" role="img" aria-label="目录体积分布">'
+        + "".join(cells)
+        + "</svg>"
+        + '<p class="meta">点方块进入该目录；面积 = 体积占比。'
+        + html.escape(rest_note)
+        + "</p></div>"
+    )
+
+
 def render_disk_browse_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
     """磁盘钻取：一个目录的下一级，按体积降序；目录可以再点进去。"""
     data = payload or {}
@@ -1008,7 +1091,9 @@ def render_disk_browse_html(payload: dict[str, Any] | None = None, *, interactiv
             buttons.append(_button("上一级", "disk-back"))
         buttons.append(_button("回到总览", "disk-open", payload={}))
     body = (
-        sort_bar() + '<div class="rows" data-sortable>' + "".join(rows) + "</div>"
+        _treemap_svg(entries)
+        + sort_bar()
+        + '<div class="rows" data-sortable>' + "".join(rows) + "</div>"
         if rows
         else empty_block("check", "这个目录是空的", "换一个目录，或回到磁盘总览。")
     )

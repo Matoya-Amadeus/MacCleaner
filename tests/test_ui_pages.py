@@ -360,6 +360,43 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn("没有发现孤儿残留", page)
         self.assertIn("Containers", page, "空态要说明扫过哪些位置")
 
+    def test_disk_treemap_areas_are_proportional(self) -> None:
+        """treemap 布局：面积严格按体积占比、不越界、不重叠（几何要能验）。"""
+        from maccleaner.ui.treemap import squarify
+
+        values = [50, 25, 12, 8, 5]
+        rects = squarify(values, 1000, 400)
+        total = sum(w * h for _, _, w, h in rects)
+        self.assertAlmostEqual(total, 1000 * 400, delta=1)
+        for (_, _, w, h), value in zip(rects, values):
+            self.assertAlmostEqual((w * h) / total, value / sum(values), places=3)
+        for x, y, w, h in rects:
+            self.assertGreaterEqual(x, -0.01)
+            self.assertGreaterEqual(y, -0.01)
+            self.assertLessEqual(x + w, 1000.01)
+            self.assertLessEqual(y + h, 400.01)
+        for i in range(len(rects)):
+            for j in range(i + 1, len(rects)):
+                ax, ay, aw, ah = rects[i]
+                bx, by, bw, bh = rects[j]
+                overlap = ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah
+                self.assertFalse(overlap, f"第 {i} 与第 {j} 个矩形重叠")
+
+    def test_disk_page_renders_treemap_with_clickable_dirs(self) -> None:
+        from maccleaner.ui.pages import render_disk_browse_html
+
+        page = render_disk_browse_html({
+            "path": "/Users/x/Downloads", "display": "~/Downloads", "parent": "/Users/x",
+            "total": 4096,
+            "entries": [
+                {"name": "big", "path": "/Users/x/Downloads/big", "bytes": 3072, "is_dir": True},
+                {"name": "a.zip", "path": "/Users/x/Downloads/a.zip", "bytes": 1024, "is_dir": False},
+            ],
+        })
+        self.assertIn("<svg", page)
+        self.assertIn('data-treemap-path="/Users/x/Downloads/big"', page)
+        self.assertNotIn('data-treemap-path="/Users/x/Downloads/a.zip"', page, "文件不该可点")
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")

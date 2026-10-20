@@ -197,6 +197,14 @@ _RUNTIME_JS = """
       return;
     }
 
+    // treemap 方块：点一下进入该目录（键盘 Enter 也可）。
+    const cell = event.target.closest('[data-treemap-path]');
+    if (cell) {
+      window.maccleanerAction('disk-open', { path: cell.dataset.treemapPath })
+        .catch((error) => toast(error.message));
+      return;
+    }
+
     // 点行（不是勾选框/按钮）= 触发这一行的主操作（卸载 → 残留预览）。
     const row = event.target.closest('[data-row]');
     if (row && !event.target.closest('input, button, a, [data-menu]')) {
@@ -348,6 +356,12 @@ _RUNTIME_JS = """
       const shouldCheck = boxes.some(box => !box.checked);
       boxes.forEach(box => { box.checked = shouldCheck; });
       refreshSelection();
+      return;
+    }
+    if (event.key === 'Enter' && event.target.closest('[data-treemap-path]')) {
+      const cell = event.target.closest('[data-treemap-path]');
+      window.maccleanerAction('disk-open', { path: cell.dataset.treemapPath })
+        .catch((error) => toast(error.message));
       return;
     }
     if (event.key === 'Escape') { closeMenu(); return; }

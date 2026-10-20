@@ -56,7 +56,7 @@ Open `~/Applications/MacCleaner.app`, or run `maccleaner ui`. Eight entries in t
 - **Uninstall**: inspect leftovers one by one, or batch-uninstall
 - **Updates**: grouped by source; apps with Sparkle update themselves first
 - **Orphans**: leftovers whose app is gone (caches/logs/containers), unchecked by default
-- **Disk**: capacity, drill down level by level
+- **Disk**: capacity + **treemap** (area = size); click a block to drill in
 - **System**: load, memory, top CPU processes
 - **History**: one row per cleanup receipt
 - **Skills**: agent skills installed here

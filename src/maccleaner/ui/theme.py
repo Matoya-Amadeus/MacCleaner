@@ -213,6 +213,13 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);height:100vh
 .group .rows .row:first-child{border-top:0}
 .row-actions{display:flex;align-items:center;gap:10px;flex:none}
 
+/* treemap：面积即体积，方块可点进下一层。 */
+.treemap{margin:0 0 var(--sp-3)}
+.treemap svg{display:block;width:100%;height:auto;border-radius:var(--r-card)}
+.treemap .tm-cell:hover rect{filter:brightness(1.25)}
+.treemap .tm-cell:focus-visible{outline:none}
+.treemap .tm-cell:focus-visible rect{stroke:var(--accent);stroke-width:2}
+
 /* 排序条：小、安静，不抢主操作。 */
 .sortbar{display:flex;align-items:center;gap:6px;padding:8px 0 2px}
 .sortbtn{appearance:none;border:1px solid transparent;background:transparent;color:var(--muted);
