@@ -614,6 +614,26 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn('data-filter-group="browser"', page)
         self.assertNotIn("chips", page, "胶囊筛选已被左栏取代")
 
+    def test_system_page_uses_same_two_pane_layout(self) -> None:
+        """系统页也用左栏 + 右栏（2026-10-20）：概览默认显示，电池/进程默认收起。"""
+        from maccleaner.ui.pages import render_system_html
+
+        page = render_system_html({
+            "load": [1, 2, 3], "cpu_count": 10, "memory_total": 1024, "memory_used": 512,
+            "processes": [{"name": "demo", "rss": 1024, "cpu": 1.5}],
+            "power": {"source": "电池", "percent": 79, "state": "discharging", "remaining": "3:04",
+                      "cycles": 986, "health_percent": 80, "design_mah": 8694},
+            "thermal": {"speed_limit": None, "throttled": False},
+        })
+        self.assertIn("review-split", page)
+        self.assertEqual(page.count('class="rail-item'), 3)
+        for key in ("overview", "battery", "processes"):
+            self.assertIn(f'data-group-key="{key}"', page)
+        # 默认只显示概览，另外两块收起
+        self.assertIn('data-group-key="battery" style="display:none"', page)
+        self.assertIn('data-group-key="processes" style="display:none"', page)
+        self.assertIn("3:04", page, "放电时剩余时间要显示")
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")

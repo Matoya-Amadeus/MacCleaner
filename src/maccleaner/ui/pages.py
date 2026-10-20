@@ -109,6 +109,9 @@ _ICON_PATHS: dict[str, str] = {
     "trash": '<path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/>',
     "lock": '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
     "clock": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    "gauge": '<circle cx="12" cy="12" r="9"/><path d="M12 12l4-3"/>',
+    "battery": '<rect x="3" y="8" width="15" height="8" rx="2"/><path d="M21 11v2M7 11v2"/>',
+    "list": '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 11h.01M3 16h.01"/>',
 }
 
 # 行图标按"这东西是什么"选，而不是按内部 category 名——用户认图标比认字快。
@@ -473,6 +476,25 @@ def _present_review_groups(
     return [(key, label) for key, label, _hint, _categories in _REVIEW_GROUPS if key in present]
 
 
+def _rail(items: list[tuple[str, str, str, str]]) -> str:
+    """通用左栏：`(key, 名称, 图标名, 右侧小字)`；第一项默认选中。
+
+    审阅页与系统页共用同一种"左栏筛选"语义——JS 那边只认 `[data-filter-group]`
+    与 `[data-group-key]`，所以两边不用各写一套。
+    """
+    if len(items) < 2:
+        return ""
+    buttons = []
+    for index, (key, label, icon_name, meta) in enumerate(items):
+        active = " is-on" if index == 0 else ""
+        meta_html = f'<span class="rail-meta">{html.escape(meta)}</span>' if meta else ""
+        buttons.append(
+            f'<button class="rail-item{active}" type="button" data-filter-group="{key}">'
+            f'{_icon(icon_name)}<span class="rail-name">{html.escape(label)}</span>{meta_html}</button>'
+        )
+    return '<aside class="rail" aria-label="分类">' + "".join(buttons) + "</aside>"
+
+
 def _review_rail(
     groups: list[tuple[str, str]], candidates: list[dict[str, Any]], system: dict[str, Any] | None
 ) -> str:
@@ -494,19 +516,11 @@ def _review_rail(
             sum(int(value or 0) for value in system["sizes"].values()),
         )
 
-    buttons = [
-        '<button class="rail-item is-on" type="button" data-filter-group="all">'
-        f'{_icon("box")}<span class="rail-name">全部</span></button>'
-    ]
+    items: list[tuple[str, str, str, str]] = [("all", "全部", "box", "")]
     for key, label in groups:
         count, total = sizes.get(key, (0, 0))
-        buttons.append(
-            f'<button class="rail-item" type="button" data-filter-group="{key}">'
-            f'{_icon(_GROUP_ICONS.get(key, "box"))}'
-            f'<span class="rail-name">{html.escape(label)}</span>'
-            f'<span class="rail-meta">{count} · {human_bytes(total)}</span></button>'
-        )
-    return '<aside class="rail" aria-label="按类别筛选">' + "".join(buttons) + "</aside>"
+        items.append((key, label, _GROUP_ICONS.get(key, "box"), f"{count} · {human_bytes(total)}"))
+    return _rail(items)
 
 
 def render_review_html(
@@ -1844,7 +1858,11 @@ def render_system_html(payload: dict[str, Any] | None = None, *, interactive: bo
         battery_value = f"{int(percent)}%"
         battery_meta = " · ".join(part for part in (
             str(power.get("source") or ""), state_text,
-            (f"剩 {power.get('remaining')}" if power.get("remaining") else ""),
+            (
+                f"剩 {power.get('remaining')}"
+                if power.get("remaining") and str(power.get("state") or "").lower() == "discharging"
+                else ""
+            ),
         ) if part)
     else:
         battery_value, battery_meta = "—", "未检测到电池（台式机？）"
@@ -1868,15 +1886,14 @@ def render_system_html(payload: dict[str, Any] | None = None, *, interactive: bo
         )
     )
 
-    stats = (
+    stats_head = (
         '<div class="stats">'
         f'<div class="stat"><div class="k">1/5/15 分钟负载</div>'
         f'<div class="v">{" / ".join(str(x) for x in load)}</div></div>'
         f'<div class="stat"><div class="k">内存</div>'
         f'<div class="v">{human_bytes(mem_used)} / {human_bytes(mem_total)}</div></div>'
         f'<div class="stat"><div class="k">CPU 核数</div><div class="v">{cpu_count}</div></div>'
-        + power_block
-        + "</div>"
+        "</div>"
     )
     rows = "".join(
         '<div class="row"><div style="min-width:0">'
@@ -1893,10 +1910,27 @@ def render_system_html(payload: dict[str, Any] | None = None, *, interactive: bo
         stage="system",
         title="系统状态",
         body="",
-        actions=stats + '<div class="group-title">负载</div>' + _meter(load_percent, tone="warn")
+        actions='<div class="review-split">'
+        + _rail([
+            ("overview", "概览", "gauge", f"{mem_percent:.0f}% 内存"),
+            ("battery", "电池与节流", "battery", battery_value),
+            ("processes", "进程", "list", f"{len(processes)} 个"),
+        ])
+        + '<div class="review-detail">'
+        + '<div class="panel" data-group-key="overview">'
+        + stats_head
+        + '<div class="group-title">负载</div>' + _meter(load_percent, tone="warn")
         + '<div class="group-title">内存</div>' + _meter(mem_percent)
+        + "</div>"
+        + '<div class="panel" data-group-key="battery" style="display:none">'
+        + '<div class="stats">' + power_block + "</div>"
+        + '<p class="muted">电池与节流免 sudo 读取；风扇转速不做（SMC 私有接口，值也不稳定）。</p>'
+        + "</div>"
+        + '<div class="panel" data-group-key="processes" style="display:none">'
         + '<div class="group-title">占用最高的进程</div>' + rows
-        + (_actions(_button("刷新", "system-open")) if interactive else ""),
+        + "</div>"
+        + (_actions(_button("刷新", "system-open")) if interactive else "")
+        + "</div></div>",
         current="system",
         subtitle="负载 / 内存 / 电池 / 进程（只读）",
         meta="",

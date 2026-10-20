@@ -228,6 +228,7 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);height:100vh
 /* 审阅页双栏（2026-10-20）：左栏固定分类，右栏滚动明细。 */
 .review-split{display:grid;grid-template-columns:224px minmax(0,1fr);gap:var(--sp-4);align-items:start}
 .review-detail{min-width:0}
+.panel{min-width:0}
 .rail{position:sticky;top:0;display:flex;flex-direction:column;gap:2px;
   padding-right:var(--sp-3);border-right:1px solid var(--line)}
 .rail-item{display:flex;align-items:center;gap:7px;width:100%;text-align:left;
