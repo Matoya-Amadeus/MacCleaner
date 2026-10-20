@@ -833,3 +833,40 @@ class SparseFileSizeTests(unittest.TestCase):
             stats = tree_stats(root, cutoff_ts=None)
         self.assertEqual(stats["total_bytes"], 1024, "普通小文件按真实字节数，不要按 4KB 块")
 
+class UserCacheRetentionTests(unittest.TestCase):
+    """用户缓存的保留期必须是 1 天（2026-10-20 用户问"为什么没清用户缓存"）。
+
+    实测本机 `~/Library/Caches` 1.38 GB / 13,000+ 文件，按 7 天保留期筛**可清 0 字节**
+    ——缓存每天都在重写，7 天等于这个目标不存在。
+    """
+
+    def test_home_caches_uses_one_day_retention(self) -> None:
+        from maccleaner.core import StorageContext, StorageManager
+        from maccleaner.policy import discover_targets
+
+        with tempfile.TemporaryDirectory(prefix="cache-retention-") as tmp:
+            home = Path(tmp)
+            manager = StorageManager(StorageContext(home=home, root=home, state_root=None))
+            targets = {t.target_id: t for t in discover_targets(manager)}
+        self.assertIn("home-caches", targets)
+        self.assertEqual(targets["home-caches"].min_age_days, 1, "7 天会让这个目标永远清不出东西")
+
+    def test_two_day_old_cache_is_eligible(self) -> None:
+        from maccleaner.core import StorageContext, StorageManager
+        from maccleaner.policy import discover_targets
+
+        with tempfile.TemporaryDirectory(prefix="cache-eligible-") as tmp:
+            home = Path(tmp)
+            cache = home / "Library" / "Caches" / "com.demo.app"
+            cache.mkdir(parents=True)
+            payload = cache / "blob.bin"
+            payload.write_bytes(b"z" * 4096)
+            stamp = time.time() - 2 * 86400
+            os.utime(payload, (stamp, stamp))
+            os.utime(cache, (stamp, stamp))
+
+            manager = StorageManager(StorageContext(home=home, root=home, state_root=None))
+            targets = {t.target_id: t for t in discover_targets(manager)}
+            scan = manager.scan_targets([targets["home-caches"]])[0]
+        self.assertGreater(scan.eligible_bytes, 0, "两天前的缓存必须算可清")
+

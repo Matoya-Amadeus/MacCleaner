@@ -547,6 +547,21 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn('node.closest(\'[data-group-key="browser"]\')', page, "全选必须跳过浏览器组")
         self.assertIn("refreshSelection();", page)
 
+    def test_review_rows_and_groups_show_icons(self) -> None:
+        """列表要显示图标（2026-10-20 用户要求"也显示图标"）：用内联 SVG，不引外部资源。"""
+        from maccleaner.ui.pages import render_review_html
+
+        page = render_review_html({"candidates": [
+            {"name": "浏览器缓存", "path": "/x", "kind": "browser", "allocated_bytes": 2,
+             "target_id": "browser-caches"},
+            {"name": "用户缓存", "path": "/y", "kind": "cache", "allocated_bytes": 1,
+             "target_id": "home-caches"},
+        ]})
+        self.assertGreaterEqual(page.count('class="ico"'), 4, "两个分组头 + 两行都要有图标")
+        self.assertIn("<svg", page)
+        self.assertNotIn("http://www.w3.org/2000/svg", page, "不引外部资源")
+        self.assertIn('stroke="currentColor"', page, "图标要跟着主题色")
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")

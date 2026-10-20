@@ -174,7 +174,7 @@ SCAN_CACHE_SECONDS = 300
 
 # 扫描缓存的结构版本：新增/删除清理目标时必须 +1，否则旧缓存里根本没有新目标
 # （2026-10-20 实测：加了 browser-caches 后，缓存仍返回旧报告，页面上永远看不到浏览器组）。
-SCAN_CACHE_VERSION = 2
+SCAN_CACHE_VERSION = 3
 
 
 def _cache_path(state_root: Path) -> Path:

@@ -10,6 +10,7 @@ import plistlib
 import re
 import shutil
 import subprocess
+import tempfile
 import sys
 import time
 import uuid
@@ -1356,7 +1357,12 @@ class StorageManager:
         home = self.context.home
         make = self._target_factory()
         return [
-            make("home-caches", "Home caches", "cache", "purge_tree", [home / "Library" / "Caches"]),
+            # 缓存**每天都被重写**：按 7 天保留期筛，实测本机 1.38 GB 里**可清 0 字节**
+            # （13,000+ 个文件全部在 7 天内），等于这个目标形同虚设。1 天足够避开"正在写"的文件。
+            make(
+                "home-caches", "用户缓存", "cache", "purge_tree",
+                [home / "Library" / "Caches"], min_age_days=1,
+            ),
             make("home-logs", "Home logs", "logs", "purge_tree", [home / "Library" / "Logs"]),
             make("xcode-derived-data", "Xcode DerivedData", "xcode", "purge_tree", [home / "Library" / "Developer" / "Xcode" / "DerivedData"]),
             make("xcode-archives", "Xcode Archives", "xcode", "purge_tree", [home / "Library" / "Developer" / "Xcode" / "Archives"]),

@@ -100,6 +100,65 @@ def _display_path(path: str) -> str:
     return "~" + path[len(home):] if path.startswith(home) else path
 
 
+_ICON_PATHS: dict[str, str] = {
+    "globe": '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.8 2.6 15.2 0 18M12 3c-2.6 2.8-2.6 15.2 0 18"/>',
+    "box": '<path d="M3 7.5 12 3l9 4.5-9 4.5-9-4.5z"/><path d="M3 7.5v9L12 21l9-4.5v-9"/><path d="M12 12v9"/>',
+    "terminal": '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 10l3 2.5-3 2.5M13 15h4"/>',
+    "cube": '<path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5z"/><path d="M4 8.5 12 13l8-4.5M12 13v7"/>',
+    "doc": '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v5h5"/>',
+    "trash": '<path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/>',
+    "lock": '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+    "clock": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+}
+
+# 行图标按"这东西是什么"选，而不是按内部 category 名——用户认图标比认字快。
+_KIND_ICONS: dict[str, str] = {
+    "browser": "globe",
+    "cache": "box",
+    "logs": "doc",
+    "temp": "clock",
+    "docker": "cube",
+    "user-files": "doc",
+    "xcode": "terminal",
+    "ide": "terminal",
+    "package-cache": "terminal",
+    "homebrew": "terminal",
+    "flutter": "terminal",
+    "android": "terminal",
+    "ios": "terminal",
+    "browser-cache": "globe",
+    "system": "lock",
+    "trash": "trash",
+}
+
+_GROUP_ICONS = {
+    "system": "lock",
+    "browser": "globe",
+    "app": "box",
+    "dev": "terminal",
+    "containers": "cube",
+    "user": "doc",
+    "trash": "trash",
+    "temp": "clock",
+}
+
+
+def _icon(name: str) -> str:
+    """内联 SVG 图标：用 currentColor，跟着主题深浅色走，不引入外部资源。"""
+    path = _ICON_PATHS.get(name)
+    if not path:
+        return ""
+    return (
+        '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" '
+        'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        f"{path}</svg>"
+    )
+
+
+def _kind_icon(kind: str) -> str:
+    return _icon(_KIND_ICONS.get(str(kind or ""), "box"))
+
+
 def _rows(
     items: Iterable[dict[str, Any]],
     *,
@@ -136,7 +195,7 @@ def _rows(
         if selectable:
             target_id = html.escape(str(item.get("target_id", "") or ""))
             risky = bool(item.get("requires_confirmation"))
-            # 默认**不勾**；高风险项连勾选框都不给（要在确认页单独确认）。
+            # 默认**不勾**；高风险项也能勾，但确认页会再问一次。
             checked = " checked" if (target_id and str(item.get("target_id")) in preselected) else ""
             # 高风险项**可以勾**（2026-10-20 用户反馈"点不动"）：勾了之后确认页还要再确认一次，
             # 两道门都在。之前禁用勾选框，等于这一项永远清不掉。
@@ -145,12 +204,14 @@ def _rows(
                 '<span class="pill risk">高风险 · 确认页单独确认</span>' if risky else ""
             )
             rows.append(
-                f'<label class="row opt"{sort_attrs}{reveal_attr}>{box}<div>{body}{risk_note}</div>'
+                f'<label class="row opt"{sort_attrs}{reveal_attr}>{box}{_kind_icon(kind)}'
+                f'<div>{body}{risk_note}</div>'
                 f'<span class="meta value">{size}</span></label>'
             )
         else:
             rows.append(
-                f'<div class="row"{sort_attrs}{reveal_attr}><div>{body}</div><span class="meta value">{size}</span></div>'
+                f'<div class="row"{sort_attrs}{reveal_attr}>{_kind_icon(kind)}'
+                f'<div>{body}</div><span class="meta value">{size}</span></div>'
             )
     return "".join(rows)
 
@@ -318,6 +379,7 @@ def _review_system_html(system: dict[str, Any] | None, *, interactive: bool) -> 
     return (
         '<details class="group review" data-group-key="system">'
         "<summary>"
+        f'{_icon("lock")}'
         '<span class="group-name">系统数据</span>'
         f'<span class="meta">{len(sizes)} 项 · {human_bytes(total)} · 只测量不删除</span>'
         "</summary>"
@@ -354,6 +416,7 @@ def _review_groups_html(
         blocks.append(
             f'<details class="group review" open data-group-key="{key}">'
             "<summary>"
+            f'{_icon(_GROUP_ICONS.get(key, "box"))}'
             f'<span class="group-name">{label}</span>'
             f'<span class="meta">{len(items)} 项 · {human_bytes(size)}</span>'
             "</summary>"

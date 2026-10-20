@@ -209,6 +209,12 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);height:100vh
 .group > summary:hover{background:color-mix(in srgb, var(--surface-2) 70%, var(--surface))}
 .group > summary .group-name{flex:1;letter-spacing:.02em}
 .group > summary .meta{color:var(--muted);font-weight:400}
+/* 行/分组图标（2026-10-20）：内联 SVG，描边用 currentColor，深浅色都跟着走。 */
+.ico{width:16px;height:16px;flex:none;opacity:.8}
+.row:hover .ico{opacity:1}
+/* 分组图标用主题色：一行里最重要的是"这是哪一类"，颜色帮眼睛先分组。 */
+.group > summary .ico{opacity:.95;color:var(--accent)}
+
 /* 筛选标签（审阅页）：一行小胶囊，替代原来的排序条。 */
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 var(--sp-3)}
 .chip{appearance:none;border:1px solid var(--line-strong);background:var(--surface);
