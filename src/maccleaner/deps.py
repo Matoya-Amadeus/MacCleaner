@@ -17,12 +17,14 @@
 from __future__ import annotations
 
 import hashlib
+import base64
 import json
 import os
 import plistlib
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -1159,6 +1161,111 @@ def app_version(app_path: str) -> str:
         return ""
     return str(data.get("CFBundleShortVersionString") or data.get("CFBundleVersion") or "")
 
+
+# 常见浏览器的 bundle 路径：只用来给"浏览器缓存"那几行配图标。
+BROWSER_BUNDLES: tuple[tuple[str, str], ...] = (
+    ("Safari", "/Applications/Safari.app"),
+    ("Google Chrome", "/Applications/Google Chrome.app"),
+    ("Firefox", "/Applications/Firefox.app"),
+    ("Microsoft Edge", "/Applications/Microsoft Edge.app"),
+    ("Brave Browser", "/Applications/Brave Browser.app"),
+    ("Arc", "/Applications/Arc.app"),
+)
+
+ICON_CACHE_TTL = 7 * 24 * 3600
+
+
+def app_icon_data_uri(app_path: str, *, size: int = 32) -> str:
+    """把某个 `.app` 的图标转成 data URI（32px PNG，约 2 KB）。
+
+    为什么要转：`NSWorkspace` 需要原生桥；`sips` 是系统自带工具，实测 3 个图标共 0.10s。
+    图标来自**用户自己机器上已安装的应用**，不随包分发任何厂商素材。
+    """
+    bundle = Path(app_path)
+    if not bundle.is_dir():
+        return ""
+    resources = bundle / "Contents" / "Resources"
+    icon: Path | None = None
+    try:
+        with (bundle / "Contents" / "Info.plist").open("rb") as handle:
+            info = plistlib.load(handle)
+        name = str(info.get("CFBundleIconFile") or "")
+        if name:
+            candidate = resources / (name if name.endswith(".icns") else name + ".icns")
+            if candidate.is_file():
+                icon = candidate
+    except (OSError, plistlib.InvalidFileException, ValueError):
+        icon = None
+    if icon is None:
+        try:
+            icon = next(iter(sorted(resources.glob("*.icns"))), None)
+        except OSError:
+            icon = None
+    if icon is None:
+        return ""
+    # sips 不接受 `/dev/stdout` 作为输出（实测返回空），必须落到临时文件再读回来。
+    with tempfile.TemporaryDirectory(prefix="mc-icon-") as tmp:
+        out = Path(tmp) / "icon.png"
+        try:
+            result = subprocess.run(
+                ["/usr/bin/sips", "-s", "format", "png",
+                 "--resampleHeightWidth", str(size), str(size), str(icon), "--out", str(out)],
+                capture_output=True, timeout=8,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return ""
+        if result.returncode != 0 or not out.is_file():
+            return ""
+        try:
+            payload = out.read_bytes()
+        except OSError:
+            return ""
+    if not payload:
+        return ""
+    return "data:image/png;base64," + base64.b64encode(payload).decode("ascii")
+
+
+def browser_icons(cache_path: Path | None = None, *, ttl: int = ICON_CACHE_TTL) -> dict[str, str]:
+    """已安装浏览器的 `{名称: data URI}`；按应用 mtime 缓存，装/升级后自动刷新。"""
+    cached: dict[str, Any] = {}
+    if cache_path is not None:
+        try:
+            cached = json.loads(Path(cache_path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            cached = {}
+    entries: dict[str, Any] = cached.get("apps") or {}
+    now = time.time()
+    icons: dict[str, str] = {}
+    dirty = False
+    for name, bundle in BROWSER_BUNDLES:
+        path = Path(bundle)
+        if not path.is_dir():
+            continue
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        entry = entries.get(bundle)
+        if isinstance(entry, dict) and entry.get("mtime") == mtime and entry.get("uri"):
+            age = now - float(entry.get("at") or 0)
+            if age <= ttl:
+                icons[name] = str(entry["uri"])
+                continue
+        uri = app_icon_data_uri(bundle)
+        if uri:
+            icons[name] = uri
+            entries[bundle] = {"mtime": mtime, "uri": uri, "at": now}
+            dirty = True
+    if cache_path is not None and dirty:
+        try:
+            Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+            tmp = Path(cache_path).with_suffix(".tmp")
+            tmp.write_text(json.dumps({"apps": entries}, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, cache_path)
+        except OSError:
+            pass
+    return icons
+
 def parse_cask_targets(payload: str) -> dict[str, str]:
     """`brew info --cask --json=v2` → `{app 路径: cask token}`。
 
@@ -1363,6 +1470,9 @@ def build_deps(
         open_app=_open_app,
         uninstall_cask=lambda token: uninstall_cask(token),
         app_version=app_version,
+        browser_icons=lambda: browser_icons(
+            (state_path / "browser-icons.json") if state_path else None
+        ),
         large_files=lambda: large_files(home_path),
         trash_paths=lambda paths: trash_paths(home_path, paths),
         system_sizes_cached=lambda: system_sizes_cached(

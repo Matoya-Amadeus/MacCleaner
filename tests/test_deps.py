@@ -870,3 +870,32 @@ class UserCacheRetentionTests(unittest.TestCase):
             scan = manager.scan_targets([targets["home-caches"]])[0]
         self.assertGreater(scan.eligible_bytes, 0, "两天前的缓存必须算可清")
 
+class AppIconTests(unittest.TestCase):
+    """真实应用图标（2026-10-20）：读本机 `.icns` 转 data URI，不引第三方素材。
+
+    图标只用于"浏览器缓存"那一行，最多 4 个、每个约 2 KB。
+    """
+
+    def test_browser_icons_are_inline_png_data_uris(self) -> None:
+        from maccleaner.deps import browser_icons
+
+        with tempfile.TemporaryDirectory(prefix="icons-") as tmp:
+            icons = browser_icons(Path(tmp) / "icons.json")
+        if not icons:
+            self.skipTest("这台机器没装常见浏览器")
+        for name, uri in icons.items():
+            self.assertTrue(uri.startswith("data:image/png;base64,"), f"{name} 不是 PNG data URI")
+            self.assertLess(len(uri), 40_000, f"{name} 图标太大，会撑爆页面")
+
+    def test_icon_cache_is_reused(self) -> None:
+        from maccleaner.deps import browser_icons
+
+        with tempfile.TemporaryDirectory(prefix="icons-cache-") as tmp:
+            cache = Path(tmp) / "icons.json"
+            first = browser_icons(cache)
+            if not first:
+                self.skipTest("这台机器没装常见浏览器")
+            self.assertTrue(cache.is_file(), "图标要落盘缓存")
+            second = browser_icons(cache)
+        self.assertEqual(first, second)
+

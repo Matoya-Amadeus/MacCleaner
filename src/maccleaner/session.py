@@ -76,6 +76,8 @@ class SessionDeps:
     uninstall_cask: Callable[[str], dict[str, Any]] | None = None
     # 读某个 .app 的版本号（判断 Sparkle 是否真的更新了）。
     app_version: Callable[[str], str] | None = None
+    # 已安装浏览器的图标（data URI），给"浏览器缓存"那一行配真实图标。
+    browser_icons: Callable[[], dict[str, str]] | None = None
     # 大文件视图：扫描 + 移入废纸篓。
     large_files: Callable[[], dict[str, Any]] | None = None
     trash_paths: Callable[[list[str]], dict[str, Any]] | None = None
@@ -336,6 +338,13 @@ class InteractiveSession:
                     reader = getattr(self.deps, "system_sizes_cached", None)
                     if reader is not None:
                         payload["system"] = self._safe(reader, default={})
+                    # 浏览器缓存那几行配真实图标（读本机 .icns，不引第三方素材）。
+                    icons_reader = getattr(self.deps, "browser_icons", None)
+                    if icons_reader is not None:
+                        icons = self._safe(icons_reader, default={}) or {}
+                        for candidate in payload.get("candidates") or []:
+                            if str(candidate.get("target_id")) == "browser-caches":
+                                candidate["icons"] = list(icons.values())
                     self._serve("review", pages.render_review_html(
                         payload, notice=notice, preselected=preselected,
                     ))

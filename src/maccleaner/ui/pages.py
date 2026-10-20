@@ -188,6 +188,14 @@ def _rows(
             f' data-sort-text="{html.escape(name.lower())}"'
             f' data-sort-bytes="{int(item.get("allocated_bytes", 0) or item.get("bytes", 0) or 0)}"'
         )
+        # 真实应用图标（浏览器缓存那几行）：本机读出来的 data URI，不随包分发厂商素材。
+        stack = ""
+        icon_uris = [str(uri) for uri in (item.get("icons") or []) if str(uri).startswith("data:image/")]
+        if icon_uris:
+            imgs = "".join(
+                f'<img src="{html.escape(uri)}" alt="" width="18" height="18">' for uri in icon_uris[:4]
+            )
+            stack = f'<span class="ico-stack">{imgs}</span>'
         body = (
             f"<strong>{html.escape(name)}</strong>"
             f'<div class="meta">{html.escape(meta)}</div>'
@@ -204,13 +212,13 @@ def _rows(
                 '<span class="pill risk">高风险 · 确认页单独确认</span>' if risky else ""
             )
             rows.append(
-                f'<label class="row opt"{sort_attrs}{reveal_attr}>{box}{_kind_icon(kind)}'
+                f'<label class="row opt"{sort_attrs}{reveal_attr}>{box}{stack or _kind_icon(kind)}'
                 f'<div>{body}{risk_note}</div>'
                 f'<span class="meta value">{size}</span></label>'
             )
         else:
             rows.append(
-                f'<div class="row"{sort_attrs}{reveal_attr}>{_kind_icon(kind)}'
+                f'<div class="row"{sort_attrs}{reveal_attr}>{stack or _kind_icon(kind)}'
                 f'<div>{body}</div><span class="meta value">{size}</span></div>'
             )
     return "".join(rows)

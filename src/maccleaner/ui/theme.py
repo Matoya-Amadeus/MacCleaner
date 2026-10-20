@@ -215,6 +215,12 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);height:100vh
 /* 分组图标用主题色：一行里最重要的是"这是哪一类"，颜色帮眼睛先分组。 */
 .group > summary .ico{opacity:.95;color:var(--accent)}
 
+/* 真实应用图标叠放：多个浏览器时并排，最多 4 个。 */
+.ico-stack{display:inline-flex;align-items:center;flex:none}
+.ico-stack img{width:18px;height:18px;border-radius:4px;margin-left:-5px;
+  box-shadow:0 0 0 1px var(--line);background:var(--surface)}
+.ico-stack img:first-child{margin-left:0}
+
 /* 筛选标签（审阅页）：一行小胶囊，替代原来的排序条。 */
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 var(--sp-3)}
 .chip{appearance:none;border:1px solid var(--line-strong);background:var(--surface);

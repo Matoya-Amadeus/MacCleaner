@@ -562,6 +562,19 @@ class LandingPageTests(unittest.TestCase):
         self.assertNotIn("http://www.w3.org/2000/svg", page, "不引外部资源")
         self.assertIn('stroke="currentColor"', page, "图标要跟着主题色")
 
+    def test_review_row_renders_real_app_icons_when_available(self) -> None:
+        """真实图标（浏览器缓存行）：多个图标叠放，且只接受 data:image/ 前缀。"""
+        from maccleaner.ui.pages import render_review_html
+
+        page = render_review_html({"candidates": [
+            {"name": "浏览器缓存", "path": "/x", "kind": "browser", "allocated_bytes": 2,
+             "target_id": "browser-caches",
+             "icons": ["data:image/png;base64,AAA", "javascript:alert(1)"]},
+        ]})
+        self.assertIn("ico-stack", page)
+        self.assertIn('src="data:image/png;base64,AAA"', page)
+        self.assertNotIn("javascript:", page, "非图片前缀必须被过滤")
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")
