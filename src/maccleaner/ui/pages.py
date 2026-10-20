@@ -176,6 +176,7 @@ def _rows(
     note_key: str = "reason",
     selectable: bool = False,
     preselected: frozenset[str] = frozenset(),
+    default_checked: bool = False,
 ) -> str:
     """列表行。
 
@@ -215,10 +216,14 @@ def _rows(
             target_id = html.escape(str(item.get("target_id", "") or ""))
             risky = bool(item.get("requires_confirmation"))
             # 默认**不勾**；高风险项也能勾，但确认页会再问一次。
-            checked = " checked" if (target_id and str(item.get("target_id")) in preselected) else ""
+            # 默认勾选**只给低风险**：高风险（Downloads/Docker/安装包）必须由人自己勾，
+            # 否则"点一下开始清理"就等于清空下载目录。
+            default_on = default_checked and not risky
+            checked = " checked" if (target_id and (default_on or str(item.get("target_id")) in preselected)) else ""
             # 高风险项**可以勾**（2026-10-20 用户反馈"点不动"）：勾了之后确认页还要再确认一次，
             # 两道门都在。之前禁用勾选框，等于这一项永远清不掉。
-            box = f'<input type="checkbox" data-target-id="{target_id}"{checked}>' 
+            risky_attr = ' data-risky="1"' if risky else ""
+            box = f'<input type="checkbox" data-target-id="{target_id}"{risky_attr}{checked}>' 
             risk_note = (
                 '<span class="pill risk">高风险 · 确认页单独确认</span>' if risky else ""
             )
@@ -359,7 +364,7 @@ def render_progress_html(payload: dict[str, Any] | None = None, *, stage: str = 
 # 只需要知道"这是谁留下的、删了会怎样"。
 _REVIEW_GROUPS: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
     ("system", "系统数据", "需管理员权限，本工具只测量不删除", ()),
-    ("browser", "浏览器", "浏览器留下的缓存（不含 Cookies / 登录数据）；默认不勾", ("browser",)),
+    ("browser", "浏览器", "浏览器留下的缓存（不含 Cookies / 登录数据），默认已勾选", ("browser",)),
     ("app", "App 缓存与日志", "应用运行时生成，删了会重建", ("cache", "logs")),
     ("dev", "开发工具", "Xcode / 包管理器 / 编辑器缓存", (
         "xcode", "android", "ios", "ide", "package-cache", "homebrew", "flutter", "browser-cache",
@@ -415,6 +420,7 @@ def _review_groups_html(
     interactive: bool,
     system: dict[str, Any] | None = None,
     preselected: frozenset[str] = frozenset(),
+    default_checked: bool = False,
 ) -> str:
     """把候选按组折叠：每组一个 details，展开就是这一组的具体条目。"""
     buckets: dict[str, list[dict[str, Any]]] = {}
@@ -441,7 +447,7 @@ def _review_groups_html(
             "</summary>"
             f'<p class="group-hint meta">{hint}</p>'
             f'<div class="rows">'
-            f'{"".join(_rows(items, selectable=interactive, preselected=preselected))}</div>'
+            f'{"".join(_rows(items, selectable=interactive, preselected=preselected, default_checked=default_checked))}</div>'
             "</details>"
         )
     return "".join(blocks)
@@ -529,6 +535,7 @@ def render_review_html(
     interactive: bool = True,
     notice: str = "",
     preselected: Sequence[str] | None = None,
+    default_checked: bool = True,
 ) -> str:
     """审阅页：列出候选，**用户可以逐条不选**；没有候选时明确说"没找到"。
 
@@ -576,12 +583,16 @@ def render_review_html(
     )
     # 头部固定（2026-10-20 用户要求：滚列表时这半部分一直在）。
     # 标题区与"找到可清理的内容…"整块已删——它只是重复下面的数字。
+    sel_all_checked = " checked" if (default_checked and not any(
+        item.get("requires_confirmation") for item in candidates
+    )) else ""
     head = (
         (f'<p class="pill warn" role="status">{html.escape(notice)}</p>' if notice else "")
         + (
-            '<label class="row opt select-all"><input type="checkbox" data-select-all>'
-            '<div><strong>全选（不含浏览器 / 系统数据）</strong>'
-            '<div class="meta">默认不勾；高风险项在确认页单独确认</div></div>'
+            '<label class="row opt select-all">'
+            f'<input type="checkbox" data-select-all{sel_all_checked}>'
+            '<div><strong>全选（不含高风险）</strong>'
+            '<div class="meta">低风险项已默认勾选；高风险项需要自己勾，并在确认页再确认一次</div></div>'
             '<span class="meta value" id="mc-picked-bytes">已选 0 B</span></label>'
             if candidates and interactive
             else ""
@@ -605,6 +616,7 @@ def render_review_html(
                 interactive=interactive and bool(candidates),
                 system=payload.get("system"),
                 preselected=frozenset(str(x) for x in (preselected or ())),
+                default_checked=default_checked,
             )
             + actions
             + "</div></div>"

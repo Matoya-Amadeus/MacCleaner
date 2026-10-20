@@ -146,7 +146,8 @@ class LandingPageTests(unittest.TestCase):
              "requires_confirmation": True},
         ]})
         self.assertEqual(page.count('data-target-id="home-caches"'), 1)
-        self.assertNotRegex(page, r'data-target-id="[^"]+"[^>]*checked', "默认不该勾选")
+        self.assertIn('data-target-id="home-caches" checked', page, "低风险项默认勾选")
+        self.assertNotRegex(page, r'data-target-id="downloads"[^>]*checked', "高风险不能默认勾")
         self.assertIn('data-target-id="downloads"', page, "高风险项也必须可勾（否则永远清不掉）")
         self.assertIn("高风险 · 确认页单独确认", page)
         self.assertIn("确认页单独确认", page)
@@ -508,7 +509,7 @@ class LandingPageTests(unittest.TestCase):
         system_block = page.split('data-group-key="system"')[1].split("</details>")[0]
         self.assertNotIn("data-target-id", system_block, "系统数据只读，不能勾选")
         # 浏览器默认不勾
-        self.assertNotRegex(page, r'data-target-id="browser-caches"[^>]*checked')
+        self.assertIn('data-target-id="browser-caches" checked', page, "浏览器缓存是低风险，默认勾选")
         # 顶部说明块已删（用户要求），改为固定头部 + 筛选标签
         self.assertIn("review-head", page)
         self.assertIn('data-filter-group="all"', page)
@@ -544,7 +545,7 @@ class LandingPageTests(unittest.TestCase):
              "target_id": "browser-caches"},
         ]})
         self.assertIn("mc-picked-bytes", page)
-        self.assertIn('node.closest(\'[data-group-key="browser"]\')', page, "全选必须跳过浏览器组")
+        self.assertIn("node.hasAttribute('data-risky')", page, "全选必须跳过高风险项")
         self.assertIn("refreshSelection();", page)
 
     def test_review_rows_and_groups_show_icons(self) -> None:

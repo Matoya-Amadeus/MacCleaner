@@ -105,7 +105,7 @@ _RUNTIME_JS = """
       upLabel.textContent = '已选 ' + picked(updates) + ' / ' + updates.length;
     }
     const reviewBoxes = Array.from(document.querySelectorAll('[data-target-id]'))
-      .filter(box => !box.closest('[data-group-key="browser"]'));
+      .filter(box => !box.hasAttribute('data-risky'));
     sync(document.querySelector('[data-select-all]'), reviewBoxes);
 
     const pickedLabel = document.getElementById('mc-picked-bytes');
@@ -296,10 +296,10 @@ _RUNTIME_JS = """
     // 全选框：只是前端联动，不产生动作（审阅页/更新页都可能用到）。
     const selectAll = event.target.closest('[data-select-all]');
     if (selectAll) {
-      // 浏览器组**不跟着全选**（用户明确要求：浏览器默认不选）；
-      // 而且必须 refreshSelection，否则"已选空间"和按钮禁用状态不更新（2026-10-20 实测）。
+      // 全选只作用于**低风险项**：高风险（data-risky）必须由人逐个勾，
+      // 否则"全选 + 确认清理"会连 Downloads 一起清掉。
       document.querySelectorAll('[data-target-id]').forEach((node) => {
-        if (node.closest('[data-group-key="browser"]')) return;
+        if (node.hasAttribute('data-risky')) return;
         node.checked = selectAll.checked;
       });
       refreshSelection();
