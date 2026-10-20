@@ -439,6 +439,23 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn("70%", hot)
         self.assertIn("CPU 速度上限", hot)
 
+    def test_uninstall_preview_warns_about_homebrew_cask(self) -> None:
+        """cask 装的 app：预览页要提示并给"改用 brew 卸载"，避免 brew 记录不一致。"""
+        from maccleaner.ui.pages import render_uninstall_preview_html
+
+        plan = {
+            "app": {"path": "/Applications/Ollama.app", "name": "Ollama"},
+            "cask": "ollama-app",
+            "items": [{"id": "a", "kind": "app-bundle", "path": "/Applications/Ollama.app", "bytes": 100}],
+        }
+        page = render_uninstall_preview_html(plan)
+        self.assertIn("Homebrew cask", page)
+        self.assertIn("ollama-app", page)
+        self.assertIn("uninstall-cask", page)
+
+        plain = render_uninstall_preview_html({"app": {"path": "/A.app", "name": "A"}, "items": []})
+        self.assertNotIn("uninstall-cask", plain, "非 cask 应用不该出现这个按钮")
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")

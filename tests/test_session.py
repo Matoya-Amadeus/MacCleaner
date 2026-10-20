@@ -514,6 +514,42 @@ class UpdatesFlowTests(unittest.TestCase):
             driver.action("cancel")
             driver.join()
 
+
+    def test_uninstall_cask_runs_brew_and_rejects_wrong_token(self) -> None:
+        """cask 卸载：只接受计划里的 token；伪造的 token 不执行。"""
+        calls: list[str] = []
+
+        def plan(**kwargs):
+            return {"app": {"path": "/Applications/Ollama.app", "name": "Ollama"},
+                    "cask": "ollama-app", "items": [], "user_total_bytes": 0}
+
+        def apply_cask(token):
+            calls.append(token)
+            return {"status": "ok", "token": token, "output": "Uninstalling ollama-app"}
+
+        with tempfile.TemporaryDirectory(prefix="session-cask-", ignore_cleanup_errors=True) as tmp:
+            driver = _Driver(_deps(uninstall_plan=plan, uninstall_cask=apply_cask), Path(tmp))
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+
+            driver.action("uninstall-list")
+            driver.wait_page('data-stage="uninstall-list"', timeout=5)
+            driver.action("uninstall-plan", {"path": "/Applications/Ollama.app"})
+            page = driver.wait_page('data-stage="uninstall-preview"', timeout=5)
+            self.assertIn("uninstall-cask", page)
+
+            # 伪造 token：必须被忽略，且不能执行
+            driver.action("uninstall-cask", {"token": "evil-cask"})
+            driver.wait_page("与当前计划不一致", timeout=5)
+            self.assertEqual(calls, [], "伪造 token 不该执行 brew")
+
+            driver.action("uninstall-cask", {"token": "ollama-app"})
+            driver.wait_page("已用 Homebrew 卸载", timeout=5)
+            self.assertEqual(calls, ["ollama-app"])
+
+            driver.action("cancel")
+            driver.join()
+
 class NavigationTests(unittest.TestCase):
     def test_uninstall_entry_lists_apps(self) -> None:
         with tempfile.TemporaryDirectory(prefix="session-unin-") as tmp:

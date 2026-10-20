@@ -628,3 +628,24 @@ class PowerParsingTests(unittest.TestCase):
         self.assertTrue(hot["throttled"])
         self.assertEqual(hot["speed_limit"], 70)
 
+class CaskDetectionTests(unittest.TestCase):
+    """Homebrew cask 检测（2026-10-20）：token 与 app 名不同名，必须用 artifacts 的 target。"""
+
+    def test_parse_cask_targets_maps_app_paths(self) -> None:
+        from maccleaner.deps import parse_cask_targets
+
+        payload = json.dumps({"casks": [
+            {"token": "ollama-app", "artifacts": [
+                {"uninstall": [{"quit": "com.electron.ollama"}]},
+                {"app": ["Ollama.app"], "target": "/Applications/Ollama.app"},
+            ]},
+            {"token": "dotnet-runtime", "artifacts": [{"pkg": ["x.pkg"]}]},
+        ]})
+        mapping = parse_cask_targets(payload)
+        self.assertEqual(mapping, {"/Applications/Ollama.app": "ollama-app"})
+
+    def test_parse_cask_targets_survives_bad_json(self) -> None:
+        from maccleaner.deps import parse_cask_targets
+
+        self.assertEqual(parse_cask_targets("{not json"), {})
+

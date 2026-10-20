@@ -668,6 +668,18 @@ def render_uninstall_preview_html(
     if notice:
         # 提示放在按钮**上方**，否则它会挤在动作条里、看起来像另一个按钮。
         actions = f'<p class="pill warn" role="status">{html.escape(notice)}</p>' + actions
+
+    # cask 装的 app 直接拖废纸篓，`brew list --cask` 仍认为它装着（下次 upgrade 会复活/报错）。
+    # 这里给明确提示 + 一键改用 brew 卸载，而不是悄悄替用户决定。
+    cask = str(plan.get("cask") or "")
+    cask_block = ""
+    if cask and interactive:
+        cask_block = (
+            f'<p class="pill warn" role="status">这个应用由 Homebrew cask 安装（{html.escape(cask)}）：'
+            "建议改用 brew 卸载，否则 brew 记录会与磁盘不一致。</p>"
+            + _actions(_button("改用 brew 卸载", "uninstall-cask", payload={"token": cask}))
+        )
+
     return state_page(
         {
             "message": f"将移入废纸篓 {len(items)} 项，共 {human_bytes(int(plan.get('user_total_bytes', 0) or 0))}（可恢复）",
@@ -676,7 +688,34 @@ def render_uninstall_preview_html(
         stage="uninstall-preview",
         title=f"卸载 {app.get('name', '')}".strip(),
         body="确认要清理的内容",
-        actions=actions + "".join(parts),
+        actions=cask_block + actions + "".join(parts),
+        current="uninstall",
+    )
+
+
+def render_uninstall_cask_result_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
+    """`brew uninstall --cask` 的结果页：成功/失败都给命令输出片段。"""
+    data = payload or {}
+    token = str(data.get("token") or "")
+    ok = str(data.get("status")) == "ok"
+    output = str(data.get("output") or "").strip()
+    actions = _actions(
+        _button("回到应用列表", "uninstall-list"),
+        _button("打开废纸篓", "open-trash", ghost=True),
+    ) if interactive else ""
+    return state_page(
+        {
+            "message": (
+                f"已用 Homebrew 卸载 {token}（brew 记录同步）"
+                if ok
+                else f"brew 卸载 {token} 失败"
+            ),
+            "detail": (output[-400:] if output else "（没有输出）"),
+        },
+        stage="uninstall-cask",
+        title="软件卸载",
+        body="",
+        actions=actions,
         current="uninstall",
     )
 
@@ -1417,6 +1456,7 @@ def render_system_html(payload: dict[str, Any] | None = None, *, interactive: bo
 
 __all__ = [
     "render_disk_browse_html",
+    "render_uninstall_cask_result_html",
     "render_orphans_html",
     "render_orphans_result_html",
     "render_disk_html",

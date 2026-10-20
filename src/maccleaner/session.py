@@ -72,6 +72,8 @@ class SessionDeps:
     # 孤儿残留体检：扫描与清理（清理只允许页面出现过的路径）。
     orphans_scan: Callable[[], dict[str, Any]] | None = None
     orphans_apply: Callable[[list[str]], dict[str, Any]] | None = None
+    # 用 Homebrew 卸载 cask（只在预览页显式点击时调用）。
+    uninstall_cask: Callable[[str], dict[str, Any]] | None = None
     # 只读的"看一眼"页面（磁盘/系统）。
     disk: Callable[[], dict[str, Any]] = lambda: {}
     # 磁盘钻取：传目录路径，返回下一级条目。
@@ -465,7 +467,8 @@ class InteractiveSession:
                 while applied is None:
                     self._serve("uninstalling", pages.render_uninstall_preview_html(plan, notice=notice))
                     decision = self._wait_or_nav(
-                        ("uninstall-apply", "uninstall-back", "cancel"), self.ACTION_TIMEOUT_SECONDS
+                        ("uninstall-apply", "uninstall-back", "uninstall-cask", "cancel"),
+                        self.ACTION_TIMEOUT_SECONDS,
                     )
                     if decision is not None and "nav" in decision:
                         self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
@@ -473,6 +476,22 @@ class InteractiveSession:
                     if decision is None or decision["action"] in {"cancel", "uninstall-back"}:
                         self._serve("uninstalling", pages.render_uninstall_list_html({"apps": apps}))
                         break
+                    if decision["action"] == "uninstall-cask":
+                        # 只接受**当前计划里那个** cask 名，前端伪造别的 token 一律忽略。
+                        token = str((decision.get("payload") or {}).get("token") or "")
+                        expected = str(plan.get("cask") or "")
+                        runner = getattr(self.deps, "uninstall_cask", None)
+                        if not token or token != expected or runner is None:
+                            notice = "这个应用的 cask 名称与当前计划不一致，已忽略"
+                            continue
+                        outcome = self._safe(lambda: runner(token), default={"status": "failed", "token": token})
+                        self._serve("uninstalling", pages.render_uninstall_cask_result_html(outcome))
+                        back = self._wait_or_nav(("uninstall-list", "cancel"), self.ACTION_TIMEOUT_SECONDS)
+                        if back is not None and "nav" in back:
+                            return str(back["nav"])
+                        self._serve("uninstalling", pages.render_uninstall_list_html({"apps": self._safe(self.deps.apps, default=[])}))
+                        break
+
                     selected = [
                         str(value) for value in (decision.get("payload") or {}).get("selected_ids") or []
                     ]

@@ -21,6 +21,7 @@ import json
 import os
 import plistlib
 import re
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -902,6 +903,94 @@ def parse_thermal(text: str) -> dict[str, Any]:
     }
 
 
+
+CASK_INFO_TIMEOUT = 20.0
+
+
+
+BREW_CANDIDATES = ("/opt/homebrew/bin/brew", "/usr/local/bin/brew")
+
+
+def _brew_path() -> str:
+    for candidate in BREW_CANDIDATES:
+        if Path(candidate).exists():
+            return candidate
+    found = shutil.which("brew")
+    return found or ""
+
+
+def _run_cmd(argv: list[str], *, timeout: float) -> tuple[int, str, str]:
+    try:
+        completed = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return 1, "", f"{type(exc).__name__}: {exc}"
+    return (
+        int(getattr(completed, "returncode", 1) or 0),
+        str(getattr(completed, "stdout", "") or ""),
+        str(getattr(completed, "stderr", "") or ""),
+    )
+
+
+def parse_cask_targets(payload: str) -> dict[str, str]:
+    """`brew info --cask --json=v2` → `{app 路径: cask token}`。
+
+    cask token 与 app 名并不同名（`ollama-app` → `Ollama.app`、`devin-desktop` → `Devin.app`），
+    靠名字猜必错，所以只认 artifacts 里的 target 路径。
+    """
+    try:
+        data = json.loads(payload or "{}")
+    except json.JSONDecodeError:
+        return {}
+    mapping: dict[str, str] = {}
+    for cask in data.get("casks") or []:
+        if not isinstance(cask, dict):
+            continue
+        token = str(cask.get("token") or "")
+        if not token:
+            continue
+        for artifact in cask.get("artifacts") or []:
+            if isinstance(artifact, dict) and artifact.get("target"):
+                mapping[str(artifact["target"])] = token
+    return mapping
+
+
+def cask_app_map(*, runner: Any | None = None) -> dict[str, str]:
+    """当前已安装 cask 的 `{app 路径: token}`；brew 不可用/失败就返回空。"""
+    binary = _brew_path()
+    if not binary:
+        return {}
+    code, out, _ = _run_cmd([binary, "list", "--cask"], timeout=15)
+    if code != 0:
+        return {}
+    tokens = [line.strip() for line in (out or "").splitlines() if line.strip()]
+    if not tokens:
+        return {}
+    code, info, _ = _run_cmd(
+        [binary, "info", "--cask", "--json=v2", *tokens], timeout=CASK_INFO_TIMEOUT
+    )
+    if code != 0:
+        return {}
+    return parse_cask_targets(info)
+
+
+def uninstall_cask(token: str, *, runner: Any | None = None) -> dict[str, Any]:
+    """用 Homebrew 卸载 cask（只在界面显式点击时调用）。
+
+    cask 装的 app 如果只把 .app 拖进废纸篓，`brew list --cask` 仍认为它装着，
+    下次 `brew upgrade` 会"复活"或报错。
+    """
+    binary = _brew_path()
+    if not binary:
+        return {"status": "missing-tool", "token": token, "output": "brew 不可用"}
+    code, out, err = _run_cmd([binary, "uninstall", "--cask", token], timeout=300)
+    return {
+        "status": "ok" if code == 0 else "failed",
+        "token": token,
+        "exit": code,
+        "output": (out or err or "").strip()[-800:],
+    }
+
+
 def build_deps(
     *,
     home: Path | None = None,
@@ -987,7 +1076,7 @@ def build_deps(
 
     def uninstall_plan(*, app_path: str, bundle_id: str = "", app_name: str = "") -> dict[str, Any]:
         identity = read_app_identity(app_path)
-        return build_plan(
+        plan = build_plan(
             {
                 "path": app_path,
                 "bundle_id": bundle_id or identity.get("bundle_id", ""),
@@ -996,6 +1085,9 @@ def build_deps(
             },
             home=home_path,
         )
+        # 由 Homebrew cask 装的 app：预览页要提示改用 brew 卸载（否则 brew 记录与磁盘不一致）。
+        plan["cask"] = cask_app_map().get(str(app_path), "")
+        return plan
 
     def uninstall_apply(*, plan: dict[str, Any], ids: list[str] | None) -> dict[str, Any]:
         """执行卸载。
@@ -1041,6 +1133,7 @@ def build_deps(
         reveal=_reveal,
         open_app_store=_open_app_store,
         open_app=_open_app,
+        uninstall_cask=lambda token: uninstall_cask(token),
         sparkle_apps=lambda: sparkle_apps(home_path),
         orphans_scan=lambda: orphan_leftovers(
             home_path, cache_path=(state_path / "launchservices-ids.json") if state_path else None
