@@ -1614,9 +1614,6 @@ def render_orphans_html(payload: dict[str, Any] | None = None, *, interactive: b
             '<div class="toolbar-left">'
             '<label class="checkbox-inline"><input type="checkbox" data-select-all-orphans>'
             "<span>全选</span></label></div>"
-            '<div class="toolbar-right">'
-            + _button("重新扫描", "orphans-open")
-            + "</div>"
         )
 
     body = (
@@ -1631,20 +1628,8 @@ def render_orphans_html(payload: dict[str, Any] | None = None, *, interactive: b
     )
     return state_page(
         {
-            "message": (
-                f"疑似残留 {total} 项，共 {human_bytes(total_bytes)}"
-                + (f"（页面列出前 {len(items)} 项）" if total > len(items) else "")
-                if items
-                else "没有发现孤儿残留"
-            ),
-            "detail": "判定：名字像 bundle id、对不上任何已装应用、且 7 天没被改动过。"
-            "默认不勾；勾了才移入废纸篓（可恢复）。"
-            + (
-                f" 另有 {int(data.get('skipped_vendor', 0) or 0)} 项同厂商组件被保守排除"
-                "（同厂商别的应用还装着，先不动）。"
-                if int(data.get("skipped_vendor", 0) or 0)
-                else ""
-            ),
+            "message": "",
+            "detail": "",
         },
         stage="orphans",
         title="残留体检",

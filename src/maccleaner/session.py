@@ -801,7 +801,7 @@ class InteractiveSession:
         found = self._safe(scan, default={})
         while True:
             self._serve("orphans", pages.render_orphans_html(found))
-            action = self._wait_or_nav(("orphans-apply", "orphans-open", "cancel"), self.ACTION_TIMEOUT_SECONDS)
+            action = self._wait_or_nav(("orphans-apply", "cancel"), self.ACTION_TIMEOUT_SECONDS)
             if action is not None and "nav" in action:
                 return str(action["nav"])
             if action is None or action["action"] == "cancel":
