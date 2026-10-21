@@ -348,6 +348,9 @@ def render_progress_html(payload: dict[str, Any] | None = None, *, stage: str = 
         stage=stage,
         title=str(data.get("title") or "正在扫描"),
         body=str(data.get("body") or "正在扫描"),
+        # 进度页也不要标题栏（2026-10-21 用户要求）：这一屏只在几秒内出现，
+        # 再顶一行"软件更新/残留体检"既没用又跳一下。
+        with_header=False,
         # 进度页**自己轮询刷新**：慢操作（例如 brew outdated 要几秒）期间服务端不会发新页，
         # 不自刷的话用户就一直停在"正在…"（2026-10-18 真浏览器实测过的坑）。
         actions=loading + (
