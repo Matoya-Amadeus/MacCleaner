@@ -833,6 +833,14 @@ class InteractiveSession:
         if scan is None:
             self._serve("large", pages.render_large_files_html({}))
             return None
+        # 先回一屏进度：扫描整个家目录在冷缓存时可能要几秒，期间页面不动＝"点了没反应"。
+        self._serve("large", pages.render_progress_html(
+            {"title": "大文件", "body": "正在扫描大文件",
+             "message": "逐个目录比较体积，不会改动任何文件…",
+             "detail": "只读；扫描完给你一份按体积排好的清单。",
+             "nav": "large", "auto_refresh": False},
+            stage="large",
+        ))
         found = self._safe(scan, default={})
         while True:
             self._serve("large", pages.render_large_files_html(found))
