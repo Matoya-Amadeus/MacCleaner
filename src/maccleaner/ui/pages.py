@@ -632,8 +632,9 @@ def render_review_html(
             empty
             + '<div class="review-split">'
             + _review_rail(groups, candidates, payload.get("system"))
-            + '<div class="review-detail">'
+            + '<div class="review-right">'
             + (f'<div class="review-head">{head}</div>' if head else "")
+            + '<div class="review-detail">'
             + _review_groups_html(
                 candidates,
                 interactive=interactive and bool(candidates),
@@ -641,6 +642,7 @@ def render_review_html(
                 preselected=frozenset(str(x) for x in (preselected or ())),
                 default_checked=default_checked,
             )
+            + "</div>"
             + actions
             + "</div></div>"
         ),
@@ -852,9 +854,11 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
         for key in categories:
             rail_items.append((key, key, "doc", f"{len(buckets[key])} 个"))
         detail = (
-            '<div class="review-detail">'
+            '<div class="review-right">'
             + (f'<div class="review-head">{toolbar}</div>' if toolbar else "")
+            + '<div class="review-detail">'
             + f'<div>{"".join(groups)}</div>'
+            + "</div>"
             + (
                 '<div class="review-footer">'
                 '<div class="review-sum">'
@@ -873,10 +877,7 @@ def render_uninstall_list_html(payload: dict[str, Any], *, interactive: bool = T
     else:
         body = empty_block("check", "没有找到应用", "换一个入口，或稍后再来。")
     return state_page(
-        {
-            "message": "点行尾【卸载】看它留下的文件；勾选多个可以批量处理",
-            "detail": "系统级残留需要一次管理员授权；体积在点开应用后计算。",
-        },
+        {"message": "", "detail": ""},
         stage="uninstall-list",
         title="软件卸载",
         body="",
@@ -1230,7 +1231,7 @@ def render_updates_list_html(
         toolbar = (
             '<div class="toolbar-left">'
             '<label class="checkbox-inline"><input type="checkbox" data-select-all-updates checked>'
-            "<span>全选</span></label>"
+            "<span>全选</span></label></div>"
             '<div class="toolbar-right">'
             + _button("重新检查", "updates-refresh")
             # App Store 应用绕不开 Apple ID：mas 用不了时把更新页打开，让系统自己装。
@@ -1265,10 +1266,12 @@ def render_updates_list_html(
         sources.append((label, label, "terminal", f"{len(buckets[label])} 项"))
 
     detail = (
-        '<div class="review-detail">'
+        '<div class="review-right">'
         + (f'<div class="review-head">{toolbar}</div>' if toolbar else "")
+        + '<div class="review-detail">'
         + body
         + notes
+        + "</div>"
         + (
             '<div class="review-footer">'
             '<div class="review-sum">'
@@ -1615,7 +1618,7 @@ def render_orphans_html(payload: dict[str, Any] | None = None, *, interactive: b
         toolbar = (
             '<div class="toolbar-left">'
             '<label class="checkbox-inline"><input type="checkbox" data-select-all-orphans>'
-            "<span>全选</span></label>"
+            "<span>全选</span></label></div>"
             '<div class="toolbar-right">'
             + _button("重新扫描", "orphans-open")
             + "</div>"
@@ -1658,9 +1661,11 @@ def render_orphans_html(payload: dict[str, Any] | None = None, *, interactive: b
                 [("all", "全部", "box", "")]
                 + [(key, key, "doc", f"{len(rows)} 项") for key, rows in buckets.items()]
             )
-            + '<div class="review-detail">'
+            + '<div class="review-right">'
             + (f'<div class="review-head">{toolbar}</div>' if toolbar else "")
+            + '<div class="review-detail">'
             + body
+            + "</div>"
             + (
                 '<div class="review-footer">'
                 '<div class="review-sum">'

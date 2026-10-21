@@ -662,6 +662,36 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn("review-footer", page, "底部固定条")
         self.assertIn('id="mc-updates-btn"', page)
 
+    def test_two_pane_pages_keep_head_outside_scrolling_detail(self) -> None:
+        """结构契约（2026-10-21）：`.review-detail` 必须是 `.review-right` 的子元素。
+
+        踩过两次：工具栏少一个 `</div>` 时明细会被塞进头部，整页就不可滚。
+        这里用"出现顺序"钉住结构，比肉眼可靠。
+        """
+        from maccleaner.ui.pages import (
+            render_orphans_html, render_review_html, render_uninstall_list_html, render_updates_list_html,
+        )
+
+        pages = {
+            "review": render_review_html({"candidates": [
+                {"name": "C", "path": "/x", "kind": "cache", "allocated_bytes": 1, "target_id": "t1"}]}),
+            "uninstall": render_uninstall_list_html({"apps": [
+                {"name": "A", "bundle_id": "a.b", "path": "/A", "category": "开发工具"}]}),
+            "updates": render_updates_list_html({"items": [
+                {"name": "x", "manager": "brew", "kind": "formula", "installed": "1", "available": "2"}]}),
+            "orphans": render_orphans_html({"items": [
+                {"name": "com.gone", "path": "/x/Library/Caches/com.gone", "bytes": 1}], "total": 1, "bytes": 1}),
+        }
+        for name, page in pages.items():
+            self.assertIn('class="review-right"', page, f"{name} 缺少 review-right")
+            self.assertIn('class="review-detail"', page, f"{name} 缺少 review-detail")
+            right_at = page.index('class="review-right"')
+            detail_at = page.index('class="review-detail"')
+            head_at = page.index('class="review-head"') if 'class="review-head"' in page else -1
+            self.assertLess(right_at, detail_at, f"{name}: detail 要在 right 里面")
+            if head_at != -1:
+                self.assertLess(head_at, detail_at, f"{name}: 头部必须在明细之前（且不在明细里）")
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")

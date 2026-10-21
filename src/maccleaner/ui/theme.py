@@ -225,13 +225,35 @@ body.has-nav{display:grid;grid-template-columns:208px minmax(0,1fr);height:100vh
   box-shadow:0 0 0 1px var(--line);background:var(--surface)}
 .ico-stack img:first-child{margin-left:0}
 
+/* 定高布局（2026-10-21 用户要求）：左栏与工具栏不随内容滚动，只有右栏滚。
+   把滚动交给 .review-detail，卡片本身 overflow:hidden，工具栏就不会浮在行上。 */
+html[data-stage=review] .state.card,
+html[data-stage=uninstall-list] .state.card,
+html[data-stage=updates] .state.card,
+html[data-stage=orphans] .state.card,
+html[data-stage=system] .state.card{height:calc(100vh - 32px);display:flex;flex-direction:column;overflow:hidden}
+/* 这些页面内部已各自滚动，外层再滚就会多一条滚动条。 */
+html[data-stage=review] .app,
+html[data-stage=uninstall-list] .app,
+html[data-stage=updates] .app,
+html[data-stage=orphans] .app,
+html[data-stage=system] .app{overflow:hidden}
+
+html[data-stage=review] .review-split,
+html[data-stage=uninstall-list] .review-split,
+html[data-stage=updates] .review-split,
+html[data-stage=orphans] .review-split,
+html[data-stage=system] .review-split{flex:1;min-height:0;align-items:stretch;
+  grid-template-rows:minmax(0,1fr)}
+
 /* 审阅页双栏（2026-10-20）：左栏固定分类，右栏滚动明细。 */
 .review-split{display:grid;grid-template-columns:224px minmax(0,1fr);gap:var(--sp-4);align-items:start}
-.review-detail{min-width:0}
+.review-right{display:flex;flex-direction:column;min-height:0}
+.review-detail{flex:1;min-width:0;min-height:0;overflow-y:auto;
+  padding-right:var(--sp-2);padding-bottom:80px}
 .panel{min-width:0}
 /* 左栏固定：右侧列表滚动时它不动（2026-10-20 用户两次强调"中间栏不跟着滑"）。 */
-.rail{position:sticky;top:var(--sp-4);align-self:start;max-height:calc(100vh - 120px);
-  overflow-y:auto;display:flex;flex-direction:column;gap:2px;
+.rail{display:flex;flex-direction:column;gap:2px;min-height:0;overflow-y:auto;
   padding-right:var(--sp-3);border-right:1px solid var(--line)}
 .rail-item{display:flex;align-items:center;gap:7px;width:100%;text-align:left;
   appearance:none;border:0;background:transparent;color:var(--text-2);cursor:pointer;
@@ -273,9 +295,8 @@ html[data-stage=uninstall-list] .state.card{min-height:calc(100vh - 104px);
 .review-footer .button{min-width:132px}
 
 /* 审阅页头部固定：全选 + 筛选 + 已选空间，滚动时不消失（2026-10-20 用户要求）。 */
-.review-head{position:sticky;top:0;z-index:8;background:var(--surface);
-  padding:var(--sp-3) 0 var(--sp-2);margin:0 0 var(--sp-2);
-  border-bottom:1px solid var(--line)}
+.review-head{position:static;background:var(--surface);
+  padding:0 0 var(--sp-2);margin:0 0 var(--sp-2);border-bottom:1px solid var(--line)}
 .review-head .row.select-all{margin-bottom:var(--sp-2)}
 /* 组头不悬浮：审阅页以"固定头部 + 分组"两层结构为主，组头再吸顶会打架。 */
 .group.review > summary{position:static;top:auto}
