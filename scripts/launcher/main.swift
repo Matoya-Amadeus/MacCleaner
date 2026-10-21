@@ -50,6 +50,13 @@ func resolveRepo() -> String {
     return ""
 }
 
+// WKWebView 默认 `acceptsFirstMouse == false`：窗口还没成为 key 时，第一次点击只用来
+// 激活应用、**不会传给页面**。表现就是"打开后第一次点侧栏没反应，点第二次才行"
+// （2026-10-21 用户反馈）。覆写成 true，第一次点击就能落到控件上。
+final class ClickThroughWebView: WKWebView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSWindowDelegate {
     var window: NSWindow?
     var webView: WKWebView?
@@ -228,15 +235,17 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
         // 记一行实际 frame：窗口记忆是否生效只能看真实矩形，不能靠"我调了 API"。
         log("window frame=\(NSStringFromRect(window.frame))")
 
-        let webView = WKWebView(frame: frame)
+        let webView = ClickThroughWebView(frame: frame)
         webView.navigationDelegate = self
         window.contentView = webView
         webView.load(URLRequest(url: url))
 
+        // 先激活应用、再显示窗口：反过来的话，第一次点击会先被"激活"吃掉（要点两次）。
+        app.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(webView)
         self.window = window
         self.webView = webView
-        app.activate(ignoringOtherApps: true)
     }
 
     func presentError(_ message: String) {

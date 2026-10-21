@@ -774,6 +774,22 @@ class LandingPageTests(unittest.TestCase):
         self.assertNotIn('data-item-id="c"', admin_block)
         self.assertIn("管理员", admin_block)
 
+    def test_skills_page_has_no_header_and_no_fake_back(self) -> None:
+        """Skill 页去掉标题区与【返回】（2026-10-21 用户要求）。
+
+        那个【返回】绑的是 `start`，点了只会重新扫描，并不会"回到上一页"——
+        侧栏一直在，它既多余又误导。
+        """
+        from maccleaner.ui.pages import render_skills_html
+
+        page = render_skills_html({"skills": [
+            {"name": "mac-cleaner", "description": "d", "path": "/Users/x/.codebuddy/skills/mac-cleaner/SKILL.md",
+             "root": "/Users/x/.codebuddy/skills"},
+        ]})
+        self.assertNotIn('class="topbar"', page, "不要标题区")
+        self.assertNotIn(">返回<", page, "不要那个假返回")
+        self.assertIn("mac-cleaner", page)
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")

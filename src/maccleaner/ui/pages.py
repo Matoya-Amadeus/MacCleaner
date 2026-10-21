@@ -1471,7 +1471,8 @@ def render_skills_html(payload: dict[str, Any] | None = None, *, interactive: bo
         "<div><b>边界</b>：扫描只读；清理一律移入废纸篓；系统级残留需要一次管理员授权。</div>"
         "</div></details>"
     )
-    actions = _actions(_button("返回", "start", primary=True)) if interactive else ""
+    # 这一页不给自己一个【返回】：侧栏一直在，返回按钮既多余、又只能跳"开始扫描"
+    # （用户点它不会回到上一页，2026-10-21 反馈"删掉这个功能，skill 没有返回"）。
     return state_page(
         {
             "message": f"本机共 {len(skills)} 个可被调用的 skill",
@@ -1480,8 +1481,9 @@ def render_skills_html(payload: dict[str, Any] | None = None, *, interactive: bo
         },
         stage="skills",
         title="可调用的 Skill",
-        body="本机全部 skill",
-        actions=actions + body,
+        body="",
+        with_header=False,
+        actions=body,
         current="skills",
     )
 

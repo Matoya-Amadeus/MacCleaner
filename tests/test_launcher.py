@@ -157,6 +157,20 @@ class PackagingMetadataTests(unittest.TestCase):
     `ValueError: invalid pyproject.toml config: project.license`，构建失败。
     """
 
+    def test_first_click_reaches_the_web_view(self) -> None:
+        """窗口激活的那一次点击不能被吞掉（2026-10-21 用户报"第一次点磁盘没反应"）。
+
+        WKWebView 默认 acceptsFirstMouse = false：窗口还不是 key 时，第一次点击只用来激活
+        应用、不传给页面。表现就是"要点两次"。这里钉住两件事：覆写 + 先激活再显示窗口。
+        """
+        source = (REPO_ROOT / "scripts" / "launcher" / "main.swift").read_text(encoding="utf-8")
+
+        self.assertIn("acceptsFirstMouse", source, "要覆写 acceptsFirstMouse，否则第一次点击丢失")
+        self.assertIn("ClickThroughWebView(frame:", source, "要用这个子类来创建 webView")
+        activate = source.index("app.activate(ignoringOtherApps: true)")
+        order_front = source.index("window.makeKeyAndOrderFront(nil)")
+        self.assertLess(activate, order_front, "必须先激活应用、再显示窗口，否则首次点击被激活吃掉")
+
     def test_license_uses_pep621_table_form(self) -> None:
         text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('license = { text = "MIT" }', text)
