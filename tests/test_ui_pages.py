@@ -701,6 +701,22 @@ class LandingPageTests(unittest.TestCase):
             if head_at != -1:
                 self.assertLess(head_at, detail_at, f"{name}: 头部必须在明细之前（且不在明细里）")
 
+    def test_disk_rows_show_folder_icons(self) -> None:
+        """磁盘目录行要有图标（2026-10-21 与清理/卸载页统一）：常用目录各一个，其余通用文件夹。"""
+        from maccleaner.ui.pages import render_disk_html
+
+        page = render_disk_html({
+            "total": 1000, "used": 230, "free": 770, "percent": 23.0,
+            "sections": [
+                {"name": "Pictures", "path": "/Users/x/Pictures", "bytes": 500},
+                {"name": "Downloads", "path": "/Users/x/Downloads", "bytes": 300},
+                {"name": "Whatever", "path": "/Users/x/Whatever", "bytes": 100},
+            ],
+        })
+        self.assertGreaterEqual(page.count('class="ico"'), 3, "每个目录行一个图标")
+        self.assertIn('class="row-lead"', page)
+        self.assertIn('stroke="currentColor"', page, "图标跟随主题色")
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")

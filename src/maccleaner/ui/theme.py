@@ -360,6 +360,8 @@ html[data-stage=uninstall-list] .state.card{min-height:calc(100vh - 104px);
 .row.nav{cursor:pointer;border-radius:var(--r-row);padding-left:var(--sp-2);padding-right:var(--sp-2)}
 .row.nav:hover{background:var(--surface-2)}
 .row.nav .row-main{min-width:0;flex:1}
+.row-lead{display:flex;align-items:center;gap:var(--sp-2);min-width:0;flex:1}
+.row-lead strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row .chev{color:var(--muted);font-size:var(--fs-title-m);line-height:1;flex:none;transition:transform .12s}
 .row.nav:hover .chev{color:var(--accent);transform:translateX(2px)}
 /* 只读分区：系统级目录视觉上弱一档，避免与本地目录同权。 */

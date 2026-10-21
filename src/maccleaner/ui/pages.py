@@ -114,6 +114,25 @@ _ICON_PATHS: dict[str, str] = {
     "gauge": '<circle cx="12" cy="12" r="9"/><path d="M12 12l4-3"/>',
     "battery": '<rect x="3" y="8" width="15" height="8" rx="2"/><path d="M21 11v2M7 11v2"/>',
     "list": '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 11h.01M3 16h.01"/>',
+    "folder": '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+    "picture": '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="M21 16l-5-5-4 4-2-2-4 4"/>',
+    "download": '<path d="M12 3v12M7 11l5 5 5-5M4 21h16"/>',
+    "music": '<path d="M9 18V6l10-2v12"/><circle cx="6" cy="18" r="2.6"/><circle cx="16" cy="16" r="2.6"/>',
+    "film": '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 10h4M3 15h4M17 10h4M17 15h4"/>',
+    "monitor": '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M9 20h6M12 16v4"/>',
+}
+
+# 常用目录 → 图标（按名字认，不按内部 key）：用户认图标比认字快。
+_FOLDER_ICONS: dict[str, str] = {
+    "pictures": "picture",
+    "photos": "picture",
+    "downloads": "download",
+    "music": "music",
+    "movies": "film",
+    "documents": "doc",
+    "desktop": "monitor",
+    "library": "box",
+    "applications": "cube",
 }
 
 # 行图标按"这东西是什么"选，而不是按内部 category 名——用户认图标比认字快。
@@ -162,6 +181,19 @@ def _icon(name: str) -> str:
 
 def _kind_icon(kind: str) -> str:
     return _icon(_KIND_ICONS.get(str(kind or ""), "box"))
+
+
+def _folder_icon(name: str, path: str = "", *, is_dir: bool = True) -> str:
+    """目录/文件图标：常用目录各用一个，其余给通用文件夹/文档。"""
+    key = str(name or "").strip().lower()
+    if not is_dir:
+        return _icon("doc")
+    icon = _FOLDER_ICONS.get(key)
+    if icon:
+        return _icon(icon)
+    if "/Library/Caches" in str(path):
+        return _icon("box")
+    return _icon("folder")
 
 
 def _app_icon(uri: Any) -> str:
@@ -1545,7 +1577,8 @@ def render_disk_browse_html(payload: dict[str, Any] | None = None, *, interactiv
         rows.append(
             f'<div class="row nav" data-sort-text="{html.escape(name.lower())}"'
             f' data-sort-bytes="{size}" data-reveal-path="{html.escape(path)}"{action_attr}>'
-            f"<strong>{html.escape(name)}{'/' if is_dir else ''}</strong>"
+            f'<div class="row-lead">{_folder_icon(name, path, is_dir=is_dir)}'
+            f"<strong>{html.escape(name)}{'/' if is_dir else ''}</strong></div>"
             f'<span class="meta value">{human_bytes(size)}</span>'
             + ('<span class="chev" aria-hidden="true">›</span>' if is_dir else "")
             + "</div>"
@@ -1855,7 +1888,8 @@ def render_disk_html(payload: dict[str, Any] | None = None, *, interactive: bool
         rows.append(
             f'<div class="row nav" data-sort-text="{html.escape(str(item.get("name", "")).lower())}"'
             f' data-sort-bytes="{size}" data-reveal-path="{html.escape(path)}"{action_attr}>'
-            f'<strong>{html.escape(str(item.get("name", "")))}</strong>'
+            f'<div class="row-lead">{_folder_icon(str(item.get("name", "")), path)}'
+            f'<strong>{html.escape(str(item.get("name", "")))}</strong></div>'
             f'<span class="meta value">{human_bytes(size)}</span>'
             '<span class="chev" aria-hidden="true">›</span></div>'
         )
