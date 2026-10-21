@@ -611,25 +611,28 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn('data-filter-group="browser"', page)
         self.assertNotIn("chips", page, "胶囊筛选已被左栏取代")
 
-    def test_system_page_uses_same_two_pane_layout(self) -> None:
-        """系统页也用左栏 + 右栏（2026-10-20）：概览默认显示，电池/进程默认收起。"""
+    def test_system_page_is_single_read_only_page(self) -> None:
+        """系统状态页单页全展示（2026-10-21 与磁盘同一处理）。
+
+        原来左栏 → 三块面板切换：进页面只能看"概览"，电池/进程还要再点一次；
+        但这一页总共就 3+3 格 + 几行进程，一屏放得下，切换只是多一层操作。
+        """
         from maccleaner.ui.pages import render_system_html
 
         page = render_system_html({
-            "load": [1, 2, 3], "cpu_count": 10, "memory_total": 1024, "memory_used": 512,
+            "load": [8.55, 7.95, 7.75], "cpu_count": 10, "memory_total": 1024, "memory_used": 512,
             "processes": [{"name": "demo", "rss": 1024, "cpu": 1.5}],
-            "power": {"source": "电池", "percent": 79, "state": "discharging", "remaining": "3:04",
-                      "cycles": 986, "health_percent": 80, "design_mah": 8694},
+            "power": {"source": "电源", "percent": 75, "state": "charging", "remaining": "",
+                      "cycles": 988, "health_percent": 78, "design_mah": 8694},
             "thermal": {"speed_limit": None, "throttled": False},
         })
-        self.assertIn("review-split", page)
-        self.assertEqual(page.count('class="rail-item'), 3)
-        for key in ("overview", "battery", "processes"):
-            self.assertIn(f'data-group-key="{key}"', page)
-        # 默认只显示概览，另外两块收起
-        self.assertIn('data-group-key="battery" style="display:none"', page)
-        self.assertIn('data-group-key="processes" style="display:none"', page)
-        self.assertIn("3:04", page, "放电时剩余时间要显示")
+        self.assertNotIn('class="rail"', page, "不再有左栏切换")
+        self.assertNotIn('class="panel"', page, "不再有面板显隐")
+        self.assertNotIn('class="meter"', page, "删除没有刻度的 meter")
+        self.assertNotIn("with_header", page)
+        self.assertIn("电池与节流", page)
+        self.assertIn("占用最高的进程", page)
+        self.assertIn("每核 0.86", page, "负载用每核倍数，避免 156% 这种看不懂的数")
 
     def test_updates_page_uses_two_pane_with_sources_rail(self) -> None:
         """更新页与审阅页同构（2026-10-21）：左栏按来源、底部固定条。

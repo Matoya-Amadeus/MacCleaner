@@ -365,6 +365,9 @@ html[data-stage=uninstall-list] .state.card{min-height:calc(100vh - 104px);
 .row .chev{color:var(--muted);font-size:var(--fs-title-m);line-height:1;flex:none;transition:transform .12s}
 .row.nav:hover .chev{color:var(--accent);transform:translateX(2px)}
 /* 只读分区：系统级目录视觉上弱一档，避免与本地目录同权。 */
+/* 组头里的补充说明（数量、排序依据）：与标题拉开一点，别粘在一起。 */
+.group-title .meta{margin-left:var(--sp-2);font-weight:400}
+
 .section-readonly{margin-top:var(--sp-5);padding:var(--sp-3) var(--sp-3) var(--sp-2);
   border:1px dashed var(--line-strong);border-radius:var(--r-row);opacity:.92}
 .section-readonly .group-title{display:flex;align-items:center;gap:8px}

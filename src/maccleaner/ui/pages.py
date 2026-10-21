@@ -1931,59 +1931,54 @@ def render_system_html(payload: dict[str, Any] | None = None, *, interactive: bo
         )
     )
 
+    # 三格：负载 / 内存 / CPU。每一格都写明"基准"（多少核、占多少 %），
+    # 不再在下面另画两条没有刻度的 meter——同一个量只该有一种表达（2026-10-21）。
     stats_head = (
         '<div class="stats">'
-        f'<div class="stat"><div class="k">1/5/15 分钟负载</div>'
-        f'<div class="v">{" / ".join(str(x) for x in load)}</div></div>'
+        f'<div class="stat"><div class="k">负载（1 / 5 / 15 分钟）</div>'
+        f'<div class="v">{" / ".join(str(x) for x in load)}</div>'
+        # 负载按"每核倍数"表达：8.55/10 核 = 0.86。写成 86% 会在过载时变成 156%，
+        # 反而让人以为计算错了（2026-10-21 截图里就出现过 156%）。
+        f'<div class="meta">1 分钟 {float(load[0] if load else 0):.2f} · 每核 {"%.2f" % (float(load[0] if load else 0) / max(1, cpu_count))}</div></div>'
         f'<div class="stat"><div class="k">内存</div>'
-        f'<div class="v">{human_bytes(mem_used)} / {human_bytes(mem_total)}</div></div>'
-        f'<div class="stat"><div class="k">CPU 核数</div><div class="v">{cpu_count}</div></div>'
+        f'<div class="v">{human_bytes(mem_used)} / {human_bytes(mem_total)}</div>'
+        f'<div class="meta">已用 {mem_percent:.0f}%</div></div>'
+        f'<div class="stat"><div class="k">CPU</div><div class="v">{cpu_count} 核</div></div>'
         "</div>"
     )
     rows = "".join(
-        '<div class="row"><div style="min-width:0">'
-        f'<strong>{html.escape(str(item.get("name", "")))}</strong>'
-        f'<div class="meta">{human_bytes(int(item.get("rss", 0) or 0))} 内存</div></div>'
+        '<div class="row"><div class="row-lead">' + _icon("terminal") +
+        f'<strong>{html.escape(str(item.get("name", "")))}</strong></div>'
+        f'<span class="meta">{human_bytes(int(item.get("rss", 0) or 0))} 内存</span>'
         f'<span class="meta value">{float(item.get("cpu", 0) or 0):.1f}%</span></div>'
         for item in processes
     )
     return state_page(
-        {
-            "message": f"内存占用 {mem_percent:.0f}%，1 分钟负载 {load[0] if load else 0}",
-            "detail": "电池与节流免 sudo 读取；风扇转速不做（SMC 私有接口，值也不稳定）。进程按 CPU 排序。",
-        },
+        {"message": "", "detail": "只读；电池与节流免 sudo 读取，风扇转速不做（SMC 私有接口，值不稳定）。"},
         stage="system",
         title="系统状态",
         body="",
-        actions='<div class="review-split">'
-        + _rail([
-            ("overview", "概览", "gauge", f"{mem_percent:.0f}% 内存"),
-            ("battery", "电池与节流", "battery", battery_value),
-            ("processes", "进程", "list", f"{len(processes)} 个"),
-        ])
-        + '<div class="review-detail">'
-        + '<div class="panel" data-group-key="overview">'
-        + stats_head
-        + '<div class="group-title">负载</div>' + _meter(load_percent, tone="warn")
-        + '<div class="group-title">内存</div>' + _meter(mem_percent)
-        + "</div>"
-        + '<div class="panel" data-group-key="battery" style="display:none">'
-        + '<div class="stats">' + power_block + "</div>"
-        + '<p class="muted">电池与节流免 sudo 读取；风扇转速不做（SMC 私有接口，值也不稳定）。</p>'
-        + "</div>"
-        + '<div class="panel" data-group-key="processes" style="display:none">'
-        + '<div class="group-title">占用最高的进程</div>' + rows
-        + "</div>"
-        + (_actions(_button("刷新", "system-open")) if interactive else "")
-        + "</div></div>",
+        with_header=False,
+        actions=(
+            '<div class="review-detail">'
+            + stats_head
+            + '<div class="group-title">电池与节流</div>'
+            + '<div class="stats">' + power_block + "</div>"
+            + (
+                '<div class="group-title">占用最高的进程'
+                f'<span class="meta">按 CPU 排序 · {len(processes)} 个</span></div>' + rows
+                if rows
+                else ""
+            )
+            + "</div>"
+        ),
         current="system",
-        subtitle="负载 / 内存 / 电池 / 进程（只读）",
-        meta="",
     )
 
 
+
+
 __all__ = [
-    "render_disk_browse_html",
     "render_large_files_html",
     "render_large_files_result_html",
     "render_sparkle_result_html",
