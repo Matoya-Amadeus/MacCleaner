@@ -745,6 +745,35 @@ class LandingPageTests(unittest.TestCase):
             self.assertIn("open-trash", pages[name], f"{name} 缺少【打开废纸篓】")
         self.assertNotIn(" · 失败/跳过", pages["complete"], "detail 不该以分隔符开头")
 
+    def test_uninstall_preview_uses_same_skeleton_as_lists(self) -> None:
+        """卸载详情页（2026-10-21 重排）：底部固定条、返回常驻、系统级残留单列。
+
+        之前：主操作在顶部、每行第二行写内部 kind（`app-support`）、没有图标、
+        系统级残留和普通项混在一起（勾了也删不掉，因为需要 root）。
+        """
+        from maccleaner.ui.pages import render_uninstall_preview_html
+
+        items = [
+            {"id": "a", "kind": "caches", "path": "/Users/x/Library/Caches/com.demo.app",
+             "allocated_bytes": 2_000_000, "confidence": "exact", "requires_admin": False},
+            {"id": "b", "kind": "app-support", "path": "/Users/x/Library/Application Support/com.demo.app",
+             "allocated_bytes": 3_000_000, "confidence": "name-match", "requires_admin": False},
+            {"id": "c", "kind": "system-caches", "path": "/Library/Caches/com.demo.app",
+             "allocated_bytes": 5_000_000, "confidence": "exact", "requires_admin": True},
+        ]
+        page = render_uninstall_preview_html({
+            "app": {"path": "/Applications/Demo.app", "name": "Demo", "bundle_id": "com.demo.app"},
+            "items": items, "user_total_bytes": 5_000_000,
+        })
+        self.assertIn("review-footer", page, "主操作要在底部固定条")
+        self.assertIn('id="mc-preview-btn"', page)
+        self.assertIn("uninstall-back", page, "返回按钮要常驻")
+        self.assertIn("系统级残留", page, "管理员项要单列")
+        # 系统级那一项不能有勾选框（勾了也删不掉）
+        admin_block = page.split("系统级残留")[1]
+        self.assertNotIn('data-item-id="c"', admin_block)
+        self.assertIn("管理员", admin_block)
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")

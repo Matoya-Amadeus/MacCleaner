@@ -231,13 +231,15 @@ html[data-stage=review] .state.card,
 html[data-stage=uninstall-list] .state.card,
 html[data-stage=updates] .state.card,
 html[data-stage=orphans] .state.card,
-html[data-stage=system] .state.card{height:calc(100vh - 32px);display:flex;flex-direction:column;overflow:hidden}
+html[data-stage=system] .state.card,
+html[data-stage=uninstall-preview] .state.card{height:calc(100vh - 32px);display:flex;flex-direction:column;overflow:hidden}
 /* 这些页面内部已各自滚动，外层再滚就会多一条滚动条。 */
 html[data-stage=review] .app,
 html[data-stage=uninstall-list] .app,
 html[data-stage=updates] .app,
 html[data-stage=orphans] .app,
-html[data-stage=system] .app{overflow:hidden}
+html[data-stage=system] .app,
+html[data-stage=uninstall-preview] .app{overflow:hidden}
 
 html[data-stage=review] .review-split,
 html[data-stage=uninstall-list] .review-split,
@@ -361,6 +363,8 @@ html[data-stage=uninstall-list] .state.card{min-height:calc(100vh - 104px);
 .row.nav:hover{background:var(--surface-2)}
 .row.nav .row-main{min-width:0;flex:1}
 .row-lead{display:flex;align-items:center;gap:var(--sp-2);min-width:0;flex:1}
+/* 行里的"它在哪里"：太长就省略，别把体积挤出屏幕。 */
+.row > .meta:not(.value){overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:42%}
 .row-lead strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row .chev{color:var(--muted);font-size:var(--fs-title-m);line-height:1;flex:none;transition:transform .12s}
 .row.nav:hover .chev{color:var(--accent);transform:translateX(2px)}

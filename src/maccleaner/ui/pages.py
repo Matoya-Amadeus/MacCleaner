@@ -1009,55 +1009,81 @@ def render_uninstall_preview_html(
     """
     items = [item for item in (plan.get("items") or []) if isinstance(item, dict)]
     app = plan.get("app") or {}
-    exact = [item for item in items if item.get("confidence") != "name-match" and item.get("kind") != "app-bundle"]
-    guessed = [item for item in items if item.get("confidence") == "name-match"]
+    # 系统级残留（requires_admin）单列：root 域进不了你的废纸篓，本工具不处理。
+    admin = [item for item in items if item.get("requires_admin")]
+    exact = [
+        item for item in items
+        if item.get("confidence") != "name-match"
+        and item.get("kind") != "app-bundle"
+        and not item.get("requires_admin")
+    ]
+    guessed = [
+        item for item in items
+        if item.get("confidence") == "name-match" and not item.get("requires_admin")
+    ]
     bundle = next((item for item in items if item.get("kind") == "app-bundle"), None)
 
     parts: list[str] = []
+
+    def detail_row(item: dict[str, Any], *, checked: bool, note: str = "", muted: bool = False) -> str:
+        """一行一项：图标 + 名称 + 体积，下一行写**它在哪里**（而不是内部 kind 名）。
+
+        之前第二行是 `app-support` 这类内部键——用户看不懂，也判断不了该不该删。
+        """
+        path = str(item.get("path", ""))
+        name = path.rstrip("/").split("/")[-1]
+        parent = _display_path(str(Path(path).parent))
+        size = human_bytes(int(item.get("allocated_bytes", 0) or 0))
+        icon = _kind_icon(str(item.get("kind", "")))
+        box = (
+            f'<input type="checkbox" data-item-id="{html.escape(str(item.get("id", "")))}"'
+            + (" checked" if checked else "")
+            + ">"
+        ) if not muted else '<span class="pill ghost">管理员</span>'
+        return (
+            f'<label class="row opt{" readonly" if muted else ""}">{box}'
+            f'<div class="row-lead">{icon}<strong>{html.escape(name)}</strong></div>'
+            f'<span class="meta">{html.escape(parent)}</span>'
+            f'<span class="meta value">{size}</span></label>'
+        )
+
     if bundle:
         parts.append(
-            '<div class="row"><div><strong>'
-            + html.escape(str(app.get("name", "")))
-            + '</strong><div class="meta">应用本体 · 始终包含</div></div>'
+            '<div class="row"><div class="row-lead">' + _kind_icon("app-bundle") +
+            f'<strong>{html.escape(str(app.get("name", "")))}</strong></div>'
             '<span class="pill">必选</span></div>'
         )
     if exact:
-        parts.append('<p class="group-title">确定项</p>')
-        for item in exact:
-            parts.append(
-                '<label class="row opt"><input type="checkbox" data-item-id="'
-                + html.escape(str(item.get("id", "")))
-                + '" checked><div><strong>'
-                + html.escape(str(item.get("path", "")).rstrip("/").split("/")[-1])
-                + '</strong><div class="meta">'
-                + html.escape(str(item.get("kind", "")))
-                + "</div></div><span class=\"meta\">"
-                + human_bytes(int(item.get("allocated_bytes", 0) or 0))
-                + "</span></label>"
-            )
+        parts.append('<div class="group-title">确定项<span class="meta">这些路径与 bundle id 对得上</span></div>')
+        parts.extend(detail_row(item, checked=True) for item in exact)
     if guessed:
-        parts.append('<p class="group-title">按名称匹配（默认不勾）</p>')
-        for item in guessed:
-            parts.append(
-                '<label class="row opt"><input type="checkbox" data-item-id="'
-                + html.escape(str(item.get("id", "")))
-                + '"><div><strong>'
-                + html.escape(str(item.get("path", "")).rstrip("/").split("/")[-1])
-                + '</strong><div class="meta">可能是别的应用 · '
-                + html.escape(str(item.get("kind", "")))
-                + "</div></div><span class=\"meta\">"
-                + human_bytes(int(item.get("allocated_bytes", 0) or 0))
-                + "</span></label>"
-            )
+        parts.append('<div class="group-title">按名称匹配<span class="meta">默认不勾 · 可能误伤别的应用</span></div>')
+        parts.extend(detail_row(item, checked=False) for item in guessed)
+    if admin:
+        parts.append(
+            '<div class="group-title">系统级残留<span class="meta">root 拥有，本工具不动</span></div>'
+        )
+        parts.extend(detail_row(item, checked=False, muted=True) for item in admin)
 
-    actions = (
-        _actions(_button("返回列表", "uninstall-back"), _button("卸载所选", "uninstall-apply", primary=True))
+    back = (
+        '<div class="review-head">'
+        + _button("← 返回列表", "uninstall-back", ghost=True)
+        + "</div>"
         if interactive
         else ""
     )
-    if notice:
-        # 提示放在按钮**上方**，否则它会挤在动作条里、看起来像另一个按钮。
-        actions = f'<p class="pill warn" role="status">{html.escape(notice)}</p>' + actions
+    footer = (
+        '<div class="review-footer">'
+        '<div class="review-sum">'
+        '<span class="review-sum-main" id="mc-preview-count">已选 0 项</span>'
+        f'<span class="review-sum-total">共 {len(items)} 项</span>'
+        "</div>"
+        '<button class="button primary" type="button" data-bridge-action="uninstall-apply"'
+        ' id="mc-preview-btn">卸载</button>'
+        "</div>"
+        if interactive
+        else ""
+    )
 
     # cask 装的 app 直接拖废纸篓，`brew list --cask` 仍认为它装着（下次 upgrade 会复活/报错）。
     # 这里给明确提示 + 一键改用 brew 卸载，而不是悄悄替用户决定。
@@ -1069,17 +1095,27 @@ def render_uninstall_preview_html(
             "建议改用 brew 卸载，否则 brew 记录会与磁盘不一致。</p>"
             + _actions(_button("改用 brew 卸载", "uninstall-cask", payload={"token": cask}))
         )
+    if notice:
+        cask_block = f'<p class="pill warn" role="status">{html.escape(notice)}</p>' + cask_block
 
     return state_page(
         {
-            "message": f"将移入废纸篓 {len(items)} 项，共 {human_bytes(int(plan.get('user_total_bytes', 0) or 0))}（可恢复）",
+            "message": f"将移入废纸篓 {len(items)} 项，共 "
+            f"{human_bytes(int(plan.get('user_total_bytes', 0) or 0))}（可恢复）",
             "detail": "确认后会再核对每个位置；名称匹配项默认不勾，请自行判断。",
         },
         stage="uninstall-preview",
         with_header=False,
         title=f"卸载 {app.get('name', '')}".strip(),
-        body="确认要清理的内容",
-        actions=cask_block + actions + "".join(parts),
+        body="",
+        # 返回按钮必须**在滚动区之外**：放到 detail 里滚两屏就找不到了（2026-10-21 截图发现）。
+        actions=(
+            '<div class="review-right">'
+            + back
+            + '<div class="review-detail">' + "".join(parts) + cask_block + "</div>"
+            + footer
+            + "</div>"
+        ),
         current="uninstall",
     )
 

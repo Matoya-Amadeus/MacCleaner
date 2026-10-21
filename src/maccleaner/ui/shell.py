@@ -132,6 +132,19 @@ _RUNTIME_JS = """
       upBtn.textContent = picked(updates) > 0 ? '更新 ' + picked(updates) + ' 项' : '更新';
     }
 
+    // 卸载详情页：计数 + 主按钮文案（与其它列表页同一种底部条）
+    const previewBoxes = Array.from(document.querySelectorAll('[data-item-id]'));
+    const previewLabel = document.getElementById('mc-preview-count');
+    if (previewLabel && previewBoxes.length) {
+      const count = previewBoxes.filter(box => box.checked).length;
+      previewLabel.textContent = '已选 ' + count + ' 项';
+      const previewBtn = document.getElementById('mc-preview-btn');
+      if (previewBtn) {
+        previewBtn.disabled = count === 0;
+        previewBtn.textContent = count > 0 ? '卸载 ' + count + ' 项' : '卸载';
+      }
+    }
+
     const larges = Array.from(document.querySelectorAll('[data-large-path]'));
     const largeLabel = document.getElementById('mc-large-count');
     if (largeLabel && larges.length) largeLabel.textContent = '已选 ' + picked(larges) + ' 个';
