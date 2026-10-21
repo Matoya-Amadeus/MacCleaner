@@ -638,6 +638,30 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn('data-group-key="processes" style="display:none"', page)
         self.assertIn("3:04", page, "放电时剩余时间要显示")
 
+    def test_updates_page_uses_two_pane_with_sources_rail(self) -> None:
+        """更新页与审阅页同构（2026-10-21）：左栏按来源、底部固定条。
+
+        回归点：左栏来源必须从**页面内算出的分组**取，不是 payload["groups"]
+        （报告没有这个字段，读它会让左栏为空、明细被挤进 224px 窄列）。
+        """
+        from maccleaner.ui.pages import render_updates_list_html
+
+        page = render_updates_list_html({
+            "items": [
+                {"name": "aom", "manager": "brew", "kind": "formula", "installed": "1", "available": "2"},
+                {"name": "pnpm", "manager": "npm", "kind": "npm-global", "installed": "1",
+                 "available": "2"},
+            ],
+            "sparkle": [{"name": "ChatGPT", "path": "/Applications/ChatGPT.app",
+                         "version": "1", "feed": ""}],
+        })
+        self.assertIn("review-split", page)
+        self.assertIn('data-filter-group="Homebrew formula"', page)
+        self.assertIn('data-filter-group="npm 全局包"', page)
+        self.assertIn('data-filter-group="sparkle"', page)
+        self.assertIn("review-footer", page, "底部固定条")
+        self.assertIn('id="mc-updates-btn"', page)
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")

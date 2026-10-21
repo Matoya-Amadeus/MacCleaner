@@ -1259,11 +1259,10 @@ def render_updates_list_html(
     sources: list[tuple[str, str, str, str]] = [("all", "全部", "box", "")]
     if sparkle_rows:
         sources.append(("sparkle", "自带更新", "globe", f"{len(sparkle_rows)} 个"))
-    for group in payload.get("groups") or []:
-        if isinstance(group, dict) and group.get("items"):
-            label = str(group.get("label") or group.get("manager") or "")
-            if label:
-                sources.append((label, label, "terminal", f"{len(group['items'])} 项"))
+    # 分组是**页面内**按 manager/kind 算出来的（报告本身没有 groups 字段），
+    # 所以左栏也要从这里取——之前读 payload["groups"] 永远为空，左栏消失、明细被挤成 224px。
+    for label in sorted(buckets, key=lambda key: (order.index(key) if key in order else 99, key)):
+        sources.append((label, label, "terminal", f"{len(buckets[label])} 项"))
 
     detail = (
         '<div class="review-detail">'
@@ -1284,7 +1283,8 @@ def render_updates_list_html(
         )
         + "</div>"
     )
-    page_body = '<div class="review-split">' + _rail(sources) + detail + "</div>" if sources else body
+    rail = _rail(sources)
+    page_body = f'<div class="review-split">{rail}{detail}</div>' if rail else detail
 
     return state_page(
         {
