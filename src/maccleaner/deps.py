@@ -1532,7 +1532,15 @@ def build_deps(
         return updates_report(state_root=state_path, force=True)
 
     def updates_check() -> dict[str, Any]:
-        return discover_updates()
+        # Sparkle 应用（自带更新器）不走包管理器，得单独扫一遍 /Applications。
+        # 之前这里只返回 `discover_updates()`，页面上的"自带更新"组**永远是空的**
+        # （本机实测 sparkle_apps() 有 4 个，页面却一个都不显示，2026-10-21 核对发现）。
+        found = discover_updates()
+        try:
+            found["sparkle"] = sparkle_apps(home_path)
+        except Exception:  # noqa: BLE001 - 图标/plist 读坏了不该拖垮整个检查
+            found.setdefault("sparkle", [])
+        return found
 
     def updates_apply(*, ids: list[str]) -> dict[str, Any]:
         """按页面勾选执行更新。

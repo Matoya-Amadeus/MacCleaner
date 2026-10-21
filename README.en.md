@@ -61,7 +61,7 @@ Open `~/Applications/MacCleaner.app`, or run `maccleaner ui`. Eight entries in t
 - **System**: load, memory, top CPU processes
 - **Skills**: agent skills installed here
 
-`⌘A` select all, `Shift+click` range select, `Enter` primary action, sort by size/name,
+`⌘A` select all, `Shift+click` range select, `Enter` primary action,
 right-click to copy the path or reveal it in Finder.
 
 ## CLI

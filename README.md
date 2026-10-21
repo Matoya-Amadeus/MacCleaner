@@ -59,7 +59,7 @@ python3 -m build --no-isolation
 - **系统状态**：负载、内存、最吃 CPU 的进程
 - **可调用的 Skill**：本机装了哪些 agent 技能
 
-`⌘A` 全选、`Shift+点击` 连选、`Enter` 执行、列头按体积/名称排序、右键复制路径或在 Finder 中显示。
+`⌘A` 全选、`Shift+点击` 连选、`Enter` 执行、右键复制路径或在 Finder 中显示。
 
 ## 命令行
 

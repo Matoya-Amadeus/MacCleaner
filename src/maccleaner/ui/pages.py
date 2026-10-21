@@ -1533,18 +1533,6 @@ def _meter(percent: float, *, tone: str = "accent") -> str:
 
 
 
-def sort_bar(*, default: str = "bytes") -> str:
-    """排序条：按体积（默认，降序）/ 按名称（升序）。
-
-    为什么放前端：排序是纯展示，不该为一次点击重新扫盘或重发页面。
-    """
-    return (
-        '<div class="sortbar"><span class="meta">排序</span>'
-        f'<button type="button" class="sortbtn{" is-on" if default == "bytes" else ""}" '
-        'data-sort="bytes" data-dir="desc">体积</button>'
-        f'<button type="button" class="sortbtn{" is-on" if default == "text" else ""}" '
-        'data-sort="text" data-dir="asc">名称</button></div>'
-    )
 def _treemap_svg(
     entries: list[dict[str, Any]], *, width: int = 1000, height: int = 300, clickable: bool = True
 ) -> str:

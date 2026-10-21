@@ -918,3 +918,22 @@ class BatchIconTests(unittest.TestCase):
                 self.assertTrue(uri.startswith("data:image/png;base64,"))
         self.assertEqual(first, second, "缓存命中应返回同样的结果")
 
+class UpdatesSparkleTests(unittest.TestCase):
+    """更新检查必须带上 Sparkle 应用（2026-10-21 核对发现整组消失）。
+
+    `updates_check()` 之前只返回 `discover_updates()`，页面上的"自带更新"组永远是空的——
+    本机 4 个自带更新器的应用一个都不显示。
+    """
+
+    def test_updates_check_includes_sparkle_apps(self) -> None:
+        from maccleaner.deps import build_deps, sparkle_apps
+
+        installed = sparkle_apps(Path.home())
+        if not installed:
+            self.skipTest("这台机器没有带 Sparkle 的应用")
+        with tempfile.TemporaryDirectory(prefix="updates-sparkle-") as tmp:
+            deps = build_deps(home=Path.home(), root=Path.home(), state_root=Path(tmp) / "state")
+            found = deps.updates_check()
+        self.assertIn("sparkle", found)
+        self.assertEqual(len(found["sparkle"]), len(installed), "数量要与实际扫描一致")
+
