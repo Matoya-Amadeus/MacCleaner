@@ -295,8 +295,19 @@ html[data-stage=uninstall-list] .state.card{min-height:calc(100vh - 104px);
 .review-footer .button{min-width:132px}
 
 /* 审阅页头部固定：全选 + 筛选 + 已选空间，滚动时不消失（2026-10-20 用户要求）。 */
+/* 头部工具栏：一行放完（全选在左、动作按钮靠右），不换行。 */
+.review-head .toolbar{flex-wrap:nowrap;padding:0;margin:0;background:none;
+  -webkit-backdrop-filter:none;backdrop-filter:none;position:static}
+.review-head .toolbar-right{margin-left:auto;flex-wrap:nowrap}
+.review-head .button{white-space:nowrap}
+
 .review-head{position:static;background:var(--surface);
+  display:flex;align-items:center;gap:var(--sp-3);flex-wrap:nowrap;
   padding:0 0 var(--sp-2);margin:0 0 var(--sp-2);border-bottom:1px solid var(--line)}
+/* 头部里的搜索框允许收缩，按钮不换行。 */
+.review-head .search{flex:1;min-width:120px;max-width:420px}
+.review-head .toolbar-left{flex:none}
+.review-head .toolbar-right{margin-left:auto}
 .review-head .row.select-all{margin-bottom:var(--sp-2)}
 /* 组头不悬浮：审阅页以"固定头部 + 分组"两层结构为主，组头再吸顶会打架。 */
 .group.review > summary{position:static;top:auto}

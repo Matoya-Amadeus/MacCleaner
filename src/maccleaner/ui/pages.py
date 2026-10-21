@@ -764,10 +764,10 @@ def render_recovery_html(payload: dict[str, Any], *, interactive: bool = True) -
         },
         stage="error",
         title="可以重试",
-        body="这次没有完成",
+        body="",
+        with_header=False,
         actions=block + buttons,
         current="clean",
-        subtitle="失败不是终点：重试会从这一步重新开始",
     )
 
 
@@ -1233,10 +1233,10 @@ def render_updates_list_html(
             '<label class="checkbox-inline"><input type="checkbox" data-select-all-updates checked>'
             "<span>全选</span></label></div>"
             '<div class="toolbar-right">'
-            + _button("重新检查", "updates-refresh")
             # App Store 应用绕不开 Apple ID：mas 用不了时把更新页打开，让系统自己装。
+            # 和【全选】同一行放右侧；不再给【重新检查】——进这一页时已经自动检查过了。
             + (
-                _button("打开 App Store 更新页", "open-app-store", ghost=True)
+                _button("App Store 更新页", "open-app-store", ghost=True)
                 if any(str(item.get("manager")) == "mas" for item in items)
                 else ""
             )
@@ -1291,16 +1291,8 @@ def render_updates_list_html(
 
     return state_page(
         {
-            "message": f"可升级 {len(items)} 项，按来源分了 {len(groups)} 组"
-            + (f"，另有 {len(sparkle_rows)} 个应用可自带更新" if sparkle_rows else "")
-            + (
-                f'（数据来自 {time.strftime("%H:%M", time.localtime(float(payload.get("checked_at"))))}'
-                + ("，缓存" if payload.get("cached") else "")
-                + "）"
-                if payload.get("checked_at")
-                else ""
-            ),
-            "detail": "只处理第三方来源；macOS 系统更新不在此列。升级不可逆，确认后逐组执行并记录输出。",
+            "message": "",
+            "detail": "",
         },
         stage="updates",
         title="软件更新",

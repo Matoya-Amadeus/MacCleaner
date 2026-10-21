@@ -838,7 +838,9 @@ class RemainingPagesTests(unittest.TestCase):
         ], "notes": ["未安装 mas：跳过 App Store 检查"]})
         self.assertIn('data-stage="updates"', page)
         self.assertIn("data-update-id=\"0\"", page)
-        self.assertIn("macOS 系统更新不在此列", page, "范围必须写明")
+        # 顶部说明已删（2026-10-21 用户要求），改为核对分组与底部条
+        self.assertIn('data-select-all-updates', page)
+        self.assertIn("review-footer", page)
         self.assertIn("未安装 mas", page)
 
     def test_updates_result_shows_exit_codes(self) -> None:

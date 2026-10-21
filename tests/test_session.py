@@ -727,7 +727,9 @@ class NavigationTests(unittest.TestCase):
             # 注意：先出的是**进度页**（stage 同样是 updates），要等列表独有的标记 `data-update-id`。
             page = driver.wait_page("data-update-id=")
             self.assertIn("aom", page)
-            self.assertIn("macOS 系统更新不在此列", page)
+            # 顶部说明已按用户要求删掉（2026-10-21），改为核对列表骨架
+            self.assertIn("review-split", page)
+            self.assertIn("data-update-id", page)
             driver.action("cancel")
             driver.join()
 
