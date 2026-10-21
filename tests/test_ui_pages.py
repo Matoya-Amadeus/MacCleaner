@@ -719,6 +719,32 @@ class LandingPageTests(unittest.TestCase):
         self.assertNotIn('data-treemap-path="', page, "方块不可点")
         self.assertIn("面积 = 这些目录之间的占比", page)
 
+    def test_result_pages_keep_trash_entry_and_drop_header(self) -> None:
+        """结果页必须给【打开废纸篓】——之前按钮算了没接进页面（2026-10-21 体检）。
+
+        同时统一去掉标题区：结果页的 message 已经是标题，再顶一行只是重复。
+        """
+        from maccleaner.ui.pages import (
+            render_cancelled_html, render_completion_html,
+            render_large_files_result_html, render_orphans_result_html,
+        )
+
+        pages = {
+            "large": render_large_files_result_html(
+                {"moved": [{"path": "/x/big.bin", "bytes": 2 * 10**9}], "failed": [], "count": 1, "bytes": 2 * 10**9}
+            ),
+            "orphans": render_orphans_result_html(
+                {"moved": [{"path": "/x/com.a", "bytes": 10}], "failed": [], "count": 1, "bytes": 10}
+            ),
+            "complete": render_completion_html({"reclaimed_bytes": 4 * 10**9, "moved_count": 3, "remaining": {}}),
+            "cancelled": render_cancelled_html({}),
+        }
+        for name, page in pages.items():
+            self.assertNotIn('class="topbar"', page, f"{name} 还是有标题区")
+        for name in ("large", "orphans", "complete"):
+            self.assertIn("open-trash", pages[name], f"{name} 缺少【打开废纸篓】")
+        self.assertNotIn(" · 失败/跳过", pages["complete"], "detail 不该以分隔符开头")
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")

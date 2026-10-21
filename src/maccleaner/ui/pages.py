@@ -339,14 +339,17 @@ def render_landing_html(payload: dict[str, Any], *, interactive: bool = True) ->
         if interactive
         else ""
     )
+    # 落地页也去掉标题区与那句排比（"开始一次清理" / "扫描你的 Mac，先看清单…" 是同一句话）：
+    # 侧栏已经高亮"Mac 清理"，这里只需要一句承诺 + 一个大按钮（2026-10-21 统一）。
     page = state_page(
         {
-            "message": "将扫描启动盘上的缓存、日志、废纸篓等推荐类型。",
-            "detail": "扫描只读取文件大小与修改时间，不会改动或删除任何内容。",
+            "message": "扫描只读取文件大小与修改时间，不会改动或删除任何内容。",
+            "detail": "扫完先看清单，再决定删什么。",
         },
         stage="idle",
         title="开始一次清理",
-        body="扫描你的 Mac，先看清单再决定删什么",
+        body="",
+        with_header=False,
         actions=actions,
         current="clean",
     )
@@ -723,6 +726,7 @@ def render_confirmation_html(payload: dict[str, Any], *, interactive: bool = Tru
             "detail": "点【确认清理】立即执行；文件仍可从废纸篓恢复。",
         },
         stage="confirming",
+        with_header=False,
         title="确认清理",
         body="确认清理",
         actions=risk_block + actions,
@@ -764,10 +768,18 @@ def render_completion_html(payload: dict[str, Any], *, interactive: bool = True)
         {
             # 数字只在 hero 与三格里出现一次；这句话负责"这意味着什么"。
             "message": "已移入废纸篓，清空废纸篓后释放空间" if via_trash else "已直接删除并释放空间",
-            "detail": (f"回执：{receipt}" if receipt else "")
-            + " · 失败/跳过：%d" % int(payload.get("failed_count", 0) or 0),
+            # 之前是 `(回执) + " · 失败/跳过：0"`——没有回执时就变成以 " · " 开头的一行。
+            "detail": " · ".join(
+                part
+                for part in (
+                    f"回执：{receipt}" if receipt else "",
+                    f"失败/跳过：{int(payload.get('failed_count', 0) or 0)}",
+                )
+                if part
+            ),
         },
         stage="complete",
+        with_header=False,
         title="清理完成",
         body="",          # 标题已写"清理完成"，正文再写一遍就是重复
         hero=hero,
@@ -781,6 +793,7 @@ def render_cancelled_html(payload: dict[str, Any], *, interactive: bool = True) 
     return state_page(
         {"message": "分析已取消", "detail": "没有文件被删除；你可以重新开始一次分析。"},
         stage="cancelled",
+        with_header=False,
         title="分析已取消",
         body="分析已取消",
         actions=actions,
@@ -1063,6 +1076,7 @@ def render_uninstall_preview_html(
             "detail": "确认后会再核对每个位置；名称匹配项默认不勾，请自行判断。",
         },
         stage="uninstall-preview",
+        with_header=False,
         title=f"卸载 {app.get('name', '')}".strip(),
         body="确认要清理的内容",
         actions=cask_block + actions + "".join(parts),
@@ -1161,6 +1175,7 @@ def render_sparkle_result_html(payload: dict[str, Any] | None = None, *, interac
     return state_page(
         {"message": message, "detail": detail},
         stage="sparkle",
+        with_header=False,
         title="应用内更新",
         body="",
         actions=actions,
@@ -1370,6 +1385,7 @@ def render_updates_result_html(result: dict[str, Any], *, interactive: bool = Tr
         stage="updates-result",
         title="更新结果",
         body=headline,
+        with_header=False,
         actions=actions + "".join(rows),
         current="updates",
     )
@@ -1669,10 +1685,8 @@ def render_orphans_result_html(result: dict[str, Any] | None = None, *, interact
         f'{html.escape(str(item.get("reason", "")))}</p>'
         for item in failed
     )
-    actions = _actions(
-        _button("再扫一次", "orphans-open"),
-        _button("打开废纸篓", "open-trash", ghost=True) if interactive else "",
-    ) if interactive else ""
+    # 与"大文件结果页"同一个 bug：buttons 算了没接进页面。
+    buttons = _actions(_button("打开废纸篓", "open-trash", primary=True)) if interactive else ""
     return state_page(
         {
             "message": f"已移入废纸篓 {len(moved)} 项，共 {human_bytes(total_bytes)}",
@@ -1681,7 +1695,10 @@ def render_orphans_result_html(result: dict[str, Any] | None = None, *, interact
         stage="orphans",
         title="残留体检",
         body="",
-        actions=(rows + fail_rows) if (rows or fail_rows) else empty_block("check", "没有移动任何文件", "你什么都没勾。"),
+        with_header=False,
+        actions=(
+            (rows + fail_rows) if (rows or fail_rows) else empty_block("check", "没有移动任何文件", "你什么都没勾。")
+        ) + buttons,
         current="orphans",
     )
 
@@ -1779,17 +1796,20 @@ def render_large_files_result_html(payload: dict[str, Any] | None = None, *, int
         f'{html.escape(str(item.get("reason", "")))}</p>'
         for item in failed
     )
-    actions = _actions(
-        _button("再扫一次", "large-open"),
-        _button("打开废纸篓", "open-trash", ghost=True),
-    ) if interactive else ""
+    # 之前这里算好了 actions 却**没接进页面**，结果"打开废纸篓"根本不存在——
+    # 用户刚移走 2 GB，却找不到去哪儿看（2026-10-21 体检发现）。
+    # 也去掉【再扫一次】：侧栏就能重进，页面上不需要再来一个。
+    buttons = _actions(_button("打开废纸篓", "open-trash", primary=True)) if interactive else ""
     return state_page(
         {"message": f"已移入废纸篓 {len(moved)} 个文件，共 {human_bytes(total_bytes)}",
          "detail": "在废纸篓里右键「放回原处」即可恢复。"},
         stage="large",
         title="大文件",
         body="",
-        actions=(rows + fails) if (rows or fails) else empty_block("check", "没有移动任何文件", "你什么都没勾。"),
+        with_header=False,
+        actions=(
+            (rows + fails) if (rows or fails) else empty_block("check", "没有移动任何文件", "你什么都没勾。")
+        ) + buttons,
         current="large",
     )
 
