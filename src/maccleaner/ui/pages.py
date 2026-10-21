@@ -1282,15 +1282,22 @@ def render_updates_list_html(
 
     # 自带 Sparkle 更新器的应用：**优先**让它们在应用内更新（不需要 App Store 登录、
     # 也不受系统代理影响）；没有 Sparkle 的才需要走 App Store。
+    # 只有**确认有更新**（appcast 版本 > 已安装版本）才给「在应用内更新」。
+    # 之前只要装了 Sparkle 框架就列出来并给按钮，等于替用户断言"它有更新"——
+    # 本机实测 4 个里 0 个真有更新（2026-10-21 用户指出）。
+    sparkle_all = [item for item in (payload.get("sparkle") or []) if isinstance(item, dict)]
+    sparkle_updates = [item for item in sparkle_all if item.get("update_available")]
+    sparkle_rest = [item for item in sparkle_all if not item.get("update_available")]
+
     sparkle_rows: list[str] = []
-    for app in (payload.get("sparkle") or []):
-        if not isinstance(app, dict):
-            continue
+    for app in sparkle_updates:
         path = str(app.get("path") or "")
         feed = str(app.get("feed") or "")
         host = urlparse(feed).hostname if feed else ""
-        broken = bool(feed) and (not host or host in {"0.0.0.0", "127.0.0.1", "localhost"})
-        hint = "更新源看起来无效（指向本机地址）" if broken else (f"更新源 {host}" if host else "使用内置 Sparkle 框架")
+        installed = str(app.get("version") or "")
+        latest = str(app.get("latest") or "")
+        detail = f"{installed} → {latest}" if latest else installed
+        hint = f"更新源 {host}" if host else "使用内置 Sparkle 框架"
         button = (
             _button("在应用内更新", "open-app", payload={"path": path}, primary=True)
             if interactive
@@ -1301,10 +1308,33 @@ def render_updates_list_html(
             + _app_icon(app.get("icon"))
             + '<div style="min-width:0;flex:1">'
             f'<strong>{html.escape(str(app.get("name") or ""))}</strong>'
-            f'<div class="meta">{html.escape(str(app.get("version") or ""))} · {html.escape(hint)}</div>'
+            f'<div class="meta">{html.escape(detail)} · {html.escape(hint)}</div>'
             "</div>"
-            + ('<span class="pill warn">更新源可疑</span>' if broken else "")
+            + '<span class="pill ok">有更新</span>'
             + f'<div class="row-actions">{button}</div></div>'
+        )
+
+    # 已最新 / 无法确认的收进折叠块：不占主视线，**也不给按钮**。
+    sparkle_rest_block = ""
+    if sparkle_rest:
+        rest_rows: list[str] = []
+        for app in sparkle_rest:
+            settled = app.get("status") == "ok"
+            rest_rows.append(
+                f'<div class="row" data-reveal-path="{html.escape(str(app.get("path") or ""))}">'
+                + _app_icon(app.get("icon"))
+                + '<div style="min-width:0;flex:1">'
+                f'<strong>{html.escape(str(app.get("name") or ""))}</strong>'
+                f'<div class="meta">{html.escape(str(app.get("version") or ""))} · '
+                f'{html.escape(str(app.get("reason") or ("已是最新" if settled else "无法确认是否有更新")))}</div></div>'
+                + ('<span class="pill ok">已是最新</span>' if settled else '<span class="pill ghost">无法确认</span>')
+                + "</div>"
+            )
+        sparkle_rest_block = (
+            '<details class="group review" style="margin-top:var(--sp-2)">'
+            '<summary><span class="group-name">已是最新 / 无法确认</span>'
+            f'<span class="meta">{len(sparkle_rest)} 个</span></summary>'
+            f'<div class="rows">{"".join(rest_rows)}</div></details>'
         )
 
     notes = "".join(f'<p class="muted">{html.escape(str(note))}</p>' for note in (payload.get("notes") or []))
@@ -1338,9 +1368,12 @@ def render_updates_list_html(
         sparkle_block = (
             '<details class="group review" open data-group-key="sparkle"><summary>'
             '<span class="group-name">自带更新（Sparkle）</span>'
-            f'<span class="meta">{len(sparkle_rows)} 个</span></summary>'
+            f'<span class="meta">{len(sparkle_rows)} 个有更新</span></summary>'
             f'<div class="rows">{"".join(sparkle_rows)}</div></details>'
         )
+    # 折叠块**总是**出现（默认收起）：没有更新时它就是"4 个都查过了，这里是结论"，
+    # 比整块消失更诚实（用户会问"我那 4 个 Sparkle 应用呢"）。
+    sparkle_block += sparkle_rest_block
     # Sparkle 组放**最前**：策略是"先应用内更新，不行再 App Store"（2026-10-19 用户要求）。
     body = sparkle_block + ("".join(groups) if groups else empty_block(
         "check", "已经是最新的", "没有发现可升级的第三方软件。"

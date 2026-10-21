@@ -201,13 +201,28 @@ _RUNTIME_JS = """
     const m = document.cookie.match(/(?:^|;\\s*)mc_csrf=([^;]+)/);
     return m ? decodeURIComponent(m[1]) : "";
   };
+  // 导航类动作幂等：POST 万一没送达（切页瞬间的竞态），重试一次——
+  // 用户看到的"点了没反应"很多时候就是这一下丢了（2026-10-21 自测里复现过一次）。
+  const IDEMPOTENT = new Set(['home','cancel','disk-open','system-open','large-open','orphans-open',
+                              'skills-open','uninstall-list','updates-open','orphans-open']);
+  const postAction = async (action, payload) => fetch('/action', {
+    method: 'POST',
+    credentials: 'same-origin',
+    // keepalive：上一次动作触发的 location.reload() 可能正好落在这次 POST 期间，
+    // 没有它浏览器会**中断请求**——动作没到服务端，用户看到的就是"点了没反应"。
+    keepalive: true,
+    headers: {'Content-Type':'application/json','X-MC-CSRF':csrf(),'X-MC-Action':'1'},
+    body: JSON.stringify({action: action, payload: payload || {}})
+  });
   window.maccleanerAction = async function(action, payload){
-    const response = await fetch('/action', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {'Content-Type':'application/json','X-MC-CSRF':csrf(),'X-MC-Action':'1'},
-      body: JSON.stringify({action: action, payload: payload || {}})
-    });
+    let response;
+    try {
+      response = await postAction(action, payload);
+    } catch (error) {
+      if (!IDEMPOTENT.has(action)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      response = await postAction(action, payload);
+    }
     let result = {};
     try { result = await response.json(); } catch (e) {}
     if (!response.ok || !result.accepted) { throw new Error(result.error || '动作未被接受'); }

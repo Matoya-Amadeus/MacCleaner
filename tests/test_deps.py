@@ -965,3 +965,54 @@ class SystemTrashTests(unittest.TestCase):
         self.assertEqual(result["status"], "cancelled")
         self.assertEqual(result["moved"], [])
 
+class SparkleCheckTests(unittest.TestCase):
+    """Sparkle 应用要**确认真有更新**才显示（2026-10-21 用户：别乱给"在应用内更新"）。
+
+    本机实测：4 个装了 Sparkle 的应用里 0 个真有更新（2 个已最新、1 个无 feed、1 个 feed 指向本机）。
+    """
+
+    APPCAST = """<?xml version="1.0"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel>
+  <item><enclosure sparkle:version="1.9" sparkle:shortVersionString="1.9.0" url="x"/></item>
+  <item><enclosure sparkle:version="2.0" sparkle:shortVersionString="2.1.3" url="y"/></item>
+</channel></rss>"""
+
+    def test_latest_version_reads_enclosure_attributes(self) -> None:
+        from maccleaner.deps import sparkle_latest_version
+
+        # 版本号是 <enclosure> 的**属性**，按子元素找会永远拿不到（老 bug）。
+        self.assertEqual(sparkle_latest_version(self.APPCAST), "2.1.3")
+        self.assertEqual(sparkle_latest_version(""), "")
+        self.assertEqual(sparkle_latest_version("not xml"), "")
+
+    def test_check_marks_only_newer_versions_as_available(self) -> None:
+        from maccleaner.deps import sparkle_check
+
+        apps = [
+            {"name": "Older", "path": "/Applications/Older.app", "version": "2.0.0",
+             "feed": "https://example.com/older.xml"},
+            {"name": "Same", "path": "/Applications/Same.app", "version": "2.1.3",
+             "feed": "https://example.com/same.xml"},
+            {"name": "NoFeed", "path": "/Applications/NoFeed.app", "version": "1.0", "feed": ""},
+        ]
+        checked = {item["name"]: item for item in sparkle_check(apps, fetcher=lambda url: self.APPCAST)}
+        self.assertTrue(checked["Older"]["update_available"])
+        self.assertEqual(checked["Older"]["latest"], "2.1.3")
+        self.assertFalse(checked["Same"]["update_available"], "已是最新就不该给按钮")
+        self.assertEqual(checked["Same"]["status"], "ok")
+        self.assertEqual(checked["NoFeed"]["status"], "unknown")
+        self.assertFalse(checked["NoFeed"]["update_available"])
+
+    def test_unreachable_feed_is_unknown_not_crash(self) -> None:
+        from maccleaner.deps import sparkle_check
+
+        def boom(_url):
+            raise OSError("no network")
+
+        checked = sparkle_check(
+            [{"name": "Broken", "path": "/x/Broken.app", "version": "1.0", "feed": "https://example.com/a.xml"}],
+            fetcher=boom,
+        )
+        self.assertEqual(checked[0]["status"], "unknown")
+        self.assertFalse(checked[0]["update_available"])
+

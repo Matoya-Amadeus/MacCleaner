@@ -336,16 +336,21 @@ class LandingPageTests(unittest.TestCase):
             "items": [{"name": "Logic Pro", "manager": "mas", "kind": "app-store",
                        "installed": "11.2", "available": "12.4"}],
             "sparkle": [
-                {"name": "ChatGPT", "path": "/Applications/ChatGPT.app", "version": "26.1", "feed": ""},
+                # 确认有更新的：给按钮，并写清从哪版升到哪版
+                {"name": "ChatGPT", "path": "/Applications/ChatGPT.app", "version": "26.1",
+                 "latest": "26.2", "status": "ok", "update_available": True,
+                 "feed": "https://example.com/chatgpt.xml"},
+                # 无法确认的：不给按钮，收进折叠块
                 {"name": "ima.copilot", "path": "/Applications/ima.copilot.app", "version": "143",
+                 "status": "unknown", "update_available": False, "reason": "更新源不可达（HTTPError）",
                  "feed": "http://0.0.0.0:8000/MacApp.xml"},
             ],
         })
         self.assertIn("自带更新（Sparkle）", page)
-        self.assertEqual(page.count('data-bridge-action="open-app"'), 2)
-        self.assertIn("在应用内更新", page)
-        self.assertIn("更新源可疑", page, "指向 0.0.0.0 的 feed 要标出来")
-        self.assertIn("在应用内更新", page)
+        self.assertEqual(page.count('data-bridge-action="open-app"'), 1, "只给确认有更新的那个")
+        self.assertIn("26.1 → 26.2", page)
+        self.assertIn("已是最新 / 无法确认", page, "其余收进折叠块")
+        self.assertIn("更新源不可达", page)
 
     def test_orphan_page_lists_items_unchecked_by_default(self) -> None:
         """孤儿残留页：默认不勾、显示路径与体积、按钮走 orphans-apply。"""
@@ -648,8 +653,9 @@ class LandingPageTests(unittest.TestCase):
                 {"name": "pnpm", "manager": "npm", "kind": "npm-global", "installed": "1",
                  "available": "2"},
             ],
-            "sparkle": [{"name": "ChatGPT", "path": "/Applications/ChatGPT.app",
-                         "version": "1", "feed": ""}],
+            "sparkle": [{"name": "ChatGPT", "path": "/Applications/ChatGPT.app", "version": "1",
+                         "latest": "2", "status": "ok", "update_available": True,
+                         "feed": "https://example.com/a.xml"}],
         })
         self.assertIn("review-split", page)
         self.assertIn('data-filter-group="Homebrew formula"', page)
@@ -857,6 +863,32 @@ class LandingPageTests(unittest.TestCase):
         self.assertEqual(plain.count('data-system-path="'), 0, "未授权不给勾选")
         self.assertEqual(plain.count('data-bridge-action="system-trash"'), 0)
         self.assertNotIn("放回原处", plain)
+
+    def test_updates_only_offers_in_app_update_when_confirmed(self) -> None:
+        """只有 `update_available` 的 Sparkle 应用才给「在应用内更新」（2026-10-21）。
+
+        之前只要装了 Sparkle 框架就列出来 + 给按钮，等于替用户断言"它有更新"。
+        """
+        from maccleaner.ui.pages import render_updates_list_html
+
+        page = render_updates_list_html({
+            "items": [],
+            "groups": [],
+            "sparkle": [
+                {"name": "HasUpdate", "path": "/Applications/HasUpdate.app", "version": "1.0",
+                 "latest": "1.2", "status": "ok", "update_available": True,
+                 "feed": "https://example.com/a.xml"},
+                {"name": "UpToDate", "path": "/Applications/UpToDate.app", "version": "2.0",
+                 "status": "ok", "update_available": False, "reason": "已是最新",
+                 "feed": "https://example.com/b.xml"},
+                {"name": "Unknown", "path": "/Applications/Unknown.app", "version": "3.0",
+                 "status": "unknown", "update_available": False, "reason": "没有可用的更新源"},
+            ],
+        })
+        self.assertEqual(page.count('data-bridge-action="open-app"'), 1, "只给确认有更新的那个")
+        self.assertIn("1.0 → 1.2", page, "要写清从哪版升到哪版")
+        self.assertIn("已是最新 / 无法确认", page, "其余收进折叠块")
+        self.assertIn("无法确认", page)
 
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:

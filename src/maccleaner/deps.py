@@ -25,6 +25,8 @@ import re
 import shutil
 import subprocess
 import shlex
+from urllib.parse import urlparse
+import xml.etree.ElementTree as ET
 import tempfile
 import time
 from pathlib import Path
@@ -1277,6 +1279,97 @@ BROWSER_BUNDLES: tuple[tuple[str, str], ...] = (
 ICON_CACHE_TTL = 7 * 24 * 3600
 
 
+_SPARKLE_NS = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
+
+
+def _version_key(text: str) -> tuple[int, ...]:
+    """版本号比较键：`1.2.3 (456)` → (1, 2, 3, 456)。非数字段直接忽略。"""
+    numbers = re.findall(r"\d+", str(text or ""))
+    return tuple(int(value) for value in numbers[:4]) or (0,)
+
+
+def sparkle_latest_version(appcast_xml: str) -> str:
+    """从 Sparkle 的 appcast（RSS）里取**最高**版本号。
+
+    注意：`sparkle:version` / `sparkle:shortVersionString` 是 `<enclosure>` 的**属性**，
+    不是子元素（第一版按子元素找，结果永远是空——本机 4 个应用全被判成"无法确认"）。
+    优先用 shortVersionString（营销版本，如 1.2.3），没有再退回 version（构建号）。
+    """
+    if not appcast_xml.strip():
+        return ""
+    try:
+        tree = ET.fromstring(appcast_xml)
+    except ET.ParseError:
+        return ""
+
+    marketing: list[str] = []
+    builds: list[str] = []
+    for element in tree.iter():
+        for key, value in element.attrib.items():
+            text = str(value or "").strip()
+            if not text:
+                continue
+            if key.endswith("}shortVersionString"):
+                marketing.append(text)
+            elif key.endswith("}version"):
+                builds.append(text)
+    for candidates in (marketing, builds):
+        if candidates:
+            return max(candidates, key=_version_key)
+    return ""
+
+
+def sparkle_check(
+    apps: list[dict[str, Any]] | None = None,
+    *,
+    fetcher: Callable[[str], str] | None = None,
+    timeout: float = 6.0,
+) -> list[dict[str, Any]]:
+    """给每个 Sparkle 应用查一次 appcast，判断**是否真的有更新**。
+
+    为什么必须查（2026-10-21 用户反馈）：只按"装了 Sparkle 框架"就列出来并给
+    「在应用内更新」按钮，等于替用户断言"它有更新"——本机 4 个里可能 3 个是最新的。
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    import urllib.request
+
+    if apps is None:
+        apps = sparkle_apps(Path.home())
+
+    def fetch(url: str) -> str:
+        if fetcher is not None:
+            return fetcher(url)
+        request = urllib.request.Request(url, headers={"User-Agent": "MacCleaner"})
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - 只允许 http(s)
+            return response.read(2_000_000).decode("utf-8", "replace")
+
+    def inspect(app: dict[str, Any]) -> dict[str, Any]:
+        feed = str(app.get("feed") or "").strip()
+        parsed = urlparse(feed) if feed else None
+        if parsed is None or parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            return {**app, "status": "unknown", "reason": "没有可用的更新源", "update_available": False}
+        try:
+            latest = sparkle_latest_version(fetch(feed))
+        except Exception as exc:  # noqa: BLE001 - 网络问题不该拖垮整页
+            return {**app, "status": "unknown", "reason": f"更新源不可达（{type(exc).__name__}）", "update_available": False}
+        if not latest:
+            return {**app, "status": "unknown", "reason": "更新源里没有版本信息", "update_available": False}
+        installed = str(app.get("version") or "")
+        newer = _version_key(latest) > _version_key(installed) if installed else True
+        return {
+            **app,
+            "latest": latest,
+            "status": "ok",
+            "update_available": bool(newer),
+            "reason": "" if newer else "已是最新",
+        }
+
+    if not apps:
+        return []
+    with ThreadPoolExecutor(max_workers=min(4, len(apps))) as pool:
+        return list(pool.map(inspect, apps))
+
+
 def app_icon_data_uri(app_path: str, *, size: int = 32) -> str:
     """把某个 `.app` 的图标转成 data URI（32px PNG，约 2 KB）。
 
@@ -1593,7 +1686,8 @@ def build_deps(
         # （本机实测 sparkle_apps() 有 4 个，页面却一个都不显示，2026-10-21 核对发现）。
         found = discover_updates()
         try:
-            found["sparkle"] = sparkle_apps(home_path)
+            # 只把**确认有更新**的标出来（update_available），没更新的在页面上折叠掉。
+            found["sparkle"] = sparkle_check(sparkle_apps(home_path))
         except Exception:  # noqa: BLE001 - 图标/plist 读坏了不该拖垮整个检查
             found.setdefault("sparkle", [])
         return found

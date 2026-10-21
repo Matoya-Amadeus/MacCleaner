@@ -352,6 +352,19 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
 
             // 轮询到 stage 真的变了再判定：`updates-open` 会跑真实 `brew outdated`（数秒到十几秒），
             // 固定 sleep 会把"慢"误判成"坏"（2026-10-18 实测过一次）。
+            // 点击丢了就再点一次（只重试一次）：这类竞态在真机上表现为"点了没反应"，
+            // 自测里表现为等 25 秒超时。重试要在日志里留下痕迹，别把真 bug 掩盖成绿。
+            var clicked = false
+            func clickAgainIfStuck() {
+                guard !clicked else { return }
+                clicked = true
+                self.log("smoke click retry: \(action)")
+                self.webView?.evaluateJavaScript(
+                    "var b=document.querySelector('[data-bridge-action=\"\(action)\"]')"
+                    + " || document.querySelector('[data-nav-action=\"\(action)\"]'); b && b.click(); 'retried'"
+                ) { _, _ in }
+            }
+
             func waitForChange(previous: String, attempt: Int) {
                 currentStage { stage in
                     let stageOK = stage == expected || attempt >= 25
@@ -372,6 +385,7 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
                         return
                     }
                     _ = previous
+                    if attempt == 4 { clickAgainIfStuck() }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                         waitForChange(previous: previous, attempt: attempt + 1)
                     }
