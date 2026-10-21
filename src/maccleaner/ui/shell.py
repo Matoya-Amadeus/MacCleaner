@@ -613,8 +613,11 @@ _RUNTIME_JS = """
     }
   });
 
-  // 离开进度页（stage 不再是 updating）时清掉计时起点，下次进进度页重新计。
-  if (document.documentElement.dataset.stage !== 'updating') {
+  // 只在**离开进度页**时清掉计时起点。
+  // 之前写成"stage 不是 updating 就清"，于是扫描/卸载/清理的进度页每次自刷都把起点清零，
+  // 计时器永远在 0 和 1 之间跳（2026-10-21 用户截图）。用"页面上有没有计时元素"判断最可靠：
+  // 进度页才有 #mc-elapsed，其它页一律清掉。
+  if (!document.getElementById('mc-elapsed')) {
     sessionStorage.removeItem('mc-progress-start');
   }
   refreshSelection();

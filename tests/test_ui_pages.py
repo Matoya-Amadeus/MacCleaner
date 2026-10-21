@@ -795,6 +795,24 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn('data-filter-group="本工具"', page)
         self.assertIn('data-group-key="本工具"', page)
 
+    def test_progress_timer_survives_auto_refresh(self) -> None:
+        """"已用 0 秒" 只在 0/1 之间跳（2026-10-21 用户截图）。
+
+        根因：计时起点只在 `updating` 阶段保留，扫描/卸载/清理的进度页每次自刷都把它清掉，
+        t0 每次重置成 now → 计时器永远从 0 开始。
+        修法：用"页面上有没有 #mc-elapsed"判断是不是进度页，离开时才清。
+        """
+        from maccleaner.ui.pages import render_progress_html
+        from maccleaner.ui import shell as shell_module
+
+        page = render_progress_html({"message": "x"}, stage="scanning")
+        self.assertIn('id="mc-elapsed"', page)
+        self.assertIn("mc-progress-start", page)
+
+        js = shell_module._RUNTIME_JS
+        self.assertIn("getElementById('mc-elapsed')", js, "清理要按“有没有计时元素”判断")
+        self.assertNotIn("dataset.stage !== 'updating'", js, "旧条件会把扫描/卸载页的起点清掉")
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")
