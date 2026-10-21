@@ -232,20 +232,23 @@ html[data-stage=uninstall-list] .state.card,
 html[data-stage=updates] .state.card,
 html[data-stage=orphans] .state.card,
 html[data-stage=system] .state.card,
-html[data-stage=uninstall-preview] .state.card{height:calc(100vh - 32px);display:flex;flex-direction:column;overflow:hidden}
+html[data-stage=uninstall-preview] .state.card,
+html[data-stage=skills] .state.card{height:calc(100vh - 32px);display:flex;flex-direction:column;overflow:hidden}
 /* 这些页面内部已各自滚动，外层再滚就会多一条滚动条。 */
 html[data-stage=review] .app,
 html[data-stage=uninstall-list] .app,
 html[data-stage=updates] .app,
 html[data-stage=orphans] .app,
 html[data-stage=system] .app,
-html[data-stage=uninstall-preview] .app{overflow:hidden}
+html[data-stage=uninstall-preview] .app,
+html[data-stage=skills] .app{overflow:hidden}
 
 html[data-stage=review] .review-split,
 html[data-stage=uninstall-list] .review-split,
 html[data-stage=updates] .review-split,
 html[data-stage=orphans] .review-split,
-html[data-stage=system] .review-split{flex:1;min-height:0;align-items:stretch;
+html[data-stage=system] .review-split,
+html[data-stage=skills] .review-split{flex:1;min-height:0;align-items:stretch;
   grid-template-rows:minmax(0,1fr)}
 
 /* 审阅页双栏（2026-10-20）：左栏固定分类，右栏滚动明细。 */
@@ -366,6 +369,9 @@ html[data-stage=uninstall-list] .state.card{min-height:calc(100vh - 104px);
 /* 行里的"它在哪里"：太长就省略，别把体积挤出屏幕。 */
 .row > .meta:not(.value){overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:42%}
 .row-lead strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Skill 行：名称 + 一行说明（超长省略），与卸载页的两行行高一致。 */
+.skill-main{min-width:0;flex:1}
+.skill-desc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row .chev{color:var(--muted);font-size:var(--fs-title-m);line-height:1;flex:none;transition:transform .12s}
 .row.nav:hover .chev{color:var(--accent);transform:translateX(2px)}
 /* 只读分区：系统级目录视觉上弱一档，避免与本地目录同权。 */

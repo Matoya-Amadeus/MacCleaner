@@ -789,6 +789,11 @@ class LandingPageTests(unittest.TestCase):
         self.assertNotIn('class="topbar"', page, "不要标题区")
         self.assertNotIn(">返回<", page, "不要那个假返回")
         self.assertIn("mac-cleaner", page)
+        # 2026-10-21：改成"左栏来源分类 + 右栏分组列表"，与卸载页同一骨架。
+        self.assertIn("review-split", page)
+        self.assertIn('class="rail-item', page)
+        self.assertIn('data-filter-group="本工具"', page)
+        self.assertIn('data-group-key="本工具"', page)
 
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:

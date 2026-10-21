@@ -1439,38 +1439,76 @@ def render_skills_html(payload: dict[str, Any] | None = None, *, interactive: bo
     """
     data = payload or {}
     skills = [item for item in (data.get("skills") or []) if isinstance(item, dict)]
-    rows: list[str] = []
 
-    current_root = ""
+    def is_mine(skill: dict[str, Any]) -> bool:
+        name = str(skill.get("name", "") or "").strip().lower()
+        return name in {"mac cleaner", "mac-cleaner", "maccleaner"}
+
+    # 按**来源**分组（真实数据：本工具 / ~/.codebuddy/skills / ~/.codex/skills/.system …）。
+    # 与卸载页同一套骨架：左栏分类、右栏分组列表（2026-10-21 用户要求）。
+    buckets: dict[str, list[dict[str, Any]]] = {}
     for skill in skills:
-        root = str(skill.get("root", "") or "")
-        if root != current_root:
-            current_root = root
-            rows.append(f'<p class="group-title">{html.escape(root or "(未知来源)")}</p>')
-        name = str(skill.get("name", "") or "")
-        description = str(skill.get("description", "") or "")
-        path = str(skill.get("path", "") or "")
-        mine = name.strip().lower() in {"mac cleaner", "mac-cleaner", "maccleaner"}
-        rows.append(
-            '<div class="row"><div style="min-width:0">'
-            f"<strong>{html.escape(name)}</strong>"
-            f'<div class="meta">{html.escape(description[:120])}</div>'
-            f'<div class="meta">{html.escape(path)}</div>'
-            "</div>"
-            + ('<span class="pill ok">本工具</span>' if mine else '<span class="pill">可调用</span>')
-            + "</div>"
+        root = str(skill.get("root", "") or "").strip()
+        key = "本工具" if is_mine(skill) or root == "本工具" else (root or "其它来源")
+        buckets.setdefault(key, []).append(skill)
+
+    def order(key: str) -> tuple[int, str]:
+        if key == "本工具":
+            return (0, "")
+        return (1, key)
+
+    def rail_label(key: str) -> str:
+        # 左栏要窄：去掉 ~/ 前缀，只留有辨识度的部分。
+        return key[2:] if key.startswith("~/") else key
+
+    groups: list[str] = []
+    for key in sorted(buckets, key=order):
+        rows = []
+        for skill in buckets[key]:
+            name = str(skill.get("name", "") or "")
+            description = str(skill.get("description", "") or "")
+            path = str(skill.get("path", "") or "")
+            pill = '<span class="pill ok">本工具</span>' if is_mine(skill) else '<span class="pill">可调用</span>'
+            rows.append(
+                # 两行：名称 + 一行说明（超长省略）；完整路径放 title，hover 才看。
+                f'<div class="row" title="{html.escape(_display_path(path))}">'
+                f'<div class="row-lead">{_icon("terminal")}'
+                '<div class="skill-main">'
+                f"<strong>{html.escape(name)}</strong>"
+                f'<div class="meta skill-desc">{html.escape(description)}</div>'
+                "</div></div>"
+                + pill
+                + "</div>"
+            )
+        groups.append(
+            f'<details class="group review" open data-group-key="{html.escape(key)}">'
+            f'<summary><span class="group-name">{html.escape(rail_label(key))}</span>'
+            f'<span class="meta">{len(buckets[key])} 个</span></summary>'
+            f'<div class="rows">{"".join(rows)}</div></details>'
         )
 
-    body = "".join(rows) or '<p class="muted">没有在常见 skill 根下找到 SKILL.md。</p>'
     # 本工具自己的细节仍收进折叠块：列表要"全"，但触发词/边界这类说明不该占满屏幕。
-    body += (
-        "<details style=\"margin-top:16px\"><summary>本工具的触发词 / 调用方式 / 边界</summary>"
+    groups.append(
+        '<details class="group review" style="margin-top:16px">'
+        "<summary>本工具的触发词 / 调用方式 / 边界</summary>"
         '<div class="meta" style="margin-top:8px;line-height:1.9">'
         "<div><b>触发词</b>：mac清理、清理磁盘、清理缓存、清理磁盘空间</div>"
         "<div><b>怎么调用</b>：<code>maccleaner ui</code>（本地界面）/ <code>maccleaner uninstall</code> / MCP 工具</div>"
         "<div><b>边界</b>：扫描只读；清理一律移入废纸篓；系统级残留需要一次管理员授权。</div>"
         "</div></details>"
     )
+
+    rail_items: list[tuple[str, str, str, str]] = [("all", "全部", "doc", f"{len(skills)} 个")]
+    for key in sorted(buckets, key=order):
+        rail_items.append((key, rail_label(key), "terminal", f"{len(buckets[key])} 个"))
+
+    detail = '<div class="review-detail">' + "".join(groups) + "</div>"
+    page_body = (
+        '<div class="review-split">' + _rail(rail_items) + detail + "</div>"
+        if len(rail_items) >= 2
+        else detail
+    )
+
     # 这一页不给自己一个【返回】：侧栏一直在，返回按钮既多余、又只能跳"开始扫描"
     # （用户点它不会回到上一页，2026-10-21 反馈"删掉这个功能，skill 没有返回"）。
     return state_page(
@@ -1483,7 +1521,7 @@ def render_skills_html(payload: dict[str, Any] | None = None, *, interactive: bo
         title="可调用的 Skill",
         body="",
         with_header=False,
-        actions=body,
+        actions=page_body,
         current="skills",
     )
 
