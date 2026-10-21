@@ -701,6 +701,42 @@ class UpdatesFlowTests(unittest.TestCase):
             driver.action("cancel")
             driver.join()
 
+
+    def test_uninstall_plan_shows_progress_page_immediately(self) -> None:
+        """点【卸载】要**立刻**有反馈（2026-10-21 用户报"第一次点没反应"）。
+
+        `uninstall_plan` 本机实测 0.8–1.2s；之前它跑完才出页面，这段时间页面完全不动，
+        用户会以为点击丢了。这里用一个卡住的 plan 验证：先出进度页，松手后才出预览页。
+        """
+        import threading
+
+        gate = threading.Event()
+
+        def slow_plan(**_kwargs):
+            gate.wait(5)
+            return {"app": {"name": "Demo"}, "items": [
+                {"id": "a", "path": "/Applications/Demo.app", "kind": "app-bundle",
+                 "confidence": "exact", "allocated_bytes": 10}], "user_total_bytes": 10}
+
+        with tempfile.TemporaryDirectory(prefix="session-uninstall-progress-", ignore_cleanup_errors=True) as tmp:
+            driver = _Driver(_deps(uninstall_plan=slow_plan), Path(tmp))
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+            driver.action("uninstall-list")
+            driver.wait_page('data-stage="uninstall-list"', timeout=8)
+
+            driver.action("uninstall-plan", {"path": "/Applications/Demo.app", "name": "Demo"})
+            page = driver.wait_page("正在清点", timeout=5)
+            self.assertIn('data-stage="uninstalling"', page)
+            # 注意别用 "uninstall-preview" 做否定断言：CSS 里有 `[data-stage=uninstall-preview]`
+            # 选择器，那个字面量会出现在每一页的 <style> 里。
+            self.assertNotIn('id="mc-preview-btn"', page, "还没算完，不该已经到预览页")
+
+            gate.set()
+            driver.wait_page('data-stage="uninstall-preview"', timeout=8)
+            driver.action("cancel")
+            driver.join()
+
 class NavigationTests(unittest.TestCase):
     def test_uninstall_entry_lists_apps(self) -> None:
         with tempfile.TemporaryDirectory(prefix="session-unin-") as tmp:

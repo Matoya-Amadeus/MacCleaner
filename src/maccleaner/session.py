@@ -529,10 +529,21 @@ class InteractiveSession:
                     continue
 
                 payload = dict(action.get("payload") or {})
+                target_name = str(payload.get("name") or "")
+                # 先**立刻**回一屏进度：`uninstall_plan` 本机实测 0.8–1.2s，
+                # 这期间页面一动不动，用户会以为"点了没反应"再点一次（2026-10-21 反馈）。
+                self._serve("uninstalling", pages.render_progress_html(
+                    {"title": "软件卸载",
+                     "body": f"正在清点 {target_name} 的残留" if target_name else "正在清点残留",
+                     "message": "逐个目录核对，不会删除任何东西…",
+                     "detail": "找到后会先给你看清单，勾选确认才移入废纸篓。",
+                     "nav": "uninstall", "auto_refresh": False},
+                    stage="uninstalling",
+                ))
                 plan = self.deps.uninstall_plan(
                     app_path=str(payload.get("path", "")),
                     bundle_id=str(payload.get("bundle_id", "")),
-                    app_name=str(payload.get("name", "")),
+                    app_name=target_name,
                 )
                 # 预览页的决策要**循环等待**：用户可能先空勾一次（被拒绝）、再勾选提交。
                 # 曾经把"被拒绝"写成 `continue` 回到外层，外层等的是 `uninstall-plan`，
@@ -606,6 +617,17 @@ class InteractiveSession:
         不给一次总览就执行，等于把 5 次确认压成 0 次（2026-10-19 设计）。
         """
         entries = [item for item in (payload.get("apps") or []) if isinstance(item, dict)]
+        if entries:
+            # 批量清点是逐个应用跑 uninstall_plan（每个 0.8–1.2s），先给一屏进度，
+            # 否则选 5 个应用就是 5 秒白屏（2026-10-21 与单个卸载同一个问题）。
+            self._serve("uninstalling", pages.render_progress_html(
+                {"title": "批量卸载",
+                 "body": f"正在清点 {len(entries)} 个应用的残留",
+                 "message": "逐个目录核对，不会删除任何东西…",
+                 "detail": "清点完先给你一页汇总，确认后才执行。",
+                 "nav": "uninstall", "auto_refresh": False},
+                stage="uninstalling",
+            ))
         plans: list[dict[str, Any]] = []
         for entry in entries:
             plan = self.deps.uninstall_plan(
