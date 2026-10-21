@@ -56,7 +56,6 @@ ACTIONS = frozenset(
         "sparkle-verify",
         "open-app-store",
         "disk-open",
-        "disk-back",
         "system-open",
     }
 )

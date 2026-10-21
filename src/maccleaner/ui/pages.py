@@ -1453,7 +1453,9 @@ def sort_bar(*, default: str = "bytes") -> str:
         f'<button type="button" class="sortbtn{" is-on" if default == "text" else ""}" '
         'data-sort="text" data-dir="asc">名称</button></div>'
     )
-def _treemap_svg(entries: list[dict[str, Any]], *, width: int = 1000, height: int = 300) -> str:
+def _treemap_svg(
+    entries: list[dict[str, Any]], *, width: int = 1000, height: int = 300, clickable: bool = True
+) -> str:
     """把目录条目画成 squarified treemap（Mole `analyze` 那种一眼看懂的样子）。
 
     只画面积够大的标签：小格子塞文字反而看不清，交给 hover 的 `<title>`。
@@ -1494,13 +1496,17 @@ def _treemap_svg(entries: list[dict[str, Any]], *, width: int = 1000, height: in
         size = int(item.get("bytes", 0) or 0)
         share = size / total
         fill = "rgba(53,208,161,.18)" if index < 3 else "var(--surface-2)"
-        attrs = (
-            f' data-treemap-path="{html.escape(path)}" role="button" tabindex="0"'
-            ' aria-label="' + html.escape(f"{name} {human_bytes(size)}") + '"'
-            if is_dir
-            else ""
-        )
-        cursor = ' style="cursor:pointer"' if is_dir else ""
+        attrs = ""
+        cursor = ""
+        if is_dir:
+            aria = ' aria-label="' + html.escape(f"{name} {human_bytes(size)}") + '"'
+            attrs = aria
+            if clickable:
+                attrs = (
+                    f' data-treemap-path="{html.escape(path)}" role="button" tabindex="0"'
+                    + aria
+                )
+                cursor = ' style="cursor:pointer"'
         label = ""
         if w >= 96 and h >= 40:
             # 按宽度算能放几个字（12px 字体 ≈ 7px/字符）：不截断会压到隔壁色块上。
@@ -1528,85 +1534,11 @@ def _treemap_svg(entries: list[dict[str, Any]], *, width: int = 1000, height: in
         'preserveAspectRatio="none" role="img" aria-label="目录体积分布">'
         + "".join(cells)
         + "</svg>"
-        + '<p class="meta">面积 = 体积占比；点方块进入。</p></div>'
-    )
-
-
-def _disk_crumbs(display: str) -> str:
-    """面包屑：磁盘 › … › 父目录 › 当前目录。
-
-    为什么要有（2026-10-21）：钻取后标题仍是"磁盘"，用户看不出自己在第几层，
-    也找不到怎么退——换页实现的层级必须显式给出方位。
-    """
-    home = os.path.expanduser("~")
-    if display == home:
-        return '<span class="crumb">磁盘</span><span class="crumb-sep">›</span><span class="crumb">~</span>'
-    if display.startswith(home + "/"):
-        # 家目录内用 ~ 起头：比 "Users › zhangqian › Pictures" 短且亲切。
-        display = "~/" + display[len(home) + 1 :]
-    parts = [part for part in display.split("/") if part and part != "~"]
-    parts = ["~", *parts] if display.startswith("~/") else parts
-    if not parts:
-        return '<span class="crumb">磁盘</span>'
-    tail = parts[-3:]
-    lead = '<span class="crumb-dim">…</span>' if len(parts) > len(tail) else ""
-    items = "".join(f'<span class="crumb-sep">›</span><span class="crumb">{html.escape(name)}</span>' for name in tail)
-    return '<span class="crumb">磁盘</span>' + lead + items
-
-
-def render_disk_browse_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
-    """磁盘钻取：一个目录的下一级，按体积降序；目录可以再点进去。"""
-    data = payload or {}
-    entries = [item for item in (data.get("entries") or []) if isinstance(item, dict)]
-    display = str(data.get("display") or data.get("path") or "")
-    parent = str(data.get("parent") or "")
-    # 之前 total 取 `data["total"]`，但会话没传这个字段 → 标题永远显示"下一级共 0 B"，
-    # 与下面 6.90 GB 打架。这里用条目求和兜底。
-    total = int(data.get("total", 0) or 0) or sum(int(item.get("bytes", 0) or 0) for item in entries)
-
-    rows: list[str] = []
-    for item in entries:
-        size = int(item.get("bytes", 0) or 0)
-        name = str(item.get("name", ""))
-        path = str(item.get("path", ""))
-        is_dir = bool(item.get("is_dir"))
-        share = (size / total * 100) if total else 0
-        share_text = f"{share:.1f}%" if share >= 0.1 else "<0.1%"
-        payload_json = html.escape(json.dumps({"path": path}, ensure_ascii=False), quote=True)
-        action_attr = f' data-bridge-action="disk-open" data-bridge-payload="{payload_json}"' if (interactive and is_dir) else ""
-        rows.append(
-            f'<div class="row nav" data-sort-text="{html.escape(name.lower())}"'
-            f' data-sort-bytes="{size}" data-reveal-path="{html.escape(path)}"{action_attr}>'
-            f'<div class="row-lead">{_folder_icon(name, path, is_dir=is_dir)}'
-            f"<strong>{html.escape(name)}{'/' if is_dir else ''}</strong></div>"
-            f'<span class="meta value">{human_bytes(size)}</span>'
-            + ('<span class="chev" aria-hidden="true">›</span>' if is_dir else "")
-            + "</div>"
+        + (
+            '<p class="meta">面积 = 体积占比；点方块进入。</p></div>'
+            if clickable
+            else '<p class="meta">面积 = 这些目录之间的占比。</p></div>'
         )
-
-    head = (
-        '<div class="disk-crumbs">'
-        + (_button("← 返回", "disk-back", ghost=True) if (interactive and parent) else "")
-        + _disk_crumbs(display)
-        + "</div>"
-    )
-    body = (
-        head
-        + _treemap_svg(entries)
-        + '<div class="rows">' + "".join(rows) + "</div>"
-        if rows
-        else head + empty_block("check", "这个目录是空的", "换一个目录，或点【返回】回到上一级。")
-    )
-    return state_page(
-        {
-            "message": f"本目录 {human_bytes(total)} · {len(entries)} 项",
-            "detail": "点方块或整行进入下一级；体积是当前占用，不是可清理量。",
-        },
-        stage="disk",
-        title="磁盘",
-        body="",
-        actions=body,
-        current="disk",
     )
 
 
@@ -1883,15 +1815,13 @@ def render_disk_html(payload: dict[str, Any] | None = None, *, interactive: bool
         share = (size / total * 100) if total else 0
         share_text = f"{share:.1f}%" if share >= 0.1 else "<0.1%"
         path = str(item.get("path", "") or "")
-        payload = html.escape(json.dumps({"path": path}, ensure_ascii=False), quote=True)
-        action_attr = f' data-bridge-action="disk-open" data-bridge-payload="{payload}"' if (interactive and path) else ""
+        # 纯展示行：不可点、无箭头（下钻已删除，2026-10-21）。
         rows.append(
-            f'<div class="row nav" data-sort-text="{html.escape(str(item.get("name", "")).lower())}"'
-            f' data-sort-bytes="{size}" data-reveal-path="{html.escape(path)}"{action_attr}>'
+            f'<div class="row" data-sort-text="{html.escape(str(item.get("name", "")).lower())}"'
+            f' data-sort-bytes="{size}" data-reveal-path="{html.escape(path)}">'
             f'<div class="row-lead">{_folder_icon(str(item.get("name", "")), path)}'
             f'<strong>{html.escape(str(item.get("name", "")))}</strong></div>'
-            f'<span class="meta value">{human_bytes(size)}</span>'
-            '<span class="chev" aria-hidden="true">›</span></div>'
+            f'<span class="meta value">{human_bytes(size)}</span></div>'
         )
 
     # 系统级目录：root 拥有，不授权读不全（实测 /Library/Caches 会报 0）。
@@ -1939,7 +1869,9 @@ def render_disk_html(payload: dict[str, Any] | None = None, *, interactive: bool
         body="",
         hero=f"{percent:.0f}%",
         # 顶部只留一条"整机容量条"：这是唯一代表"总量"的条。
+        # treemap 放在总览（2026-10-21 用户要求）：这一页就是"看分布"，不需要下钻。
         actions=_meter(percent, tone="warn")
+        + _treemap_svg(sections, clickable=False)
         + f'<div class="rows">{"".join(rows)}</div>'
         + system_block,
         current="disk",

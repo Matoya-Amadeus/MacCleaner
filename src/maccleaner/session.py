@@ -269,7 +269,7 @@ class InteractiveSession:
                 if kind == "disk-open":
                     # 钻取：进入目录后可以继续进入 / 上一级 / 回总览，全程只读。
                     # 这里点侧栏要**交回主循环**（否则会停在落地页，用户以为没反应）。
-                    outcome = self._run_disk_browse(str(payload_now.get("path", "")))
+                    outcome = self._run_disk()
                     if outcome:
                         pending = outcome
                     continue
@@ -727,51 +727,33 @@ class InteractiveSession:
                 return terminal
             return self._run_updates()
 
-    def _run_disk_browse(self, target: str = "") -> str | None:
-        """磁盘钻取循环。只读。
+    def _run_disk(self) -> str | None:
+        """磁盘总览（只读展示）。
 
-        返回：`None` = 用户退出/超时；`str` = 用户点了侧栏的某个入口（交回主循环处理）。
+        这一页的职责是"看清分布"，不是浏览器：**不做下钻**（2026-10-21 用户要求）。
         """
-        browse = getattr(self.deps, "disk_browse", None)
-        current = target
         while True:
-            if not current or browse is None:
-                # 空目标 = 总览（刷新按钮也用它），**不要**退化成"主目录"。
-                overview = dict(self._safe(self.deps.disk, default={}))
-                reader = getattr(self.deps, "system_sizes_cached", None)
-                if reader is not None:
-                    overview["system"] = self._safe(reader, default={})
-                self._serve("disk", pages.render_disk_html(overview))
-            else:
-                readout = self._safe(lambda: browse(current), default={})
-                self._serve("disk", pages.render_disk_browse_html(readout))
-            action = self._wait_or_nav(
-                ("disk-open", "disk-back", "system-sizes", "cancel"), self.ACTION_TIMEOUT_SECONDS
-            )
+            overview = dict(self._safe(self.deps.disk, default={}))
+            reader = getattr(self.deps, "system_sizes_cached", None)
+            if reader is not None:
+                overview["system"] = self._safe(reader, default={})
+            self._serve("disk", pages.render_disk_html(overview))
+            action = self._wait_or_nav(("system-sizes", "cancel"), self.ACTION_TIMEOUT_SECONDS)
             if action is not None and "nav" in action:
                 return str(action["nav"])
             if action is None or action["action"] == "cancel":
                 self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
                 return None
-            if action["action"] == "system-sizes":
-                # 一次性授权（系统标准密码框），只测量不删除；结果写缓存，本次会话不再弹。
-                measure = getattr(self.deps, "system_sizes_admin", None)
-                self._serve("disk", pages.render_progress_html(
-                    {"title": "磁盘", "body": "正在测量系统目录",
-                     "message": "若弹出授权框，请输入密码（只用来读体积，不会删文件）…",
-                     "detail": "同一次会话只需授权一次。", "nav": "disk"},
-                    stage="disk",
-                ))
-                if measure is not None:
-                    self._safe(measure, default={})
-                current = ""
-                continue
-            if action["action"] == "disk-back":
-                # 回**上一级**（原来直接回总览，按钮写着"上一级"却跳两层）。
-                parent = str(Path(current).parent) if current else ""
-                current = "" if parent in ("", "/", ".") else parent
-                continue
-            current = str((action.get("payload") or {}).get("path", ""))
+            # 一次性授权（系统标准密码框），只测量不删除；结果写缓存，本次会话不再弹。
+            measure = getattr(self.deps, "system_sizes_admin", None)
+            self._serve("disk", pages.render_progress_html(
+                {"title": "磁盘", "body": "正在测量系统目录",
+                 "message": "若弹出授权框，请输入密码（只用来读体积，不会删文件）…",
+                 "detail": "同一次会话只需授权一次。", "nav": "disk"},
+                stage="disk",
+            ))
+            if measure is not None:
+                self._safe(measure, default={})
 
     def _run_orphans(self) -> None:
         """孤儿残留体检：扫描 → 勾选 → 移入废纸篓。"""

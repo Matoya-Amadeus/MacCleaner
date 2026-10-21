@@ -420,44 +420,38 @@ class UpdatesFlowTests(unittest.TestCase):
             driver.join()
 
 
-    def test_disk_drill_down_walks_into_directory_and_back(self) -> None:
-        """磁盘钻取：进入子目录 → 上一级；并且从磁盘页点侧栏能去系统页（不能被吞掉）。"""
+    def test_disk_is_read_only_single_page_without_drill(self) -> None:
+        """磁盘是**单页只读展示**（2026-10-21 用户要求）：不再下钻。
+
+        以前点行/点方块会调 `disk_browse` 换一页看下一级；现在这一页只回答"谁占地方"，
+        再往下钻对判断没有帮助。这里钉住"怎么点都不会去钻目录"。
+        """
         targets: list[str] = []
 
         def browse(target=None):
             targets.append(str(target or ""))
-            return {
-                "path": "/home/Downloads", "display": "~/Downloads", "parent": "/home",
-                "total": 10,
-                "entries": [{"name": "big", "path": "/home/Downloads/big", "bytes": 10, "is_dir": True}],
-            }
+            return {"path": "/x", "display": "/x", "parent": "", "total": 1, "entries": []}
 
-        with tempfile.TemporaryDirectory(prefix="session-drill-", ignore_cleanup_errors=True) as tmp:
+        with tempfile.TemporaryDirectory(prefix="session-disk-", ignore_cleanup_errors=True) as tmp:
             driver = _Driver(_deps(disk_browse=browse), Path(tmp))
             driver.bootstrap()
             driver.wait_page('data-stage="idle"')
 
             self.assertEqual(driver.action("disk-open"), 202)
-            driver.wait_page('data-stage="disk"', timeout=5)
-            self.assertEqual(targets, [], "首次进磁盘只渲染总览，不该去钻目录")
+            page = driver.wait_page('data-stage="disk"', timeout=5)
+            self.assertIn("tm-cell", page, "总览页要有 treemap")
+            self.assertEqual(targets, [], "进磁盘不该触发目录扫描")
 
+            # 带 path 的 disk-open（旧的下钻入口）现在应被忽略，不再换页
             self.assertEqual(driver.action("disk-open", {"path": "/home/Downloads"}), 202)
-            # 面包屑按层拆成了 span（磁盘 › ~ › Downloads），不再是一整串 "~/Downloads"
-            page = driver.wait_page('crumb">Downloads<', timeout=5)
-            self.assertIn("/home/Downloads", targets[-1])
+            driver.wait_page('data-stage="disk"', timeout=5)
+            self.assertEqual(targets, [], "下钻已删除：不应再调用 disk_browse")
 
-            # 【返回】回**上一级**（2026-10-21 修：原来直接跳回总览，按钮写着"上一级"却跨两层）
-            self.assertEqual(driver.action("disk-back"), 202)
-            driver.wait_page("data-stage=\"disk\"", timeout=5)
-            self.assertEqual(targets[-1], "/home", "上一级应该是父目录 /home")
-
-            # 关键回归：钻取页点侧栏"系统状态"必须真的切过去
             self.assertEqual(driver.action("system-open"), 202)
             driver.wait_page('data-stage="system"', timeout=5)
 
             driver.action("cancel")
             driver.join()
-
 
     def test_orphans_flow_scans_then_trashes_selected(self) -> None:
         """残留体检：进页 → 勾选 → 移入废纸篓；只允许页面出现过的路径。"""

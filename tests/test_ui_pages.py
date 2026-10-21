@@ -173,12 +173,11 @@ class LandingPageTests(unittest.TestCase):
         })
         self.assertIn('data-stage="disk"', page)
         self.assertIn("23%", page)
-        # 2026-10-21 重设计：整页只保留**一条**整机容量条；
-        # 目录行不再画条（同一根条两种基准会被误读），改为整行可点 + 箭头。
+        # 2026-10-21：整页只保留一条整机容量条；目录行不可点（下钻已删除）。
         self.assertEqual(page.count('class="meter"'), 1, "只有整机一条")
-        self.assertIn('class="row nav"', page, "目录行要整行可点")
-        self.assertIn('data-bridge-action="disk-open"', page)
-        self.assertNotIn(">进入<", page, "不再给每行一个【进入】按钮")
+        self.assertIn('class="row-lead"', page, "行要有图标 + 名称")
+        self.assertNotIn('class="row nav"', page, "行不可点")
+        self.assertNotIn('data-bridge-action="disk-open"', page, "不再有下钻入口")
         self.assertNotIn('data-sort="', page, "排序条已删")
         self.assertIn("Downloads", page)
         self.assertIn("系统级目录", page, "刷新按钮已删，页面改为核对系统级目录块")
@@ -395,21 +394,6 @@ class LandingPageTests(unittest.TestCase):
                 bx, by, bw, bh = rects[j]
                 overlap = ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah
                 self.assertFalse(overlap, f"第 {i} 与第 {j} 个矩形重叠")
-
-    def test_disk_page_renders_treemap_with_clickable_dirs(self) -> None:
-        from maccleaner.ui.pages import render_disk_browse_html
-
-        page = render_disk_browse_html({
-            "path": "/Users/x/Downloads", "display": "~/Downloads", "parent": "/Users/x",
-            "total": 4096,
-            "entries": [
-                {"name": "big", "path": "/Users/x/Downloads/big", "bytes": 3072, "is_dir": True},
-                {"name": "a.zip", "path": "/Users/x/Downloads/a.zip", "bytes": 1024, "is_dir": False},
-            ],
-        })
-        self.assertIn("<svg", page)
-        self.assertIn('data-treemap-path="/Users/x/Downloads/big"', page)
-        self.assertNotIn('data-treemap-path="/Users/x/Downloads/a.zip"', page, "文件不该可点")
 
     def test_selectable_lists_mark_rows_for_drag_selection(self) -> None:
         """四类可选列表的行都要带 `data-select-row`，否则拖拽连选不生效（2026-10-20）。"""
@@ -716,6 +700,21 @@ class LandingPageTests(unittest.TestCase):
         self.assertGreaterEqual(page.count('class="ico"'), 3, "每个目录行一个图标")
         self.assertIn('class="row-lead"', page)
         self.assertIn('stroke="currentColor"', page, "图标跟随主题色")
+
+    def test_disk_overview_has_treemap_and_is_not_clickable(self) -> None:
+        """treemap 在**总览**（2026-10-21 用户要求），且方块不可点（下钻已删除）。"""
+        from maccleaner.ui.pages import render_disk_html
+
+        page = render_disk_html({
+            "total": 1000, "used": 230, "free": 770, "percent": 23.0,
+            "sections": [
+                {"name": "Pictures", "path": "/Users/x/Pictures", "bytes": 500, "is_dir": True},
+                {"name": "Downloads", "path": "/Users/x/Downloads", "bytes": 300, "is_dir": True},
+            ],
+        })
+        self.assertIn('class="tm-cell"', page, "总览要有 treemap")
+        self.assertNotIn('data-treemap-path="', page, "方块不可点")
+        self.assertIn("面积 = 这些目录之间的占比", page)
 
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
