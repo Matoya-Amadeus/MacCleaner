@@ -442,13 +442,14 @@ class UpdatesFlowTests(unittest.TestCase):
             self.assertEqual(targets, [], "首次进磁盘只渲染总览，不该去钻目录")
 
             self.assertEqual(driver.action("disk-open", {"path": "/home/Downloads"}), 202)
-            page = driver.wait_page("~/Downloads", timeout=5)
+            # 面包屑按层拆成了 span（磁盘 › ~ › Downloads），不再是一整串 "~/Downloads"
+            page = driver.wait_page('crumb">Downloads<', timeout=5)
             self.assertIn("/home/Downloads", targets[-1])
 
-            before = len(targets)
+            # 【返回】回**上一级**（2026-10-21 修：原来直接跳回总览，按钮写着"上一级"却跨两层）
             self.assertEqual(driver.action("disk-back"), 202)
-            driver.wait_page('data-stage="disk"', timeout=5)
-            self.assertEqual(len(targets), before, "上一级回总览，不该再钻目录")
+            driver.wait_page("data-stage=\"disk\"", timeout=5)
+            self.assertEqual(targets[-1], "/home", "上一级应该是父目录 /home")
 
             # 关键回归：钻取页点侧栏"系统状态"必须真的切过去
             self.assertEqual(driver.action("system-open"), 202)

@@ -166,11 +166,20 @@ class LandingPageTests(unittest.TestCase):
 
         page = render_disk_html({
             "total": 1000, "used": 230, "free": 770, "percent": 23.0,
-            "sections": [{"name": "Downloads", "bytes": 500}, {"name": "Music", "bytes": 100}],
+            "sections": [
+                {"name": "Downloads", "path": "/Users/x/Downloads", "bytes": 500},
+                {"name": "Music", "path": "/Users/x/Music", "bytes": 100},
+            ],
         })
         self.assertIn('data-stage="disk"', page)
         self.assertIn("23%", page)
-        self.assertEqual(page.count('class="meter"'), 3, "整体一条 + 每个目录一条")
+        # 2026-10-21 重设计：整页只保留**一条**整机容量条；
+        # 目录行不再画条（同一根条两种基准会被误读），改为整行可点 + 箭头。
+        self.assertEqual(page.count('class="meter"'), 1, "只有整机一条")
+        self.assertIn('class="row nav"', page, "目录行要整行可点")
+        self.assertIn('data-bridge-action="disk-open"', page)
+        self.assertNotIn(">进入<", page, "不再给每行一个【进入】按钮")
+        self.assertNotIn('data-sort="', page, "排序条已删")
         self.assertIn("Downloads", page)
         self.assertIn("系统级目录", page, "刷新按钮已删，页面改为核对系统级目录块")
 

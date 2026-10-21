@@ -355,6 +355,26 @@ html[data-stage=uninstall-list] .state.card{min-height:calc(100vh - 104px);
 .row:hover{background:transparent}
 .row .meta{color:var(--muted);font-size:var(--fs-meta)}
 .row .value{font-variant-numeric:tabular-nums}
+/* 磁盘页（2026-10-21 重设计）：
+   可点的行整行响应、右侧一个箭头；只有"整机容量"一根条，其余用文字百分比。 */
+.row.nav{cursor:pointer;border-radius:var(--r-row);padding-left:var(--sp-2);padding-right:var(--sp-2)}
+.row.nav:hover{background:var(--surface-2)}
+.row.nav .row-main{min-width:0;flex:1}
+.row .chev{color:var(--muted);font-size:var(--fs-title-m);line-height:1;flex:none;transition:transform .12s}
+.row.nav:hover .chev{color:var(--accent);transform:translateX(2px)}
+/* 只读分区：系统级目录视觉上弱一档，避免与本地目录同权。 */
+.section-readonly{margin-top:var(--sp-5);padding:var(--sp-3) var(--sp-3) var(--sp-2);
+  border:1px dashed var(--line-strong);border-radius:var(--r-row);opacity:.92}
+.section-readonly .group-title{display:flex;align-items:center;gap:8px}
+.section-readonly .row{opacity:.85}
+.row.readonly{cursor:default}
+.pill.ghost{background:transparent;border:1px solid var(--line-strong);color:var(--muted);
+  font-size:var(--fs-label);height:18px}
+/* 面包屑 + 返回：层级要显式给出方位。 */
+.disk-crumbs{display:flex;align-items:center;gap:var(--sp-2);margin:0 0 var(--sp-3);
+  color:var(--text-2);font-size:var(--fs-meta)}
+.crumb{color:var(--text)}
+.crumb-sep,.crumb-dim{color:var(--muted)}
 /* `.row` 是两端对齐（"名称…数值"），但勾选行里它是**错的**：复选框会被顶到最左、名称甩到最右。
    勾选行单独左对齐，并让文字块占满剩余宽度。 */
 label.row.opt{display:flex;align-items:center;gap:10px;justify-content:flex-start;cursor:pointer;

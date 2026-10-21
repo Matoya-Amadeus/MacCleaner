@@ -767,7 +767,9 @@ class InteractiveSession:
                 current = ""
                 continue
             if action["action"] == "disk-back":
-                current = ""
+                # 回**上一级**（原来直接回总览，按钮写着"上一级"却跳两层）。
+                parent = str(Path(current).parent) if current else ""
+                current = "" if parent in ("", "/", ".") else parent
                 continue
             current = str((action.get("payload") or {}).get("path", ""))
 

@@ -13,6 +13,8 @@
 from __future__ import annotations
 
 import html
+import json
+import os
 import time
 from pathlib import Path
 from urllib.parse import urlparse
@@ -1494,10 +1496,30 @@ def _treemap_svg(entries: list[dict[str, Any]], *, width: int = 1000, height: in
         'preserveAspectRatio="none" role="img" aria-label="目录体积分布">'
         + "".join(cells)
         + "</svg>"
-        + '<p class="meta">点方块进入该目录；面积 = 体积占比。'
-        + html.escape(rest_note)
-        + "</p></div>"
+        + '<p class="meta">面积 = 体积占比；点方块进入。</p></div>'
     )
+
+
+def _disk_crumbs(display: str) -> str:
+    """面包屑：磁盘 › … › 父目录 › 当前目录。
+
+    为什么要有（2026-10-21）：钻取后标题仍是"磁盘"，用户看不出自己在第几层，
+    也找不到怎么退——换页实现的层级必须显式给出方位。
+    """
+    home = os.path.expanduser("~")
+    if display == home:
+        return '<span class="crumb">磁盘</span><span class="crumb-sep">›</span><span class="crumb">~</span>'
+    if display.startswith(home + "/"):
+        # 家目录内用 ~ 起头：比 "Users › zhangqian › Pictures" 短且亲切。
+        display = "~/" + display[len(home) + 1 :]
+    parts = [part for part in display.split("/") if part and part != "~"]
+    parts = ["~", *parts] if display.startswith("~/") else parts
+    if not parts:
+        return '<span class="crumb">磁盘</span>'
+    tail = parts[-3:]
+    lead = '<span class="crumb-dim">…</span>' if len(parts) > len(tail) else ""
+    items = "".join(f'<span class="crumb-sep">›</span><span class="crumb">{html.escape(name)}</span>' for name in tail)
+    return '<span class="crumb">磁盘</span>' + lead + items
 
 
 def render_disk_browse_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
@@ -1506,52 +1528,52 @@ def render_disk_browse_html(payload: dict[str, Any] | None = None, *, interactiv
     entries = [item for item in (data.get("entries") or []) if isinstance(item, dict)]
     display = str(data.get("display") or data.get("path") or "")
     parent = str(data.get("parent") or "")
-    total = int(data.get("total", 0) or 0)
-    biggest = max([int(item.get("bytes", 0) or 0) for item in entries] + [1])
+    # 之前 total 取 `data["total"]`，但会话没传这个字段 → 标题永远显示"下一级共 0 B"，
+    # 与下面 6.90 GB 打架。这里用条目求和兜底。
+    total = int(data.get("total", 0) or 0) or sum(int(item.get("bytes", 0) or 0) for item in entries)
 
     rows: list[str] = []
     for item in entries:
         size = int(item.get("bytes", 0) or 0)
-        share = size / biggest * 100 if biggest else 0
         name = str(item.get("name", ""))
         path = str(item.get("path", ""))
         is_dir = bool(item.get("is_dir"))
-        open_button = (
-            _button("进入", "disk-open", payload={"path": path}) if (interactive and is_dir) else ""
-        )
+        share = (size / total * 100) if total else 0
+        share_text = f"{share:.1f}%" if share >= 0.1 else "<0.1%"
+        payload_json = html.escape(json.dumps({"path": path}, ensure_ascii=False), quote=True)
+        action_attr = f' data-bridge-action="disk-open" data-bridge-payload="{payload_json}"' if (interactive and is_dir) else ""
         rows.append(
-            f'<div class="row" data-sort-text="{html.escape(name.lower())}"'
-            f' data-sort-bytes="{size}" data-reveal-path="{html.escape(path)}">'
-            '<div style="min-width:0;flex:1">'
+            f'<div class="row nav" data-sort-text="{html.escape(name.lower())}"'
+            f' data-sort-bytes="{size}" data-reveal-path="{html.escape(path)}"{action_attr}>'
             f"<strong>{html.escape(name)}{'/' if is_dir else ''}</strong>"
-            f'<div class="meta">{_meter(share)}</div></div>'
-            f'<span class="meta value">{human_bytes(size)}</span>{open_button}</div>'
+            f'<span class="meta value">{human_bytes(size)}</span>'
+            + ('<span class="chev" aria-hidden="true">›</span>' if is_dir else "")
+            + "</div>"
         )
 
-    buttons = []
-    if interactive:
-        if parent:
-            buttons.append(_button("上一级", "disk-back"))
-        buttons.append(_button("回到总览", "disk-open", payload={}))
+    head = (
+        '<div class="disk-crumbs">'
+        + (_button("← 返回", "disk-back", ghost=True) if (interactive and parent) else "")
+        + _disk_crumbs(display)
+        + "</div>"
+    )
     body = (
-        _treemap_svg(entries)
-        + sort_bar()
-        + '<div class="rows" data-sortable>' + "".join(rows) + "</div>"
+        head
+        + _treemap_svg(entries)
+        + '<div class="rows">' + "".join(rows) + "</div>"
         if rows
-        else empty_block("check", "这个目录是空的", "换一个目录，或回到磁盘总览。")
+        else head + empty_block("check", "这个目录是空的", "换一个目录，或点【返回】回到上一级。")
     )
     return state_page(
         {
-            "message": f"{display} 下一级共 {human_bytes(total)}",
-            "detail": "点【进入】看下一级；体积是当前占用，不是“可清理”的量。",
+            "message": f"本目录 {human_bytes(total)} · {len(entries)} 项",
+            "detail": "点方块或整行进入下一级；体积是当前占用，不是可清理量。",
         },
         stage="disk",
         title="磁盘",
         body="",
-        actions=body + _actions(*buttons),
+        actions=body,
         current="disk",
-        subtitle="逐层看谁最占地方",
-        meta=f"{len(entries)} 项",
     )
 
 
@@ -1823,18 +1845,19 @@ def render_disk_html(payload: dict[str, Any] | None = None, *, interactive: bool
     rows: list[str] = []
     for item in sections:
         size = int(item.get("bytes", 0) or 0)
-        share = size / biggest * 100 if biggest else 0
+        # 口径只有一种：占**整机**百分比。之前每行是"相对最大项"，同一根条两种含义，
+        # 用户会把 Pictures 的满格读成"它占满了磁盘"（2026-10-21）。
+        share = (size / total * 100) if total else 0
+        share_text = f"{share:.1f}%" if share >= 0.1 else "<0.1%"
         path = str(item.get("path", "") or "")
-        enter = (
-            _button("进入", "disk-open", payload={"path": path}) if (interactive and path) else ""
-        )
+        payload = html.escape(json.dumps({"path": path}, ensure_ascii=False), quote=True)
+        action_attr = f' data-bridge-action="disk-open" data-bridge-payload="{payload}"' if (interactive and path) else ""
         rows.append(
-            f'<div class="row" data-sort-text="{html.escape(str(item.get("name", "")).lower())}"'
-            f' data-sort-bytes="{size}" data-reveal-path="{html.escape(path)}">'
-            '<div style="min-width:0;flex:1">'
+            f'<div class="row nav" data-sort-text="{html.escape(str(item.get("name", "")).lower())}"'
+            f' data-sort-bytes="{size}" data-reveal-path="{html.escape(path)}"{action_attr}>'
             f'<strong>{html.escape(str(item.get("name", "")))}</strong>'
-            f'<div class="meta">{_meter(share)}</div></div>'
-            f'<span class="meta value">{human_bytes(size)}</span>{enter}</div>'
+            f'<span class="meta value">{human_bytes(size)}</span>'
+            '<span class="chev" aria-hidden="true">›</span></div>'
         )
 
     # 系统级目录：root 拥有，不授权读不全（实测 /Library/Caches 会报 0）。
@@ -1843,14 +1866,15 @@ def render_disk_html(payload: dict[str, Any] | None = None, *, interactive: bool
     sizes = system.get("sizes") or {}
     if sizes:
         sys_rows = "".join(
-            '<div class="row"><div style="min-width:0;flex:1">'
+            '<div class="row readonly"><div class="row-main">'
             f'<strong>{html.escape(str(path))}</strong>'
             f'<div class="meta">{"已授权读取（只测量）" if system.get("admin") else "未授权：可能读不全"}</div></div>'
             f'<span class="meta value">{human_bytes(int(size or 0))}</span></div>'
             for path, size in sizes.items()
         )
         system_block = (
-            '<div class="group-title">系统级目录（只测量，不删除）</div>'
+            '<div class="section-readonly">'
+            '<div class="group-title">系统级目录<span class="pill ghost">只读</span></div>'
             + sys_rows
             + (
                 _button(
@@ -1861,30 +1885,30 @@ def render_disk_html(payload: dict[str, Any] | None = None, *, interactive: bool
                 else ""
             )
             + (f'<p class="muted">{html.escape(str(system.get("note") or ""))}</p>' if system.get("note") else "")
+            + "</div>"
         )
     else:
         system_block = (
-            '<div class="group-title">系统级目录（只测量，不删除）</div>'
-            '<p class="muted">/Library/Caches、/var/log 属于 root：不授权读不到准确体积。</p>'
+            '<div class="section-readonly">'
+            '<div class="group-title">系统级目录<span class="pill ghost">只读</span></div>'
+            '<p class="muted">/Library/Caches、/var/log 属于 root：不授权读不到准确体积，本工具不删除它们。</p>'
             + (_button("用管理员授权测量一次（只读）", "system-sizes", ghost=True) if interactive else "")
         )
 
     return state_page(
         {
-            "message": f"已用 {human_bytes(used)}，可用 {human_bytes(free)}",
-            "detail": "目录体积是当前占用（不是“可清理”的量）；清理请回「Mac 清理」看候选。",
+            "message": f"已用 {human_bytes(used)}，可用 {human_bytes(free)}（共 {human_bytes(total)}）",
+            "detail": "目录体积是当前占用，不是可清理量；要清理请回「Mac 清理」。",
         },
         stage="disk",
         title="磁盘",
         body="",
         hero=f"{percent:.0f}%",
-        actions=_meter(percent, tone="warn") + sort_bar()
-        + f'<div class="rows" data-sortable>{"".join(rows)}</div>'
+        # 顶部只留一条"整机容量条"：这是唯一代表"总量"的条。
+        actions=_meter(percent, tone="warn")
+        + f'<div class="rows">{"".join(rows)}</div>'
         + system_block,
-
         current="disk",
-        subtitle="整机容量与常用目录占用（只读）",
-        meta=f"{human_bytes(total)} 总容量",
     )
 
 
