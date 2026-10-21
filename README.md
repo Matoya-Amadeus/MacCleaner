@@ -48,7 +48,7 @@ python3 -m build --no-isolation
 
 ## 界面
 
-双击 `~/Applications/MacCleaner.app`，或 `maccleaner ui`。侧栏 9 个入口：
+双击 `~/Applications/MacCleaner.app`，或 `maccleaner ui`。侧栏 8 个入口：
 
 - **Mac 清理**：扫描 → 逐条勾选 → 确认 → 完成；含安装包（.dmg/.pkg）与 iOS 备份两类长尾目标
 - **软件卸载**：单个看残留，或多选批量卸
@@ -57,7 +57,6 @@ python3 -m build --no-isolation
 - **磁盘**：整机占比 + **treemap 方块图**（面积=体积），点方块进下一层；系统级目录可**一次性授权**测量（只读，不删）
 - **大文件**：Downloads / 桌面 / 文稿 / 影片里超过 500 MB 的文件，默认不勾
 - **系统状态**：负载、内存、最吃 CPU 的进程
-- **清理历史**：每次清理的回执
 - **可调用的 Skill**：本机装了哪些 agent 技能
 
 `⌘A` 全选、`Shift+点击` 连选、`Enter` 执行、列头按体积/名称排序、右键复制路径或在 Finder 中显示。

@@ -172,7 +172,7 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn("23%", page)
         self.assertEqual(page.count('class="meter"'), 3, "整体一条 + 每个目录一条")
         self.assertIn("Downloads", page)
-        self.assertIn("data-bridge-action=\"disk-open\"", page, "要有刷新")
+        self.assertIn("系统级目录", page, "刷新按钮已删，页面改为核对系统级目录块")
 
     def test_system_page_shows_load_memory_and_processes(self) -> None:
         from maccleaner.ui.pages import render_system_html
@@ -696,8 +696,8 @@ class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")
         self.assertEqual(
-            nav.count('data-nav-action="'), 9,
-            "九个真实入口（清理/卸载/更新/残留体检/磁盘/大文件/系统/历史/技能）",
+            nav.count('data-nav-action="'), 8,
+            "八个真实入口（清理/卸载/更新/残留体检/磁盘/大文件/系统/技能）",
         )
         self.assertNotIn("待实现", nav, "四项都已实现，不该再有待实现徽标")
         self.assertNotIn("Protection", nav, "不出现我们没有的分类")

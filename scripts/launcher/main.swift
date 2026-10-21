@@ -310,7 +310,6 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
             // 只读页面：磁盘概览与系统状态（2026-10-19 新增，对齐 Mole 的两项能力）
             ("disk", "disk-open", "", "document.querySelectorAll('.meter').length"),
             ("system", "system-open", "", "document.querySelectorAll('.stat').length"),
-            ("history", "history-open", "", "document.querySelectorAll('.stat').length"),
             // 大文件页：空列表也要有 stage 与空态。
             ("large", "large-open", "", "document.querySelectorAll('.empty, [data-large-path]').length"),
             // 残留体检：首屏要能渲染（空列表也要有 stage），扫描会跑 lsregister，给它时间。

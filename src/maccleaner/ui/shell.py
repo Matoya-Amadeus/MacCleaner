@@ -57,7 +57,6 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
             NavItem("disk", "磁盘", "disk-open"),
             NavItem("large", "大文件", "large-open"),
             NavItem("system", "系统状态", "system-open"),
-            NavItem("history", "清理历史", "history-open"),
         ),
     ),
     NavGroup("技能", (NavItem("skills", "可调用的 Skill", "skills-open"),)),
@@ -135,9 +134,12 @@ _RUNTIME_JS = """
 
     const larges = Array.from(document.querySelectorAll('[data-large-path]'));
     const largeLabel = document.getElementById('mc-large-count');
-    if (largeLabel && larges.length) largeLabel.textContent = '已选 ' + picked(larges) + ' / ' + larges.length;
+    if (largeLabel && larges.length) largeLabel.textContent = '已选 ' + picked(larges) + ' 个';
     const largeBtn = document.querySelector('[data-bridge-action="large-apply"]');
-    if (largeBtn && larges.length) largeBtn.disabled = picked(larges) === 0;
+    if (largeBtn && larges.length) {
+      largeBtn.disabled = picked(larges) === 0;
+      largeBtn.textContent = picked(larges) > 0 ? '移入废纸篓 ' + picked(larges) + ' 个' : '移入废纸篓';
+    }
 
     const orphans = Array.from(document.querySelectorAll('[data-orphan-path]'));
     const orphanLabel = document.getElementById('mc-orphans-count');

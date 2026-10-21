@@ -58,7 +58,6 @@ ACTIONS = frozenset(
         "disk-open",
         "disk-back",
         "system-open",
-        "history-open",
     }
 )
 
