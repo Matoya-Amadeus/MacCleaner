@@ -1888,7 +1888,9 @@ def render_large_files_result_html(payload: dict[str, Any] | None = None, *, int
     )
 
 
-def render_disk_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:
+def render_disk_html(
+    payload: dict[str, Any] | None = None, *, interactive: bool = True, notice: str = ""
+) -> str:
     """磁盘概览（2026-10-19，对齐 Mole 的"磁盘一眼看清"）。
 
     只读：容量来自 `shutil.disk_usage`，目录体积来自一次 `du -sk`（8 秒超时，拿多少算多少）。
@@ -1923,23 +1925,43 @@ def render_disk_html(payload: dict[str, Any] | None = None, *, interactive: bool
     system = data.get("system") or {}
     sizes = system.get("sizes") or {}
     if sizes:
-        sys_rows = "".join(
-            '<div class="row readonly"><div class="row-main">'
-            f'<strong>{html.escape(str(path))}</strong>'
-            f'<div class="meta">{"已授权读取（只测量）" if system.get("admin") else "未授权：可能读不全"}</div></div>'
-            f'<span class="meta value">{human_bytes(int(size or 0))}</span></div>'
-            for path, size in sizes.items()
-        )
+        def sys_row(path: str, size: Any) -> str:
+            # 只有"已授权读到真实体积"时才给勾选框：没读数就不知道搬的是多大一堆。
+            box = (
+                f'<input type="checkbox" data-system-path="{html.escape(str(path))}">'
+                if (interactive and system.get("admin"))
+                else '<span class="pill ghost">只读</span>'
+            )
+            return (
+                f'<label class="row opt readonly">{box}<div class="row-lead">' + _icon("lock") +
+                f'<strong>{html.escape(str(path))}</strong></div>'
+                f'<span class="meta value">{human_bytes(int(size or 0))}</span></label>'
+            )
+
+        sys_rows = "".join(sys_row(path, size) for path, size in sizes.items())
         system_block = (
             '<div class="section-readonly">'
-            '<div class="group-title">系统级目录<span class="pill ghost">只读</span></div>'
+            '<div class="group-title">系统级目录'
+            + ('<span class="pill ghost">一次性授权</span>' if system.get("admin") else '<span class="pill ghost">只读</span>')
+            + "</div>"
             + sys_rows
             + (
-                _button(
-                    "重新测量（需管理员授权一次）" if system.get("admin") else "用管理员授权测量一次（只读）",
-                    "system-sizes",
+                _actions(
+                    _button(
+                        "重新测量（需管理员授权一次）" if system.get("admin") else "用管理员授权测量一次（只读）",
+                        "system-sizes",
+                        ghost=True,
+                    ),
+                    # 仅在"已读到真实体积"时提供搬走：否则用户不知道自己在确认什么。
+                    _button("授权并移入废纸篓", "system-trash", primary=True) if system.get("admin") else "",
                 )
                 if interactive
+                else ""
+            )
+            + (
+                '<p class="muted">移入的是<b>你的</b>废纸篓：能拿回来，但文件属主是 root——'
+                "清空废纸篓时可能还要授权，Finder 的「放回原处」对它们不可用。</p>"
+                if system.get("admin")
                 else ""
             )
             + (f'<p class="muted">{html.escape(str(system.get("note") or ""))}</p>' if system.get("note") else "")
@@ -1964,7 +1986,8 @@ def render_disk_html(payload: dict[str, Any] | None = None, *, interactive: bool
         hero=f"{percent:.0f}%",
         # 顶部只留一条"整机容量条"：这是唯一代表"总量"的条。
         # treemap 放在总览（2026-10-21 用户要求）：这一页就是"看分布"，不需要下钻。
-        actions=_meter(percent, tone="warn")
+        actions=(f'<p class="pill warn" role="status">{html.escape(notice)}</p>' if notice else "")
+        + _meter(percent, tone="warn")
         + _treemap_svg(sections, clickable=False)
         + f'<div class="rows">{"".join(rows)}</div>'
         + system_block,

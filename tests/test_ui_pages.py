@@ -835,6 +835,29 @@ class LandingPageTests(unittest.TestCase):
         few = render_skills_html({"skills": skills[:3]})
         self.assertNotIn('<input class="search"', few, "少的时候不占地方")
 
+    def test_system_block_only_offers_trash_when_authorized(self) -> None:
+        """系统级目录：只有**已授权量到真实体积**时才给勾选 + 搬走按钮。
+
+        没读数就不知道搬的是多大一堆，让人勾等于让他闭眼确认。
+        """
+        from maccleaner.ui.pages import render_disk_html
+
+        base = {"total": 1000, "used": 200, "free": 800, "percent": 20, "sections": []}
+        authorized = render_disk_html({
+            **base, "system": {"admin": True, "sizes": {"/Library/Logs": 1000}}
+        })
+        plain = render_disk_html({
+            **base, "system": {"admin": False, "sizes": {"/Library/Logs": 1000}}
+        })
+
+        self.assertEqual(authorized.count('data-system-path="'), 1)
+        self.assertEqual(authorized.count('data-bridge-action="system-trash"'), 1)
+        self.assertIn("放回原处", authorized, "要写明恢复限制")
+
+        self.assertEqual(plain.count('data-system-path="'), 0, "未授权不给勾选")
+        self.assertEqual(plain.count('data-bridge-action="system-trash"'), 0)
+        self.assertNotIn("放回原处", plain)
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")

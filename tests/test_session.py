@@ -729,6 +729,38 @@ class UpdatesFlowTests(unittest.TestCase):
             driver.action("cancel")
             driver.join()
 
+
+    def test_disk_system_trash_reports_result_and_cancel(self) -> None:
+        """系统级目录搬废纸篓：成功要提示，取消要说"什么都没动"（2026-10-21 选 B）。
+
+        真机上这一步会弹系统密码框，所以这里注掉执行、只验会话的处理与提示。
+        """
+        calls: list[list[str]] = []
+
+        def fake_trash(paths):
+            calls.append(list(paths))
+            return {"status": "ok", "moved": list(paths), "failed": []}
+
+        with tempfile.TemporaryDirectory(prefix="session-systrash-", ignore_cleanup_errors=True) as tmp:
+            driver = _Driver(_deps(system_trash_paths=fake_trash), Path(tmp))
+            driver.bootstrap()
+            driver.wait_page('data-stage="idle"')
+            driver.action("disk-open")
+            driver.wait_page('data-stage="disk"', timeout=8)
+
+            driver.action("system-trash", {"paths": ["/Library/Logs/Demo.log"]})
+            page = driver.wait_page("移入废纸篓", timeout=8)
+            self.assertEqual(calls, [["/Library/Logs/Demo.log"]])
+            self.assertIn("已把 1 项移入废纸篓", page)
+
+            # 空选：不调用后端，只提示
+            driver.action("system-trash", {"paths": []})
+            page = driver.wait_page("先勾选", timeout=8)
+            self.assertEqual(len(calls), 1)
+
+            driver.action("cancel")
+            driver.join()
+
 class NavigationTests(unittest.TestCase):
     def test_uninstall_entry_lists_apps(self) -> None:
         with tempfile.TemporaryDirectory(prefix="session-unin-") as tmp:

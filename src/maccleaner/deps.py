@@ -24,6 +24,7 @@ import plistlib
 import re
 import shutil
 import subprocess
+import shlex
 import tempfile
 import time
 from pathlib import Path
@@ -1081,6 +1082,110 @@ def system_sizes_cached(cache_path: Path | None, *, ttl: int = SYSTEM_SIZE_TTL) 
     return {**cached, "cached": True}
 
 
+# 只允许动这三个根**下面**的条目；根本身不行（否则等于搬走整个 /Library/Caches）。
+SYSTEM_TRASH_ROOTS: tuple[Path, ...] = (
+    Path("/Library/Caches"),
+    Path("/Library/Logs"),
+    Path("/var/log"),
+)
+
+
+def _applescript_literal(text: str) -> str:
+    """AppleScript 字符串字面量（只处理反斜杠与双引号）。"""
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def system_trash_paths(
+    paths: list[str],
+    *,
+    runner: Any | None = None,
+    trash_dir: Path | None = None,
+) -> dict[str, Any]:
+    """把系统级目录**整目录**移进"当前用户"的废纸篓（需一次管理员授权）。
+
+    为什么不是删除：废纸篓里的东西还能拿回来；这也是我们敢碰 root 域的前提。
+    做不到的部分（别处已写明）：文件属主是 root，**清空废纸篓可能还要授权**，
+    且 Finder 的「放回原处」对它们不可用。
+
+    参数：
+    - `paths`：要搬的绝对路径（只接受 `SYSTEM_TRASH_ROOTS` 的**子项**）；
+    - `runner`：测试注入，签名同 `subprocess.run`；
+    - `trash_dir`：测试注入，默认 `~/.Trash`。
+    """
+    target_trash = Path(trash_dir) if trash_dir is not None else Path.home() / ".Trash"
+    run = runner or subprocess.run
+
+    accepted: list[Path] = []
+    failed: list[dict[str, str]] = []
+    for raw in paths:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        candidate = Path(text)
+        try:
+            resolved = candidate.resolve(strict=False)
+        except OSError:
+            failed.append({"path": text, "reason": "路径无法解析"})
+            continue
+        # 根也要 resolve：macOS 上 /var 是 /private/var 的软链，
+        # 否则 `/var/log/xxx` 解析后永远匹配不上 `/var/log`（真机上等于这个根失效）。
+        roots = tuple(root.resolve(strict=False) for root in SYSTEM_TRASH_ROOTS)
+        inside = any(root in resolved.parents for root in roots)
+        if not inside:
+            failed.append({"path": text, "reason": "不在允许范围（只动 /Library/Caches、/Library/Logs、/var/log 的子项）"})
+            continue
+        if not candidate.exists():
+            failed.append({"path": text, "reason": "不存在"})
+            continue
+        accepted.append(resolved)
+
+    if not accepted:
+        return {"status": "refused", "moved": [], "failed": failed, "trash": str(target_trash)}
+
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    script_lines = ["set -e"]
+    for index, source in enumerate(accepted):
+        dest = target_trash / f"{source.name}-{stamp}-{index}"
+        script_lines.append(f"/bin/mv {shlex.quote(str(source))} {shlex.quote(str(dest))}")
+
+    with tempfile.TemporaryDirectory(prefix="mc-system-trash-") as tmp:
+        script_path = Path(tmp) / "move.sh"
+        script_path.write_text("\n".join(script_lines) + "\n", encoding="utf-8")
+        script_path.chmod(0o700)
+        command = [
+            "/usr/bin/osascript",
+            "-e",
+            f"do shell script {_applescript_literal('/bin/sh ' + str(script_path))}"
+            " with administrator privileges",
+        ]
+        try:
+            result = run(command, capture_output=True, timeout=180)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return {
+                "status": "error",
+                "moved": [],
+                "failed": [{"path": str(item), "reason": str(exc)} for item in accepted],
+                "trash": str(target_trash),
+            }
+
+    stderr = getattr(result, "stderr", b"") or b""
+    text_err = stderr.decode("utf-8", "replace") if isinstance(stderr, (bytes, bytearray)) else str(stderr)
+    if getattr(result, "returncode", 1) != 0:
+        cancelled = "User canceled" in text_err or "-128" in text_err
+        return {
+            "status": "cancelled" if cancelled else "error",
+            "moved": [],
+            "failed": [{"path": str(item), "reason": text_err.strip()[:200] or "授权未通过"} for item in accepted],
+            "trash": str(target_trash),
+        }
+    return {
+        "status": "ok",
+        "moved": [str(item) for item in accepted],
+        "failed": failed,
+        "trash": str(target_trash),
+    }
+
+
 def system_sizes_admin(cache_path: Path | None = None) -> dict[str, Any]:
     """弹**一次**管理员授权，读准系统目录体积（只读，不删任何文件）。
 
@@ -1536,6 +1641,7 @@ def build_deps(
         system_sizes=lambda: system_sizes(
             (state_path / "system-sizes.json") if state_path else None
         ),
+        system_trash_paths=lambda paths: system_trash_paths(list(paths)),
         system_sizes_admin=lambda: system_sizes_admin(
             (state_path / "system-sizes.json") if state_path else None
         ),

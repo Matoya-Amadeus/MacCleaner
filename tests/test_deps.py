@@ -891,3 +891,77 @@ class UpdatesSparkleTests(unittest.TestCase):
         self.assertIn("sparkle", found)
         self.assertEqual(len(found["sparkle"]), len(installed), "数量要与实际扫描一致")
 
+class SystemTrashTests(unittest.TestCase):
+    """系统级目录移入废纸篓（2026-10-21 用户选 B：授权后搬，不删除）。
+
+    这里只测**校验与命令构造**，不真的提权执行（那需要密码）。
+    """
+
+    class _Runner:
+        def __init__(self, returncode=0, stderr=b""):
+            self.returncode = returncode
+            self.stderr = stderr
+            self.calls = []
+
+        def __call__(self, command, **kwargs):
+            self.calls.append(command)
+            return self
+
+    def test_rejects_paths_outside_whitelist(self) -> None:
+        from maccleaner.deps import system_trash_paths
+
+        runner = self._Runner()
+        with tempfile.TemporaryDirectory() as tmp:
+            result = system_trash_paths(["/etc/passwd", "/Library", "/"], runner=runner, trash_dir=Path(tmp) / "Trash")
+        self.assertEqual(result["status"], "refused")
+        self.assertEqual(result["moved"], [])
+        self.assertEqual(runner.calls, [], "不该为非法路径提权")
+        self.assertTrue(all("不在允许范围" in item["reason"] for item in result["failed"]))
+
+    def test_moves_whitelisted_dir_into_trash(self) -> None:
+        from maccleaner.deps import system_trash_paths
+
+        runner = self._Runner()
+        with tempfile.TemporaryDirectory(prefix="systrash-") as tmp:
+            # 在 /var/log 下没法造，用 trash_dir 之外的真实存在的白名单路径代价太大；
+            # 这里验证"合法路径会生成 osascript 命令"，用 monkeypatch 的方式替换根。
+            import maccleaner.deps as deps_module
+
+            fake_root = Path(tmp) / "Library" / "Caches"
+            fake_root.mkdir(parents=True)
+            victim = fake_root / "com.demo"
+            victim.mkdir()
+            original = deps_module.SYSTEM_TRASH_ROOTS
+            deps_module.SYSTEM_TRASH_ROOTS = (fake_root,)
+            try:
+                result = system_trash_paths(
+                    [str(victim)], runner=runner, trash_dir=Path(tmp) / "Trash"
+                )
+            finally:
+                deps_module.SYSTEM_TRASH_ROOTS = original
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["moved"], [str(victim.resolve())])
+        self.assertEqual(len(runner.calls), 1)
+        self.assertIn("with administrator privileges", runner.calls[0][-1])
+
+    def test_user_cancel_is_reported_as_cancelled(self) -> None:
+        from maccleaner.deps import system_trash_paths
+        import maccleaner.deps as deps_module
+
+        runner = self._Runner(returncode=1, stderr=b"execution error: User canceled. (-128)")
+        with tempfile.TemporaryDirectory(prefix="systrash-cancel-") as tmp:
+            fake_root = Path(tmp) / "Library" / "Logs"
+            fake_root.mkdir(parents=True)
+            victim = fake_root / "com.demo"
+            victim.mkdir()
+            original = deps_module.SYSTEM_TRASH_ROOTS
+            deps_module.SYSTEM_TRASH_ROOTS = (fake_root,)
+            try:
+                result = system_trash_paths([str(victim)], runner=runner, trash_dir=Path(tmp) / "Trash")
+            finally:
+                deps_module.SYSTEM_TRASH_ROOTS = original
+
+        self.assertEqual(result["status"], "cancelled")
+        self.assertEqual(result["moved"], [])
+

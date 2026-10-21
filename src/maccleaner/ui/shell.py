@@ -358,6 +358,12 @@ _RUNTIME_JS = """
       const risk = document.querySelector('[data-confirm-risk]');
       payload.confirmed_risk = !!(risk && risk.checked);
     }
+    if (action === 'system-trash') {
+      payload.paths = Array.from(document.querySelectorAll('[data-system-path]'))
+        .filter(box => box.checked)
+        .map(box => box.dataset.systemPath);
+      if (!payload.paths.length) { toast('先勾选要移走的系统目录'); return; }
+    }
     if (action === 'uninstall-apply') { payload.selected_ids = ids('[data-item-id]'); }
     if (action === 'updates-apply') { payload.ids = ids('[data-update-id]'); }
     // 批量卸载：把勾选的应用交出去（路径只用于定位，执行时内核自己再建计划）

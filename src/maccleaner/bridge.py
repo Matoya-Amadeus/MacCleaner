@@ -36,6 +36,7 @@ ACTIONS = frozenset(
         "uninstall-list",
         "orphans-open",
         "system-sizes",
+        "system-trash",
         "large-apply",
         "large-open",
         "orphans-apply",

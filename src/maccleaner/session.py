@@ -87,6 +87,8 @@ class SessionDeps:
     system_sizes: Callable[[], dict[str, Any]] | None = None
     # 只读缓存（页面加载用）：不发 du、不弹授权。
     system_sizes_cached: Callable[[], dict[str, Any]] | None = None
+    # 把系统级目录移进用户废纸篓（需一次管理员授权）。
+    system_trash_paths: Callable[[list[str]], dict[str, Any]] | None = None
     system_sizes_admin: Callable[[], dict[str, Any]] | None = None
     # 只读的"看一眼"页面（磁盘/系统）。
     disk: Callable[[], dict[str, Any]] = lambda: {}
@@ -743,18 +745,42 @@ class InteractiveSession:
 
         这一页的职责是"看清分布"，不是浏览器：**不做下钻**（2026-10-21 用户要求）。
         """
+        notice = ""
         while True:
             overview = dict(self._safe(self.deps.disk, default={}))
             reader = getattr(self.deps, "system_sizes_cached", None)
             if reader is not None:
                 overview["system"] = self._safe(reader, default={})
-            self._serve("disk", pages.render_disk_html(overview))
-            action = self._wait_or_nav(("system-sizes", "cancel"), self.ACTION_TIMEOUT_SECONDS)
+            self._serve("disk", pages.render_disk_html(overview, notice=notice))
+            notice = ""
+            action = self._wait_or_nav(
+                ("system-sizes", "system-trash", "cancel"), self.ACTION_TIMEOUT_SECONDS
+            )
             if action is not None and "nav" in action:
                 return str(action["nav"])
             if action is None or action["action"] == "cancel":
                 self._serve("idle", pages.render_landing_html({"history": self._safe(self.deps.history)}))
                 return None
+            if action["action"] == "system-trash":
+                paths = [str(value) for value in (action.get("payload") or {}).get("paths") or []]
+                trash = getattr(self.deps, "system_trash_paths", None)
+                if not paths:
+                    notice = "先勾选要移走的系统目录"
+                    continue
+                if trash is None:
+                    notice = "这个版本不支持移走系统目录"
+                    continue
+                outcome = self._safe(lambda: trash(paths), default={}) or {}
+                moved = len(outcome.get("moved") or [])
+                status = str(outcome.get("status") or "")
+                if status == "cancelled":
+                    notice = "授权被取消，什么都没动"
+                elif moved:
+                    notice = f"已把 {moved} 项移入废纸篓（清空时可能还要授权）"
+                else:
+                    reason = ((outcome.get("failed") or [{}])[0]).get("reason") or "没有可移动的项"
+                    notice = f"没有移动任何东西：{reason}"
+                continue
             # 一次性授权（系统标准密码框），只测量不删除；结果写缓存，本次会话不再弹。
             measure = getattr(self.deps, "system_sizes_admin", None)
             self._serve("disk", pages.render_progress_html(
