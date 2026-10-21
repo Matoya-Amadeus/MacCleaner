@@ -69,10 +69,10 @@ echo "  ✓ 废纸篓里 ${trash_count} 项（应为 1）"
 echo "=== 判定 ==="
 echo "  步骤数=${steps} 不一致=${mismatch} 截图=${shots} 文件已移动=${cleaned}"
 
-if [[ "${steps}" -ne 12 || "${mismatch}" -ne 0 || "${shots}" -ne 12 || "${cleaned}" -ne 1 ]]; then
+if [[ "${steps}" -ne 14 || "${mismatch}" -ne 0 || "${shots}" -ne 14 || "${cleaned}" -ne 1 ]]; then
   echo "❌ 原生窗口自测未通过"
   exit 1
 fi
-echo "✅ 原生窗口十二步全部通过（含确认清理，截图见 ~/Library/Logs/MacCleaner/）"
+echo "✅ 原生窗口十四步全部通过（含确认清理，截图见 ~/Library/Logs/MacCleaner/）"
 
 rm -rf "$T"

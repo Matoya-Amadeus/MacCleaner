@@ -528,7 +528,7 @@ class InteractiveSession:
                      "body": f"正在清点 {target_name} 的残留" if target_name else "正在清点残留",
                      "message": "逐个目录核对，不会删除任何东西…",
                      "detail": "找到后会先给你看清单，勾选确认才移入废纸篓。",
-                     "nav": "uninstall", "auto_refresh": False},
+                     "nav": "uninstall"},
                     stage="uninstalling",
                 ))
                 plan = self.deps.uninstall_plan(
@@ -616,7 +616,7 @@ class InteractiveSession:
                  "body": f"正在清点 {len(entries)} 个应用的残留",
                  "message": "逐个目录核对，不会删除任何东西…",
                  "detail": "清点完先给你一页汇总，确认后才执行。",
-                 "nav": "uninstall", "auto_refresh": False},
+                 "nav": "uninstall"},
                 stage="uninstalling",
             ))
         plans: list[dict[str, Any]] = []
@@ -853,7 +853,7 @@ class InteractiveSession:
             {"title": "大文件", "body": "正在扫描大文件",
              "message": "逐个目录比较体积，不会改动任何文件…",
              "detail": "只读；扫描完给你一份按体积排好的清单。",
-             "nav": "large", "auto_refresh": False},
+             "nav": "large"},
             stage="large",
         ))
         found = self._safe(scan, default={})

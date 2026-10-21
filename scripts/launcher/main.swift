@@ -315,6 +315,12 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSW
              "document.querySelectorAll('[data-update-id]').length"),
             ("uninstall-list", "uninstall-list", "",
              "document.querySelectorAll('.row').length"),
+            // 卸载详情（2026-10-21 加）：这一步专门盯"进度页会不会自己翻页"——
+            // 点行尾【卸载】后先出进度页，uninstall_plan 跑完才出预览页；
+            // 之前把进度页的自刷关掉，浏览器就永远停在"正在清点残留"（用户截图）。
+            ("uninstall-preview", "uninstall-plan", "!!document.querySelector('#mc-preview-btn')",
+             "document.querySelectorAll('[data-item-id]').length"),
+            ("uninstall-list", "uninstall-back", "", "document.querySelectorAll('.row').length"),
             ("skills", "skills-open", "", "document.querySelectorAll('.row').length"),
             // 只读页面：磁盘概览与系统状态（2026-10-19 新增，对齐 Mole 的两项能力）
             ("disk", "disk-open", "", "document.querySelectorAll('.meter').length"),

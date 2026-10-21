@@ -720,6 +720,9 @@ class UpdatesFlowTests(unittest.TestCase):
             driver.action("uninstall-plan", {"path": "/Applications/Demo.app", "name": "Demo"})
             page = driver.wait_page("正在清点", timeout=5)
             self.assertIn('data-stage="uninstalling"', page)
+            # 进度页**必须**带自刷：浏览器就是靠它在算完后翻到预览页。
+            # 关掉的话用户会永远停在"正在清点残留"（2026-10-21 用户截图）。
+            self.assertIn("location.reload", page, "进度页必须自带刷新")
             # 注意别用 "uninstall-preview" 做否定断言：CSS 里有 `[data-stage=uninstall-preview]`
             # 选择器，那个字面量会出现在每一页的 <style> 里。
             self.assertNotIn('id="mc-preview-btn"', page, "还没算完，不该已经到预览页")
