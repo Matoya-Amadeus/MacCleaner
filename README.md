@@ -99,6 +99,8 @@ python3 -m unittest discover -s tests -v
 
 不收集遥测；界面只监听 `127.0.0.1`，入口是一次性链接。细节见 [PRIVACY.md](PRIVACY.md)。
 
+与 Mole / Pearcleaner 的功能与安全模型差异，见 [docs/comparison.md](docs/comparison.md)。
+
 ---
 
 由 **AI·Maho** 和 **人类·Matoya** 共同维护

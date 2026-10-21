@@ -29,7 +29,6 @@ ACTIONS = frozenset(
         "start",
         "home",          # 侧栏"Mac 清理"= 回落地页；扫描必须由落地页的【开始扫描】触发
         "cancel",
-        "rescan",
         "approval",
         "confirm",
         "back",

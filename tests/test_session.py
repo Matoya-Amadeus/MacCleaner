@@ -423,29 +423,21 @@ class UpdatesFlowTests(unittest.TestCase):
     def test_disk_is_read_only_single_page_without_drill(self) -> None:
         """磁盘是**单页只读展示**（2026-10-21 用户要求）：不再下钻。
 
-        以前点行/点方块会调 `disk_browse` 换一页看下一级；现在这一页只回答"谁占地方"，
-        再往下钻对判断没有帮助。这里钉住"怎么点都不会去钻目录"。
+        以前点行/点方块会调 `disk_browse` 换一页看下一级；现在这一页只回答"谁占地方"。
+        这里钉住：进磁盘不触发任何目录扫描、页面带 treemap。
         """
-        targets: list[str] = []
-
-        def browse(target=None):
-            targets.append(str(target or ""))
-            return {"path": "/x", "display": "/x", "parent": "", "total": 1, "entries": []}
-
         with tempfile.TemporaryDirectory(prefix="session-disk-", ignore_cleanup_errors=True) as tmp:
-            driver = _Driver(_deps(disk_browse=browse), Path(tmp))
+            driver = _Driver(_deps(), Path(tmp))
             driver.bootstrap()
             driver.wait_page('data-stage="idle"')
 
             self.assertEqual(driver.action("disk-open"), 202)
-            page = driver.wait_page('data-stage="disk"', timeout=5)
+            page = driver.wait_page('data-stage="disk"', timeout=8)
             self.assertIn("tm-cell", page, "总览页要有 treemap")
-            self.assertEqual(targets, [], "进磁盘不该触发目录扫描")
 
             # 带 path 的 disk-open（旧的下钻入口）现在应被忽略，不再换页
             self.assertEqual(driver.action("disk-open", {"path": "/home/Downloads"}), 202)
             driver.wait_page('data-stage="disk"', timeout=5)
-            self.assertEqual(targets, [], "下钻已删除：不应再调用 disk_browse")
 
             self.assertEqual(driver.action("system-open"), 202)
             driver.wait_page('data-stage="system"', timeout=5)

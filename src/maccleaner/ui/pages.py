@@ -1471,7 +1471,9 @@ def render_skills_html(payload: dict[str, Any] | None = None, *, interactive: bo
             pill = '<span class="pill ok">本工具</span>' if is_mine(skill) else '<span class="pill">可调用</span>'
             rows.append(
                 # 两行：名称 + 一行说明（超长省略）；完整路径放 title，hover 才看。
-                f'<div class="row" title="{html.escape(_display_path(path))}">'
+                # data-sort-text 给搜索用（名称 / 说明 / 路径都能搜到）。
+                f'<div class="row" data-sort-text="{html.escape(f"{name} {description} {path}".lower())}"'
+                f' title="{html.escape(_display_path(path))}">'
                 f'<div class="row-lead">{_icon("terminal")}'
                 '<div class="skill-main">'
                 f"<strong>{html.escape(name)}</strong>"
@@ -1481,7 +1483,7 @@ def render_skills_html(payload: dict[str, Any] | None = None, *, interactive: bo
                 + "</div>"
             )
         groups.append(
-            f'<details class="group review" open data-group-key="{html.escape(key)}">'
+            f'<details class="group review" open data-group data-group-key="{html.escape(key)}">'
             f'<summary><span class="group-name">{html.escape(rail_label(key))}</span>'
             f'<span class="meta">{len(buckets[key])} 个</span></summary>'
             f'<div class="rows">{"".join(rows)}</div></details>'
@@ -1502,7 +1504,15 @@ def render_skills_html(payload: dict[str, Any] | None = None, *, interactive: bo
     for key in sorted(buckets, key=order):
         rail_items.append((key, rail_label(key), "terminal", f"{len(buckets[key])} 个"))
 
-    detail = '<div class="review-detail">' + "".join(groups) + "</div>"
+    head = (
+        '<div class="review-head">'
+        '<input class="search" type="search" data-filter placeholder="搜索 skill 名称 / 说明 / 路径…"'
+        ' aria-label="搜索 skill">'
+        "</div>"
+        if len(skills) >= 10
+        else ""
+    )
+    detail = '<div class="review-detail">' + head + "".join(groups) + "</div>"
     page_body = (
         '<div class="review-split">' + _rail(rail_items) + detail + "</div>"
         if len(rail_items) >= 2

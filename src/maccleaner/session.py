@@ -91,7 +91,6 @@ class SessionDeps:
     # 只读的"看一眼"页面（磁盘/系统）。
     disk: Callable[[], dict[str, Any]] = lambda: {}
     # 磁盘钻取：传目录路径，返回下一级条目。
-    disk_browse: Callable[..., dict[str, Any]] | None = None
     system: Callable[[], dict[str, Any]] = lambda: {}
     # 清理历史（读回执文件）。
     history: Callable[[], dict[str, Any]] = lambda: {}
@@ -103,8 +102,6 @@ class SessionDeps:
     updates_apply: Callable[..., dict[str, Any]] = lambda **_kwargs: {"status": "refused", "groups": []}
     # 强制重查（绕过 120s 缓存）；不传就退回 updates_check。
     updates_refresh: Callable[[], dict[str, Any]] | None = None
-    # 扫描可能很慢（实测全盘 24.7s），所以有缓存；`rescan` 必须能**绕过缓存**强制重扫。
-    rescan: Callable[[], dict[str, Any]] | None = None
 
 
 @dataclass
@@ -336,17 +333,15 @@ class InteractiveSession:
         try:
             from .ui.adapter import review_payload
 
-            force = False
             payload: dict[str, Any] | None = None
             if resume:
                 payload = (self._review_state or {}).get("payload")
             while True:
                 if payload is None:
                     self._serve("scanning", pages.render_progress_html(
-                        {"message": "重新扫描中…" if force else "正在扫描，请稍候…"}
+                        {"message": "正在扫描，请稍候…"}
                     ))
-                    scanner = self.deps.rescan if (force and self.deps.rescan) else self.deps.audit
-                    report = scanner()
+                    report = self.deps.audit()
                     payload = review_payload(report)
                     # 记住这一屏：用户切到别的入口再点「Mac 清理」时，回到同一份结果。
                     self._review_state = {"payload": payload}
@@ -381,10 +376,6 @@ class InteractiveSession:
                         return None
                     if action["action"] == "cancel":
                         return self._finish("cancelled", pages.render_cancelled_html({}))
-                    if action["action"] == "rescan":
-                        force = True         # 用户点【重新扫描】→ 必须绕过缓存
-                        payload = None
-                        break
                     # 只认用户在页面上勾选的那几组：全不勾不等于全部。
                     chosen = {
                         str(value) for value in (action.get("payload") or {}).get("approved_ids") or []
@@ -466,14 +457,12 @@ class InteractiveSession:
             while True:
                 self._serve("complete", pages.render_completion_html(done))
                 action = self._wait_or_nav(
-                    ("open-trash", "rescan", "cancel"), timeout or self.ACTION_TIMEOUT_SECONDS
+                    ("open-trash", "cancel"), timeout or self.ACTION_TIMEOUT_SECONDS
                 )
                 if action is None or "nav" in action or action["action"] == "cancel":
                     # 工作已经完成：此时关窗/取消**不该**把终态降级成 cancelled
                     # （用户清完了，只是把窗口关了）。
                     break
-                if action["action"] == "rescan":
-                    return None          # 回落地页重新开始
                 self._open_trash()        # 打开后仍停在完成页
             return self._finish("complete", pages.render_completion_html(done))
         except Exception as exc:  # noqa: BLE001 - 运行期任何异常都走"可重试"，不落 failed

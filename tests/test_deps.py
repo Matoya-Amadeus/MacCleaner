@@ -439,52 +439,6 @@ class HistoryReportTests(unittest.TestCase):
         self.assertGreater(report["skipped_vendor"], 0, "被排除的要计数，页面要说明")
 
 
-class DiskBrowseTests(unittest.TestCase):
-    """磁盘钻取（2026-10-19）：列下一级、按体积降序、不许越出 home。"""
-
-    def _tree(self, home: Path) -> None:
-        (home / "big").mkdir(parents=True)
-        (home / "big" / "x.bin").write_bytes(b"z" * (2 * 1024 * 1024))
-        (home / "small").mkdir()
-        (home / "small" / "y.bin").write_bytes(b"z" * (512 * 1024))
-        (home / "note.txt").write_bytes(b"z" * 1024)
-
-    def test_lists_children_sorted_by_size(self) -> None:
-        from maccleaner.deps import disk_browse
-
-        with tempfile.TemporaryDirectory(prefix="browse-") as tmp:
-            home = Path(tmp)
-            self._tree(home)
-            report = disk_browse(home)
-
-        names = [item["name"] for item in report["entries"]]
-        self.assertEqual(names[:2], ["big", "small"], "大的在前")
-        self.assertIn("note.txt", names)
-        big = next(item for item in report["entries"] if item["name"] == "big")
-        self.assertTrue(big["is_dir"])
-        self.assertGreaterEqual(big["bytes"], 2 * 1024 * 1024)
-
-    def test_path_outside_home_falls_back_to_home(self) -> None:
-        from maccleaner.deps import disk_browse
-
-        with tempfile.TemporaryDirectory(prefix="browse-safe-") as tmp:
-            home = Path(tmp) / "home"
-            home.mkdir()
-            self._tree(home)
-            report = disk_browse(home, "/etc")
-
-        self.assertEqual(report["path"], str(home.resolve()), "越界路径要退回家目录")
-
-    def test_parent_is_empty_at_home(self) -> None:
-        from maccleaner.deps import disk_browse
-
-        with tempfile.TemporaryDirectory(prefix="browse-parent-") as tmp:
-            home = Path(tmp)
-            self._tree(home)
-            self.assertEqual(disk_browse(home)["parent"], "")
-            child = disk_browse(home, str(home / "big"))
-        self.assertTrue(child["parent"], "进到子目录要能回上一级")
-
 class SparkleDetectionTests(unittest.TestCase):
     """自带 Sparkle 更新器的应用要能被识别（2026-10-19 用户要求"先走应用自带更新"）。"""
 

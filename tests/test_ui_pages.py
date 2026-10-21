@@ -813,6 +813,28 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn("getElementById('mc-elapsed')", js, "清理要按“有没有计时元素”判断")
         self.assertNotIn("dataset.stage !== 'updating'", js, "旧条件会把扫描/卸载页的起点清掉")
 
+    def test_skills_page_has_search_when_many(self) -> None:
+        """Skill 超过 10 个时给搜索框（2026-10-21 用户要求加搜索）。
+
+        搜索复用通用的 `[data-filter]` 处理器：行要带 `data-sort-text`（名称/说明/路径），
+        分组要带 `data-group`，否则输入框敲字不会有任何反应。
+        """
+        from maccleaner.ui.pages import render_skills_html
+
+        skills = [
+            {"name": f"skill-{i}", "description": f"description {i}", "path": f"/x/skill-{i}/SKILL.md",
+             "root": "~/.codebuddy/skills"}
+            for i in range(12)
+        ]
+        page = render_skills_html({"skills": skills})
+        # 别用 "data-filter" 断言：JS 里就有这个选择器字符串，每页都会命中。
+        self.assertIn('<input class="search" type="search" data-filter', page, "要有搜索框")
+        self.assertIn("data-sort-text", page)
+        self.assertEqual(page.count("data-group "), 1, "分组要能被搜索处理器迭代")
+
+        few = render_skills_html({"skills": skills[:3]})
+        self.assertNotIn('<input class="search"', few, "少的时候不占地方")
+
 class ShellTests(unittest.TestCase):
     def test_nav_lists_only_real_entries(self) -> None:
         nav = render_nav("clean")

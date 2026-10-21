@@ -800,55 +800,6 @@ def orphans_clean(home: Path, paths: Sequence[str]) -> dict[str, Any]:
     return {"moved": moved, "failed": failed, "count": len(moved), "bytes": total_bytes}
 
 
-def disk_browse(
-    home: Path, target: str | Path | None = None, *, limit: int = 40
-) -> dict[str, Any]:
-    """列出一个目录的下一级（按体积降序），用于"点进去看"。
-
-    安全边界：只允许在 `home` 之内浏览；越界或相对路径一律退回家目录，
-    避免它变成"任意目录读取器"。
-    """
-    home_path = Path(home).expanduser().resolve()
-    base = home_path
-    if target:
-        candidate = Path(str(target)).expanduser()
-        if not candidate.is_absolute():
-            candidate = home_path / candidate
-        try:
-            resolved = candidate.resolve()
-        except OSError:
-            resolved = home_path
-        if resolved == home_path or home_path in resolved.parents:
-            base = resolved
-
-    try:
-        children = sorted(base.iterdir(), key=lambda item: item.name.lower())[: max(1, limit)]
-    except OSError:
-        children = []
-    files = [child for child in children if child.is_file() or child.is_symlink()]
-    dirs = [child for child in children if child.is_dir() and not child.is_symlink()]
-    sizes = _du_sizes(dirs + files, timeout=8.0)
-
-    entries = [
-        {
-            "name": child.name,
-            "path": str(child),
-            "bytes": int(sizes.get(str(child), 0)),
-            "is_dir": child in dirs,
-        }
-        for child in dirs + files
-    ]
-    entries.sort(key=lambda item: -int(item["bytes"]))
-    return {
-        "path": str(base),
-        "display": "~" + str(base)[len(str(home_path)):] if base != home_path else "~",
-        "parent": "" if base == home_path else str(base.parent),
-        "entries": entries,
-        "total": sum(int(item["bytes"]) for item in entries),
-        "truncated": len(children) >= limit,
-    }
-
-
 def system_report() -> dict[str, Any]:
     """系统快照：负载 / 内存 / 磁盘 / CPU 核数 / 占用最高的进程（只读）。
 
@@ -1562,7 +1513,6 @@ def build_deps(
 
     return SessionDeps(
         audit=audit,
-        rescan=rescan,
         plan=plan,
         clean=clean,
         clean_approved=clean,   # clean(approved) 同一实现：无参时 dry-run，带 id 才真执行
@@ -1600,7 +1550,6 @@ def build_deps(
         apps=lambda: list_applications(home=home_path),
         skills=list_skills,
         disk=lambda: disk_report(home=home_path),
-        disk_browse=lambda target=None: disk_browse(home_path, target),
         system=system_report,
         uninstall_plan=uninstall_plan,
         uninstall_apply=uninstall_apply,

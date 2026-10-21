@@ -163,9 +163,9 @@ class ActionTests(unittest.TestCase):
         try:
             opener = _opener()
             _get(opener, bridge.bootstrap_url)
-            self._post(opener, bridge, {"action": "rescan"})
+            self._post(opener, bridge, {"action": "cancel"})
             self.assertIsNone(bridge.wait_for_action(("start",), timeout=0.3), "不是自己等的类型就别拿走")
-            self.assertEqual(bridge.wait_for_action(("rescan",), timeout=1.0)["action"], "rescan")
+            self.assertEqual(bridge.wait_for_action(("cancel",), timeout=1.0)["action"], "cancel")
         finally:
             bridge.stop()
 
