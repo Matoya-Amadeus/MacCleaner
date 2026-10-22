@@ -24,6 +24,10 @@
 |---|---|---|
 | `started` | 任何可能超过 0.3s 的操作**开始前** | `op`，可选 `count` |
 
+> **取消语义（2026-10-22）**：协作式取消——响应当前命令的部分结果（`status: "cancelled"`、
+> `moved[]`、`remaining[]`），**已移走的不回滚**。目前支持：`files.trash`、`orphans.apply`；
+> `clean` / `uninstall.apply` / `updates.apply` 仍需在各自循环加检查点。
+
 `progress` 目前未使用：细粒度进度需要内核在扫描/清理里回调，计划在 M2 里补
 （届时会带 `done` / `bytes` / `phase`）。**界面不能假设一定会有 `progress`**。
 
@@ -31,6 +35,7 @@
 
 | cmd | 参数 | 返回 `data` | 备注 |
 |---|---|---|---|
+| `cancel` | — | `{cancelled:true}` | **不进队列**：立刻置标志，正在执行的操作在下一项前停下 |
 | `ping` | — | `{pong:true,v}` | 连通性 |
 | `disk.summary` | — | `{total,used,free,percent}` | **毫秒级**，只做 statfs，不读受保护目录 |
 | `disk` | — | `{total,used,free,percent,sections[],system{}}` | 会对各目录跑 `du`；**需要「完全磁盘访问权限」**，否则体积全 0 |

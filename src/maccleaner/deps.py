@@ -769,7 +769,12 @@ def orphan_leftovers(
     }
 
 
-def orphans_clean(home: Path, paths: Sequence[str]) -> dict[str, Any]:
+def orphans_clean(
+    home: Path,
+    paths: Sequence[str],
+    *,
+    should_stop: Callable[[], bool] | None = None,
+) -> dict[str, Any]:
     """把点名要清的孤儿残留移入废纸篓（可恢复）。
 
     只接受**当前扫描结果里出现过的路径**由会话侧校验；这里再做一次归属校验：
@@ -780,6 +785,14 @@ def orphans_clean(home: Path, paths: Sequence[str]) -> dict[str, Any]:
     failed: list[dict[str, Any]] = []
     total_bytes = 0
     for raw in paths:
+        if should_stop is not None and should_stop():
+            return {
+                "status": "cancelled",
+                "cancelled": True,
+                "moved": moved,
+                "failed": failed,
+                "bytes": total_bytes,
+            }
         target = Path(str(raw)).expanduser()
         try:
             resolved = target.resolve()
@@ -982,13 +995,31 @@ def large_files(
     }
 
 
-def trash_paths(home: Path, paths: Sequence[str]) -> dict[str, Any]:
-    """把点名要删的文件/目录移入废纸篓（只接受 home 内的路径）。"""
+def trash_paths(
+    home: Path,
+    paths: Sequence[str],
+    *,
+    should_stop: Callable[[], bool] | None = None,
+) -> dict[str, Any]:
+    """把点名要删的文件/目录移入废纸篓（只接受 home 内的路径）。
+
+    `should_stop`：每项开始前检查一次。取消后**已经移走的不会回滚**（那需要把文件搬回来，
+    风险更大），所以返回值里带上 `cancelled` 和 `done`，让界面能如实说"移走了几项、还剩几项"。
+    """
     home_path = Path(home).resolve()
     moved: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
     total_bytes = 0
     for raw in paths:
+        if should_stop is not None and should_stop():
+            return {
+                "status": "cancelled",
+                "cancelled": True,
+                "moved": moved,
+                "failed": failed,
+                "bytes": total_bytes,
+                "remaining": [str(item) for item in paths[len(moved) + len(failed):]],
+            }
         target = Path(str(raw)).expanduser()
         try:
             resolved = target.resolve()
@@ -1743,7 +1774,7 @@ def build_deps(
             (state_path / "browser-icons.json") if state_path else None
         ),
         large_files=lambda: large_files(home_path),
-        trash_paths=lambda paths: trash_paths(home_path, paths),
+        trash_paths=lambda paths, **kwargs: trash_paths(home_path, paths, **kwargs),
         system_sizes_cached=lambda: system_sizes_cached(
             (state_path / "system-sizes.json") if state_path else None
         ),
@@ -1758,7 +1789,7 @@ def build_deps(
         orphans_scan=lambda: orphan_leftovers(
             home_path, cache_path=(state_path / "launchservices-ids.json") if state_path else None
         ),
-        orphans_apply=lambda paths: orphans_clean(home_path, paths),
+        orphans_apply=lambda paths, **kwargs: orphans_clean(home_path, paths, **kwargs),
         # 落地页的"上次清理"也从回执算：`history.json` 没人写，读它永远是空
         # （2026-10-19 发现；现在与「清理历史」页共用同一真相源）。
         history=lambda: _landing_history(home_path, state_path),

@@ -639,7 +639,8 @@ struct OrphansListView: View {
             .padding(16)
         }
         .task { if groups.isEmpty { await load() } }
-        .progressOverlay(applying, title: "正在移入废纸篓…", detail: nil, timer: timer)
+        .progressOverlay(applying, title: "正在移入废纸篓…", detail: "每项开始前会检查一次取消",
+                         onCancel: { Task { await CoreClient.shared.cancelCurrent() } }, timer: timer)
     }
 
     private func displayPath(_ path: String) -> String {

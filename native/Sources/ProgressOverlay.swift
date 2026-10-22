@@ -34,6 +34,9 @@ final class ElapsedTimer: ObservableObject {
 struct ProgressOverlay: View {
     let title: String
     let detail: String?
+    /// 只有**真的支持取消**的操作才传（内核每项开始前检查一次标志）。
+    /// 不支持的操作用户按了也停不下来——那是骗人。
+    var onCancel: (() -> Void)?
     @ObservedObject var timer: ElapsedTimer
 
     var body: some View {
@@ -47,6 +50,11 @@ struct ProgressOverlay: View {
                 }
                 Text("已用 \(timer.seconds) 秒")
                     .font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
+                if let onCancel {
+                    Button("取消", action: onCancel)
+                        .controlSize(.small)
+                        .padding(.top, 2)
+                }
             }
             .padding(22)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
@@ -58,10 +66,16 @@ struct ProgressOverlay: View {
 
 extension View {
     /// `busy` 时盖上进度层；`title` 写清"正在做什么"，别只写"处理中"。
-    func progressOverlay(_ busy: Bool, title: String, detail: String? = nil, timer: ElapsedTimer) -> some View {
+    func progressOverlay(
+        _ busy: Bool,
+        title: String,
+        detail: String? = nil,
+        onCancel: (() -> Void)? = nil,
+        timer: ElapsedTimer
+    ) -> some View {
         overlay {
             if busy {
-                ProgressOverlay(title: title, detail: detail, timer: timer)
+                ProgressOverlay(title: title, detail: detail, onCancel: onCancel, timer: timer)
             }
         }
         .disabled(busy)

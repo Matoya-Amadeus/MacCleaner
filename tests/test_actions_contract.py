@@ -79,7 +79,7 @@ class OrphansApplyTests(unittest.TestCase):
         """内核那层是 `orphans_clean(home, paths)`：参数名必须叫 paths。"""
         seen: list[list[str]] = []
 
-        def apply(paths):
+        def apply(paths, **_kwargs):
             seen.append(list(paths))
             return {"moved": list(paths), "failed": []}
 

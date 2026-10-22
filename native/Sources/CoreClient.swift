@@ -121,6 +121,11 @@ actor CoreClient {
         }
     }
 
+    /// 请求取消正在执行的操作。**不等回复**：内核收到后会置标志，执行循环在下一项前退出。
+    func cancelCurrent() {
+        try? write("{\"id\":\"-\",\"cmd\":\"cancel\"}\n")
+    }
+
     // MARK: - 内部
 
     private func write(_ text: String) throws {

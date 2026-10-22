@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 from typing import Any, Callable, Iterable
 
 from .view_models import (
@@ -47,6 +48,20 @@ class CoreService:
     def __init__(self, deps: Any, *, emit: Callable[[dict[str, Any]], None] | None = None) -> None:
         self.deps = deps
         self._emit = emit or (lambda message: None)
+        # 协作式取消：命令是同步执行的，所以靠一个标志让执行循环自己收手，
+        # 而不是杀进程（杀进程会留下"不知道删了哪些"的半成品）。
+        self._cancel = threading.Event()
+
+    # ---------- 取消 ----------
+
+    def request_cancel(self) -> None:
+        self._cancel.set()
+
+    def clear_cancel(self) -> None:
+        self._cancel.clear()
+
+    def should_stop(self) -> bool:
+        return self._cancel.is_set()
 
     # ---------- 对外入口 ----------
 
@@ -72,6 +87,7 @@ class CoreService:
             emit(self._error(request_id, "bad_request", "缺少 cmd"))
             return messages
 
+        self.clear_cancel()
         handler = self._handlers().get(cmd)
         if handler is None:
             emit(self._error(
@@ -210,7 +226,7 @@ class CoreService:
         runner = getattr(self.deps, "trash_paths", None)
         if runner is None:
             raise ValueError("这个构建不支持移入废纸篓")
-        return self._call("trash_paths", paths, default={}) or {}
+        return self._call("trash_paths", paths, should_stop=self.should_stop, default={}) or {}
 
     def _app_open(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
         """打开一个 .app（自带更新器的「在应用内更新」用它）。
@@ -311,7 +327,7 @@ class CoreService:
         if not paths:
             raise ValueError("paths 不能为空")
         emit({"id": request_id, "event": "started", "op": "orphans.apply", "count": len(paths)})
-        return self._call("orphans_apply", paths, default={}) or {}
+        return self._call("orphans_apply", paths, should_stop=self.should_stop, default={}) or {}
 
     def _orphans_list(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
         emit({"id": request_id, "event": "started", "op": "orphans.list"})
@@ -360,24 +376,53 @@ class CoreService:
 
 
 def serve_stdio(deps: Any, stdin=None, stdout=None) -> int:
-    """stdio 循环：逐行读请求、逐行写消息（每条立即 flush，事件才能"流"出来）。"""
+    """stdio 循环：读请求、**在后台线程执行**、逐行写消息。
+
+    为什么要分线程（2026-10-22 加取消）：命令是同步阻塞的（一次清理可能几十秒），
+    如果读和做在同一个线程里，`cancel` 只能排在队尾——等它能被读到，活早干完了。
+    现在读线程只负责收消息，`cancel` 立刻置标志，执行循环在下一项开始前看到它。
+    """
+    import queue
+
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
     service = CoreService(deps)
+    write_lock = threading.Lock()
 
     def write(payload: dict[str, Any]) -> None:
-        stdout.write(CoreService._dumps(payload) + "\n")
-        stdout.flush()
+        with write_lock:
+            stdout.write(CoreService._dumps(payload) + "\n")
+            stdout.flush()
 
     service._emit = write  # noqa: SLF001 - 同一个实例，避免再复制状态
-    for line in stdin:
-        text = line.strip()
-        if not text:
-            continue
-        try:
-            request = json.loads(text)
-        except json.JSONDecodeError as exc:
-            write(CoreService._error("", "bad_json", f"{ERROR_CODES['bad_json']}: {exc.msg}"))
-            continue
-        service.dispatch(request)
+    jobs: "queue.Queue[dict[str, Any] | None]" = queue.Queue()
+
+    def worker() -> None:
+        while True:
+            request = jobs.get()
+            if request is None:
+                return
+            service.dispatch(request)
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    try:
+        for line in stdin:
+            text = line.strip()
+            if not text:
+                continue
+            try:
+                request = json.loads(text)
+            except json.JSONDecodeError as exc:
+                write(CoreService._error("", "bad_json", f"{ERROR_CODES['bad_json']}: {exc.msg}"))
+                continue
+            if isinstance(request, dict) and str(request.get("cmd") or "") == "cancel":
+                service.request_cancel()
+                write({"id": str(request.get("id") or ""), "ok": True,
+                       "data": {"cancelled": True}, "v": PROTOCOL_VERSION})
+                continue
+            jobs.put(request)
+    finally:
+        jobs.put(None)
+        thread.join(timeout=5)
     return 0

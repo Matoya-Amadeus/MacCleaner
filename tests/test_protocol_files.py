@@ -38,7 +38,7 @@ class FilesTrashTests(unittest.TestCase):
     def test_moves_given_paths_and_emits_started(self) -> None:
         calls: list[list[str]] = []
 
-        def trash(paths):
+        def trash(paths, **_kwargs):
             calls.append(list(paths))
             return {"moved": list(paths), "failed": []}
 

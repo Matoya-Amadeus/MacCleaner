@@ -279,6 +279,7 @@ struct LargeFilesView: View {
     @State private var loading = false
     @State private var error: String?
     @State private var notice: String?
+    @StateObject private var timer = ElapsedTimer()
 
     struct Item: Identifiable {
         var id: String { path }
@@ -342,6 +343,7 @@ struct LargeFilesView: View {
             .padding(16)
         }
         .task { if items.isEmpty { await load() } }
+        .progressOverlay(loading, title: "正在扫描大文件…", detail: "只读，不会改动任何文件", timer: timer)
     }
 
     private func load() async {
