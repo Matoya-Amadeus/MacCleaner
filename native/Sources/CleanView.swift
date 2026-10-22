@@ -42,6 +42,7 @@ struct RecommendedView: View {
     @State private var checked: Set<String> = []
     @State private var loading = false
     @State private var scanning = false
+    @State private var scannedAt: Date?
     @State private var error: String?
     @State private var notice: String?
     @State private var confirming = false
@@ -148,19 +149,38 @@ struct RecommendedView: View {
         }
     }
 
+    /// 三态：没扫过 / 正在扫 / **扫完了但没东西**。
+    /// 之前后两种共用"还没有扫描"，用户会以为没执行（2026-10-23 截图里就是）。
     private var scanningView: some View {
         VStack(spacing: 10) {
-            ProgressView()
-            Text(scanning ? "正在扫描可清理项…" : "还没有扫描")
-                .font(.callout).foregroundStyle(.secondary)
-            Text("只读扫描：读取大小与修改时间，不会改动任何文件。")
-                .font(.caption).foregroundStyle(.tertiary)
-            if !scanning {
+            if scanning {
+                ProgressView()
+                Text("正在扫描可清理项…").font(.callout).foregroundStyle(.secondary)
+                Text("只读扫描：读取大小与修改时间，不会改动任何文件。")
+                    .font(.caption).foregroundStyle(.tertiary)
+            } else if let scannedAt {
+                Image(systemName: "checkmark.circle")
+                    .font(.title2).foregroundStyle(.secondary)
+                Text("没有可清理项").font(.callout).foregroundStyle(.secondary)
+                Text("扫描于 \(Self.clock.string(from: scannedAt)) · 只读，未改动任何文件")
+                    .font(.caption).foregroundStyle(.tertiary)
+                Button("再扫一次") { Task { await scan() } }
+            } else {
+                Image(systemName: "sparkles").font(.title2).foregroundStyle(.secondary)
+                Text("还没有扫描").font(.callout).foregroundStyle(.secondary)
+                Text("只读扫描：读取大小与修改时间，不会改动任何文件。")
+                    .font(.caption).foregroundStyle(.tertiary)
                 Button("开始扫描") { Task { await scan() } }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+
+    private static let clock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
 
     private func row(_ item: Item) -> some View {
         Toggle(isOn: Binding(
@@ -230,6 +250,7 @@ struct RecommendedView: View {
             // 低风险默认勾上（与旧界面同一规则）；"你的文件"这类要用户自己点。
             checked = Set(groups.filter { $0.key != "user" && $0.key != "trash" && $0.key != "system" }
                 .flatMap(\.items).filter { $0.risk == "low" }.map(\.id))
+            scannedAt = Date()
             error = nil
         } catch {
             self.error = error.localizedDescription
