@@ -110,6 +110,7 @@ class CoreService:
             # 只读
             "ping": self._ping,
             "disk": self._disk,
+            "disk.summary": self._disk_summary,
             "system": self._system,
             "skills": self._skills,
             "apps": self._apps,
@@ -134,6 +135,22 @@ class CoreService:
 
     def _ping(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
         return {"pong": True, "v": PROTOCOL_VERSION}
+
+    def _disk_summary(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
+        """只要容量（statfs，毫秒级、不读任何受保护目录）。
+
+        为什么单独一条（2026-10-22 真机撞到）：`disk` 会对 ~/Documents、~/Desktop 等目录跑 `du`，
+        没有「完全磁盘访问权限」时 macOS 会**连环弹授权框**，界面还会卡住。
+        先出容量、再按权限决定要不要读目录——这样首屏永远有东西看。
+        """
+        import shutil
+
+        usage = shutil.disk_usage("/")
+        total = int(usage.total or 0)
+        used = int(usage.used or 0)
+        free = int(usage.free or 0)
+        percent = (used / total * 100) if total else 0.0
+        return {"total": total, "used": used, "free": free, "percent": round(percent, 1)}
 
     def _disk(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
         report = dict(self._call("disk", default={}) or {})

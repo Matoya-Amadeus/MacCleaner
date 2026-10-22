@@ -21,7 +21,8 @@ from .deps import build_deps
 
 COMMAND_HELP: dict[str, str] = {
     "ping": "连通性检查",
-    "disk": "磁盘总览（含系统目录缓存读数）",
+    "disk.summary": "只要容量（statfs，毫秒级，不读受保护目录）",
+    "disk": "磁盘总览（含目录体积；需要完全磁盘访问权限）",
     "system": "系统状态（负载/内存/电池/节流/进程）",
     "skills": "本机可调用的 skill 列表",
     "apps": "已安装应用列表",

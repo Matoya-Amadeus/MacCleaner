@@ -77,6 +77,17 @@ class EnvelopeTests(unittest.TestCase):
         self.assertEqual(list(_service().serve_lines(["", "   "])), [])
 
 
+    def test_disk_summary_is_fast_and_permission_free(self) -> None:
+        """`disk.summary` 只做 statfs：不读受保护目录，也不跑 du。
+
+        为什么要这条：`disk` 会对 ~/Documents、~/Desktop 跑 du，没有「完全磁盘访问权限」时
+        macOS 会连环弹授权框（真机撞到）。首屏必须有一个不需要权限的容量来源。
+        """
+        data = _final(_service().dispatch({"id": "1", "cmd": "disk.summary"}))["data"]
+        self.assertGreater(data["total"], 0)
+        self.assertLessEqual(data["percent"], 100.0)
+        self.assertNotIn("sections", data, "summary 不该顺手扫目录")
+
 class EventTests(unittest.TestCase):
     def test_slow_command_emits_started_before_result(self) -> None:
         """慢命令必须先发 started —— 界面靠它显示进度，不靠轮询。"""

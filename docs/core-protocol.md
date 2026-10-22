@@ -32,7 +32,8 @@
 | cmd | 参数 | 返回 `data` | 备注 |
 |---|---|---|---|
 | `ping` | — | `{pong:true,v}` | 连通性 |
-| `disk` | — | `{total,used,free,percent,sections[],system{}}` | `system` 是缓存读数（未授权时为空） |
+| `disk.summary` | — | `{total,used,free,percent}` | **毫秒级**，只做 statfs，不读受保护目录 |
+| `disk` | — | `{total,used,free,percent,sections[],system{}}` | 会对各目录跑 `du`；**需要「完全磁盘访问权限」**，否则体积全 0 |
 | `system` | — | `{load[],cpu_count,memory_*,processes[],power{},thermal{}}` | 只读 |
 | `skills` | — | `{skills[]}` | 每项 `{name,description,path,root}` |
 | `apps` | — | `{apps[]}` | 每项 `{name,bundle_id,path,category,...}` |
