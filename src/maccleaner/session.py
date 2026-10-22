@@ -366,7 +366,7 @@ class InteractiveSession:
                         payload, notice=notice, preselected=preselected,
                     ))
                     action = self._wait_or_nav(
-                        ("approval", "rescan", "cancel"), timeout or self.ACTION_TIMEOUT_SECONDS
+                        ("approval", "cancel"), timeout or self.ACTION_TIMEOUT_SECONDS
                     )
                     if action is not None and "nav" in action:
                         target = str(action["nav"])

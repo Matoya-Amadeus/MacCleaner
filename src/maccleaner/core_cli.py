@@ -31,6 +31,7 @@ COMMAND_HELP: dict[str, str] = {
     "updates.list": "检查更新并返回分组好的清单（Sparkle 只留有更新的）",
     "orphans.list": "残留扫描并返回按目录分组的结果",
     "large.list": "大文件扫描并返回按体积排序的清单",
+    "files.trash": "把路径移入废纸篓 args: paths[]（空数组拒绝）",
     "clean": "执行清理 args: approved_ids[], selected_ids[]（空勾选会被拒绝）",
     "uninstall.plan": "卸载计划 args: path, bundle_id, name",
     "uninstall.apply": "执行卸载 args: path, item_ids[]（空勾选会被拒绝）",

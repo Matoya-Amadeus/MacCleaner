@@ -1,13 +1,13 @@
 # 与 Mole / Pearcleaner 的差异
 
-> **核对时间：2026-10-21**，依据是各自仓库的 README（Mole `tw93/Mole`、Pearcleaner `alienator88/Pearcleaner`）。
+> **核对时间：2026-10-22**，依据是各自仓库的 README（Mole `tw93/Mole`、Pearcleaner `alienator88/Pearcleaner`）。
 > 它们改版后本文可能过期；冲突时以各自仓库为准。
 
 ## 一句话定位
 
 | 工具 | 定位 | 形态 | 授权 |
 |---|---|---|---|
-| **Mac Cleaner**（本项目） | 一个窗口里"看清单 → 勾选 → 移入废纸篓"的清理 / 卸载 / 更新 | 本地 Web UI（WKWebView 包裹）+ CLI + MCP 工具，Python 内核 | 自有 |
+| **Mac Cleaner**（本项目） | 一个窗口里"看清单 → 勾选 → 移入废纸篓"的清理 / 卸载 / 更新 | **SwiftUI 原生界面**（迁移中；旧 Web UI 将删除）+ CLI + MCP，Python 内核走 stdio JSON | 自有 |
 | **Mole** | macOS 终端清理与系统洞察工具包（clean / uninstall / purge / installer / slim / optimize / analyze） | **TUI**，CLI 本体免费开源；图形界面是**另一个独立产品**（Mole for Mac，闭源） | GPL-3.0（CLI） |
 | **Pearcleaner** | 应用卸载 + 残留清理 | 原生 macOS App（SwiftUI）+ Finder 扩展 + 特权 Helper | Apache 2.0 + Commons Clause |
 
@@ -43,7 +43,7 @@
 | 高风险项不默认勾选 | ✅ Downloads / Docker / 安装包要自己勾 + 确认页再确认 | ✅（`purge` 7 天内活跃的默认不选） | —（按应用粒度） |
 | 空勾选 ≠ 全选 | ✅ 空勾选被拒绝 | ✅（`purge` 只删确认过的条目） | — |
 | 从不静默提权 | ✅ 只有"测量系统目录体积"与"移系统缓存"会请求一次授权 | ✅ 明确"不要用 sudo 运行" | ⚠️ 装 Privileged Helper（常驻） |
-| 网络 | 只监听 `127.0.0.1`，一次性入口链接 | 本地 | 本地 |
+| 网络面 | **不开放任何端口**：界面与内核用 stdio 子进程通信（旧 Web UI 时期是 127.0.0.1 + 一次性链接） | 本地 | 本地 |
 
 **结论**：Mole 更快更全（它就是为"一条命令清干净"设计的），代价是 `clean` 永久删除；
 我们的取舍是"慢一点、多点一次，但任何删除都能从废纸篓拿回来"。

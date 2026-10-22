@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// 磁盘：容量 + 目录清单 + 系统级目录（只读，需授权才有准确数字）。
@@ -11,6 +12,7 @@ struct DiskView: View {
     @State private var measuring = false
     @State private var loading = false
     @State private var needsPermission = false
+    @State private var loadedAt: Date?
 
     struct Entry: Identifiable {
         let id = UUID()
@@ -24,6 +26,12 @@ struct DiskView: View {
         let cached: Bool
         let sizes: [(path: String, bytes: Int64)]
     }
+
+    private static let clock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
 
     struct Report {
         let total: Int64
@@ -59,6 +67,12 @@ struct DiskView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .task { await load() }
+        // 回到前台时重读一次：磁盘占用变化慢，但"切走再回来还是旧数字"会让人怀疑。
+        // 只在这一页做（系统状态页按决定保持"进页面读一次"）。
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            guard !measuring else { return }
+            Task { await load() }
+        }
     }
 
     /// 探测「完全磁盘访问权限」：读 TCC 数据库是最可靠的探针（无权限必然失败）。
@@ -101,9 +115,18 @@ struct DiskView: View {
             Text("\(Int(report.percent.rounded()))%")
                 .font(.system(size: 44, weight: .semibold, design: .rounded))
                 .monospacedDigit()
-            Text("已用 \(ByteText.format(report.used))，可用 \(ByteText.format(report.free))（共 \(ByteText.format(report.total))）")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                Text("已用 \(ByteText.format(report.used))，可用 \(ByteText.format(report.free))（共 \(ByteText.format(report.total))）")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                if let loadedAt {
+                    // 不加【刷新】按钮（前面已删），改成把"什么时候读的"写出来：
+                    // 数字看起来不再像实时监控，用户自己决定要不要切走再回来。
+                    Text("读取于 \(Self.clock.string(from: loadedAt))")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
 
             // 只有这一条条：整机占比。目录行不再画条（同一根条两种基准会被误读）。
             GeometryReader { geometry in
@@ -231,6 +254,7 @@ struct DiskView: View {
                 }
             )
             system = parseSystem(data["system"])
+            loadedAt = Date()
         } catch {
             self.error = error.localizedDescription
         }

@@ -69,7 +69,7 @@ struct RootView: View {
         } detail: {
             Group {
                 switch selection ?? .disk {
-                case .clean: PlaceholderView(title: "清理", detail: "推荐清理 / 大文件（M2 迁移）")
+                case .clean: CleanView()
                 case .software: SoftwareView()
                 case .disk: DiskView()
                 case .system: SystemView()

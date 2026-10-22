@@ -120,6 +120,7 @@ class CoreService:
             "disk": self._disk,
             "disk.summary": self._disk_summary,
             "large.list": self._large_list,
+            "files.trash": self._files_trash,
             "system": self._system,
             "skills": self._skills,
             "apps": self._apps,
@@ -198,6 +199,17 @@ class CoreService:
         if runner is None:
             raise ValueError("这个构建不支持大文件扫描")
         return large_view(self._call("large_files", default={}) or {})
+
+    def _files_trash(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
+        """把给定路径移进废纸篓（大文件页用）。空数组拒绝。"""
+        paths = [str(value) for value in (args.get("paths") or [])]
+        if not paths:
+            raise ValueError("paths 不能为空")
+        emit({"id": request_id, "event": "started", "op": "files.trash", "count": len(paths)})
+        runner = getattr(self.deps, "trash_paths", None)
+        if runner is None:
+            raise ValueError("这个构建不支持移入废纸篓")
+        return self._call("trash_paths", paths, default={}) or {}
 
     # ---------- 清理 ----------
 
