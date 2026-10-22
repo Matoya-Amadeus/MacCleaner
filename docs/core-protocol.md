@@ -37,6 +37,7 @@
 
 | cmd | 参数 | 返回 `data` | 备注 |
 |---|---|---|---|
+| `tools.list` | — | `{mcp[],commands[],example}` | AI 可调用面：MCP 工具 + stdio 命令 + 示例 |
 | `cancel` | — | `{cancelled:true}` | **不进队列**：立刻置标志，正在执行的操作在下一项前停下 |
 | `ping` | — | `{pong:true,v}` | 连通性 |
 | `disk.summary` | — | `{total,used,free,percent}` | **毫秒级**，只做 statfs，不读受保护目录 |

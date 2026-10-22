@@ -363,3 +363,33 @@ def result_view(kind: str, report: dict[str, Any]) -> dict[str, Any]:
         "cancelled": bool(report.get("cancelled")),
         "status": str(report.get("status") or ""),
     }
+
+
+# ---------------------------------------------------------------- AI 可调用面
+
+# MCP 工具是**另一套入口**（给 agent 直接调，不经 stdio 协议），所以单独列。
+# 摘要取自各工具的 docstring 首行——改 MCP 那侧时记得同步这里（有测试盯着数量）。
+MCP_TOOLS: tuple[tuple[str, str], ...] = (
+    ("audit_storage", "只读扫描，返回可清理项与体积"),
+    ("plan_storage", "生成只读计划，返回一次性 plan_id"),
+    ("trace_storage", "只读追查某个目录/缓存属于哪个目标"),
+    ("uninstall_plan", "列出某应用的残留（只读，不删除）"),
+    ("updates_check", "列出第三方可升级项（Homebrew + App Store）"),
+    ("updates_apply", "按包名升级（空 = 全部）"),
+    ("apply_storage_plan", "按 plan_id + 精确 target id 执行清理"),
+)
+
+
+def tools_view(command_help: dict[str, str]) -> dict[str, Any]:
+    """这一页要回答的问题：**AI 到底能怎么用 Mac Cleaner**。
+
+    两个入口分开列：MCP（agent 直接调）与 stdio 命令（脚本/别的前端用）。
+    """
+    return {
+        "mcp": [{"name": name, "summary": text} for name, text in MCP_TOOLS],
+        "commands": [{"name": name, "summary": text} for name, text in command_help.items()],
+        "example": (
+            "echo '{\"id\":\"1\",\"cmd\":\"disk.summary\"}' "
+            "| maccleaner-core serve --stdio"
+        ),
+    }

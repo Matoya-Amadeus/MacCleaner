@@ -11,7 +11,7 @@ extension Notification.Name {
 /// 侧边栏 4 个入口（2026-10-22 合并，原 8 个）：
 /// 清理 / 软件 / 磁盘 / 系统。技能列表移到右上角按钮——它不属于"日常清理"这件事。
 enum SidebarItem: String, CaseIterable, Identifiable {
-    case clean, software, disk, system
+    case clean, software, disk, system, ai
 
     var id: String { rawValue }
 
@@ -21,6 +21,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .software: return "软件"
         case .disk: return "磁盘"
         case .system: return "系统"
+        case .ai: return "AI"
         }
     }
 
@@ -30,6 +31,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .software: return "shippingbox"
         case .disk: return "internaldrive"
         case .system: return "gauge.with.dots.needle.50percent"
+        case .ai: return "wand.and.stars"
         }
     }
 }
@@ -68,6 +70,7 @@ struct MacCleanerApp: App {
                 Button("软件") { post(.software) }.keyboardShortcut("2", modifiers: .command)
                 Button("磁盘") { post(.disk) }.keyboardShortcut("3", modifiers: .command)
                 Button("系统") { post(.system) }.keyboardShortcut("4", modifiers: .command)
+                Button("AI 可调用") { post(.ai) }.keyboardShortcut("5", modifiers: .command)
                 Divider()
                 Button("重新读取本页") {
                     NotificationCenter.default.post(name: .mcReload, object: nil)
@@ -82,7 +85,6 @@ struct RootView: View {
     // 记住上次停在哪个入口：原生 App 的默认期待（重开还在这儿）。
     @AppStorage("selectedSection") private var storedSection: String = SidebarItem.disk.rawValue
     @State private var selection: SidebarItem? = .disk
-    @State private var showSkills = false
 
     var body: some View {
         NavigationSplitView {
@@ -115,18 +117,11 @@ struct RootView: View {
                 case .software: SoftwareView()
                 case .disk: DiskView()
                 case .system: SystemView()
+                case .ai: ToolsView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showSkills = true
-                    } label: {
-                        Label("技能", systemImage: "wand.and.stars")
-                    }
-                    .help("这台机器上 agent 能调用的 skill")
-                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         StatusItemController.shared.toggle()
@@ -136,7 +131,6 @@ struct RootView: View {
                     .help("在菜单栏显示 Mac Cleaner 图标（菜单栏挤的话可以关掉）")
                 }
             }
-            .sheet(isPresented: $showSkills) { SkillsSheet() }
         }
     }
 }
@@ -152,63 +146,5 @@ struct PlaceholderView: View {
             Text(detail).font(.callout).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-// MARK: - 技能
-
-struct SkillsSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var skills: [Skill] = []
-    @State private var error: String?
-
-    struct Skill: Identifiable {
-        let id = UUID()
-        let name: String
-        let description: String
-        let root: String
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("可调用的 Skill").font(.headline)
-                Spacer()
-                Button("完成") { dismiss() }.keyboardShortcut(.defaultAction)
-            }
-            .padding(16)
-            Divider()
-
-            if let error {
-                Text(error).foregroundStyle(.red).padding()
-            }
-
-            List(skills) { skill in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(skill.name).font(.body.weight(.medium))
-                    Text(skill.description).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    Text(skill.root).font(.caption2).foregroundStyle(.tertiary)
-                }
-                .padding(.vertical, 2)
-            }
-        }
-        .frame(width: 560, height: 480)
-        .task { await load() }
-    }
-
-    private func load() async {
-        do {
-            let data = try await CoreClient.shared.request("skills")
-            skills = (data["skills"]?.arrayValue ?? []).compactMap { item in
-                guard let name = item["name"]?.stringValue else { return nil }
-                return Skill(
-                    name: name,
-                    description: item["description"]?.stringValue ?? "",
-                    root: item["root"]?.stringValue ?? ""
-                )
-            }
-        } catch {
-            self.error = error.localizedDescription
-        }
     }
 }

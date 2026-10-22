@@ -27,6 +27,7 @@ from .view_models import (
     cleaned_count,
     completion_view,
     result_view,
+    tools_view,
     large_view,
     orphans_view,
     review_view,
@@ -143,6 +144,7 @@ class CoreService:
             "app.open": self._app_open,
             "files.reveal": self._files_reveal,
             "trash.open": self._trash_open,
+            "tools.list": self._tools_list,
             "system": self._system,
             "skills": self._skills,
             "apps": self._apps,
@@ -277,6 +279,12 @@ class CoreService:
             raise ValueError("这个构建不支持打开废纸篓")
         opener()
         return {"opened": True}
+
+    def _tools_list(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
+        """AI 能怎么调用 Mac Cleaner：MCP 工具 + stdio 命令 + 一条示例。"""
+        from .core_cli import COMMAND_HELP
+
+        return tools_view(COMMAND_HELP)
 
     # ---------- 清理 ----------
 

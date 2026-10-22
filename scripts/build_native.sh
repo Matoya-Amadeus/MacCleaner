@@ -19,6 +19,14 @@ if [[ ! -x "$CORE/maccleaner-core" ]]; then
   exit 2
 fi
 
+# 防呆：内核源码比二进制新，说明改了 Python 却没重打包。
+# 这个坑踩过两次（files.reveal / tools.list 都是"界面加了命令、内核还是旧的"），
+# 表现是界面上莫名其妙一条 "不认识的命令"。
+if [[ -n "$(find "$REPO/src/maccleaner" -name '*.py' -newer "$CORE/maccleaner-core" -print -quit)" ]]; then
+  echo "内核源码比 dist 里的二进制新——先跑 bash scripts/build_core.sh" >&2
+  exit 3
+fi
+
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 

@@ -35,6 +35,7 @@ COMMAND_HELP: dict[str, str] = {
     "app.open": "打开一个 .app（Sparkle 应用内更新用，只接受存在的 .app）",
     "files.reveal": "在 Finder 中显示路径 args: path（必须存在）",
     "trash.open": "打开废纸篓（完成页用）",
+    "tools.list": "AI 可调用的 MCP 工具与 stdio 命令清单",
     "clean": "执行清理 args: approved_ids[], selected_ids[]（空勾选会被拒绝）",
     "uninstall.plan": "卸载计划 args: path, bundle_id, name",
     "uninstall.apply": "执行卸载 args: path, item_ids[]（空勾选会被拒绝）",
