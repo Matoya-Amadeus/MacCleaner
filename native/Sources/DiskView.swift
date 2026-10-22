@@ -226,6 +226,8 @@ struct DiskView: View {
                 percent: summary["percent"]?.doubleValue ?? 0,
                 sections: []
             )
+            // 只有 statfs：即使没有完全磁盘访问权限，容量也是真实的，时间戳照样要有。
+            loadedAt = Date()
         } catch {
             self.error = error.localizedDescription
             return

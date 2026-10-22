@@ -50,6 +50,7 @@ struct UninstallListView: View {
     @State private var planning: String?
     @State private var plan: Plan?
     @State private var notice: String?
+    @StateObject private var timer = ElapsedTimer()
 
     struct App: Identifiable {
         let id: String          // 用 path 做 id：bundle id 可能缺失
@@ -142,6 +143,7 @@ struct UninstallListView: View {
                 await makePlan(app)
             }
         }
+        .progressOverlay(planning != nil, title: "正在清点残留…", detail: "逐个目录核对，不会删除任何东西", timer: timer)
         .sheet(item: $plan) { plan in
             UninstallPlanSheet(plan: plan) { message in
                 self.plan = nil
@@ -193,7 +195,11 @@ struct UninstallListView: View {
 
     private func makePlan(_ app: App) async {
         planning = app.path
-        defer { planning = nil }
+        timer.start()
+        defer {
+            planning = nil
+            timer.stop()
+        }
         do {
             let data = try await CoreClient.shared.request(
                 "uninstall.plan",
@@ -233,6 +239,8 @@ struct UninstallPlanSheet: View {
     @State private var checked: Set<String> = []
     @State private var applying = false
     @State private var error: String?
+    @State private var confirming = false
+    @StateObject private var timer = ElapsedTimer()
 
     private var exact: [UninstallListView.PlanItem] { plan.items.filter { $0.confidence != "name-match" && !$0.requiresAdmin } }
     private var guessed: [UninstallListView.PlanItem] { plan.items.filter { $0.confidence == "name-match" && !$0.requiresAdmin } }
@@ -295,7 +303,7 @@ struct UninstallPlanSheet: View {
                     .font(.callout.weight(.medium)).monospacedDigit()
                 Spacer()
                 Button {
-                    Task { await apply() }
+                    confirming = true
                 } label: {
                     if applying { ProgressView().controlSize(.small) }
                     else { Text(checked.isEmpty ? "移入废纸篓" : "移入废纸篓 \(checked.count) 项") }
@@ -306,6 +314,18 @@ struct UninstallPlanSheet: View {
             .padding(16)
         }
         .frame(width: 640, height: 560)
+        .progressOverlay(applying, title: "正在移入废纸篓…", detail: nil, timer: timer)
+        .confirmationDialog(
+            "确认卸载 \(plan.appName)？",
+            isPresented: $confirming
+        ) {
+            Button("移入废纸篓 \(checked.count) 项", role: .destructive) {
+                Task { await apply() }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("将移走 \(checked.count) 项，共 \(ByteText.format(pickedBytes))。移入废纸篓后可恢复。")
+        }
         .onAppear { checked = Set(exact.map(\.id)) }
     }
 
@@ -328,7 +348,11 @@ struct UninstallPlanSheet: View {
 
     private func apply() async {
         applying = true
-        defer { applying = false }
+        timer.start()
+        defer {
+            applying = false
+            timer.stop()
+        }
         do {
             let result = try await CoreClient.shared.request(
                 "uninstall.apply",
@@ -355,6 +379,7 @@ struct UpdatesListView: View {
     @State private var applying = false
     @State private var error: String?
     @State private var notice: String?
+    @StateObject private var timer = ElapsedTimer()
 
     struct Item: Identifiable {
         let id: String          // 内核给的稳定键 manager|kind|name
@@ -456,6 +481,7 @@ struct UpdatesListView: View {
             .padding(16)
         }
         .task { if groups.isEmpty && sparkle.isEmpty { await load() } }
+        .progressOverlay(applying, title: "正在更新…", detail: "brew 可能要几分钟；完成后会刷新列表", timer: timer)
     }
 
     private func load() async {
@@ -488,7 +514,11 @@ struct UpdatesListView: View {
 
     private func apply() async {
         applying = true
-        defer { applying = false }
+        timer.start()
+        defer {
+            applying = false
+            timer.stop()
+        }
         do {
             let result = try await CoreClient.shared.request(
                 "updates.apply", args: ["ids": .array(checked.sorted().map { .string($0) })]
@@ -526,6 +556,7 @@ struct OrphansListView: View {
     @State private var applying = false
     @State private var error: String?
     @State private var notice: String?
+    @StateObject private var timer = ElapsedTimer()
 
     struct Item: Identifiable {
         var id: String { path }
@@ -608,6 +639,7 @@ struct OrphansListView: View {
             .padding(16)
         }
         .task { if groups.isEmpty { await load() } }
+        .progressOverlay(applying, title: "正在移入废纸篓…", detail: nil, timer: timer)
     }
 
     private func displayPath(_ path: String) -> String {
@@ -639,7 +671,11 @@ struct OrphansListView: View {
 
     private func apply() async {
         applying = true
-        defer { applying = false }
+        timer.start()
+        defer {
+            applying = false
+            timer.stop()
+        }
         do {
             let result = try await CoreClient.shared.request(
                 "orphans.apply", args: ["paths": .array(checked.sorted().map { .string($0) })]
