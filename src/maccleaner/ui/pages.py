@@ -22,6 +22,14 @@ from urllib.parse import urlparse
 from .treemap import squarify as treemap_squarify
 from typing import Any, Iterable, Sequence
 
+from ..view_models import (
+    APP_CATEGORY_ORDER as _APP_CATEGORY_ORDER,
+    REVIEW_GROUPS as _REVIEW_GROUPS,
+    UPDATE_GROUP_LABELS as _UPDATE_GROUP_LABELS,
+    UPDATE_GROUP_ORDER as _UPDATE_GROUP_ORDER,
+    orphan_bucket as _orphan_bucket,
+    review_group_for as _review_group,
+)
 from .shell import state_page
 
 
@@ -203,13 +211,6 @@ def _app_icon(uri: Any) -> str:
         return ""
     return f'<img class="app-ico" src="{html.escape(text)}" alt="" width="22" height="22">'
 
-
-# 应用分类的展示顺序（卸载页左栏）：最常清理的排前面，"其它"垫底。
-# 放在页面层而不是 deps：这是**展示顺序**，不是数据事实（deps 只负责把
-# LSApplicationCategoryType 映射成中文名）。
-_APP_CATEGORY_ORDER: tuple[str, ...] = (
-    "浏览器", "开发工具", "社交与通讯", "效率办公", "设计与图像", "影音", "游戏", "阅读资讯", "系统工具", "其它",
-)
 
 def _rows(
     items: Iterable[dict[str, Any]],
@@ -405,31 +406,6 @@ def render_progress_html(payload: dict[str, Any] | None = None, *, stage: str = 
         ),
         current=str(data.get("nav") or "clean"),
     )
-
-
-# 按"谁产生"分组（学 Mole 的分类法）：用户不需要知道 category，
-# 只需要知道"这是谁留下的、删了会怎样"。
-_REVIEW_GROUPS: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
-    ("system", "系统数据", "需管理员权限，本工具只测量不删除", ()),
-    ("browser", "浏览器", "浏览器留下的缓存（不含 Cookies / 登录数据），默认已勾选", ("browser",)),
-    ("app", "App 缓存与日志", "应用运行时生成，删了会重建", ("cache", "logs")),
-    ("dev", "开发工具", "Xcode / 包管理器 / 编辑器缓存", (
-        "xcode", "android", "ios", "ide", "package-cache", "homebrew", "flutter", "browser-cache",
-    )),
-    ("containers", "容器与虚拟机", "Docker 等运行时数据，删除后需要重新拉取", ("docker",)),
-    ("user", "你的文件", "Downloads、安装包、iOS 备份——删前自己确认", ("user-files",)),
-    ("trash", "废纸篓", "清空后不可恢复", ("__trash__",)),
-)
-
-
-def _review_group(candidate: dict[str, Any]) -> str:
-    if str(candidate.get("target_id") or "") == "trash":
-        return "trash"
-    category = str(candidate.get("kind") or "")
-    for key, _label, _hint, categories in _REVIEW_GROUPS:
-        if category in categories:
-            return key
-    return "app"
 
 
 def _review_system_html(system: dict[str, Any] | None, *, interactive: bool) -> str:
@@ -1229,24 +1205,8 @@ def render_updates_list_html(
     """
     items = [item for item in (payload.get("items") or []) if isinstance(item, dict)]
 
-    labels = {
-        ("brew", "formula"): "Homebrew formula",
-        ("brew", "cask"): "Homebrew cask",
-        ("mas", "app-store"): "App Store",
-        ("npm", "npm-global"): "npm 全局包",
-        ("pip", "pip"): "Python 包",
-        ("gem", "gem"): "Ruby gem",
-        ("rustup", "toolchain"): "Rust 工具链",
-    }
-    order = [
-        "Homebrew formula",
-        "Homebrew cask",
-        "App Store",
-        "npm 全局包",
-        "Python 包",
-        "Ruby gem",
-        "Rust 工具链",
-    ]
+    labels = _UPDATE_GROUP_LABELS
+    order = list(_UPDATE_GROUP_ORDER)
     buckets: dict[str, list[str]] = {}
 
     for index, item in enumerate(items):
@@ -1663,20 +1623,6 @@ def _treemap_svg(
             else '<p class="meta">面积 = 这些目录之间的占比。</p></div>'
         )
     )
-
-
-def _orphan_bucket(path: str) -> str:
-    """把残留路径归到"藏在哪个目录"，作为分组维度。"""
-    parts = [part for part in Path(path).parts if part]
-    if "Library" in parts:
-        index = parts.index("Library")
-        if index + 1 < len(parts):
-            name = parts[index + 1]
-            return {
-                "Saved Application State": "Saved State",
-                "Application Support": "Application Support",
-            }.get(name, name)
-    return "其它"
 
 
 def render_orphans_html(payload: dict[str, Any] | None = None, *, interactive: bool = True) -> str:

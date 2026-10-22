@@ -36,8 +36,12 @@
 | `disk` | — | `{total,used,free,percent,sections[],system{}}` | 会对各目录跑 `du`；**需要「完全磁盘访问权限」**，否则体积全 0 |
 | `system` | — | `{load[],cpu_count,memory_*,processes[],power{},thermal{}}` | 只读 |
 | `skills` | — | `{skills[]}` | 每项 `{name,description,path,root}` |
-| `apps` | — | `{apps[]}` | 每项 `{name,bundle_id,path,category,...}` |
-| `scan` | — | `{report{}}` | 内核原始审计报告；**分组由内核在 M1 补**，暂由界面自行组织 |
+| `apps` | — | `{apps[],groups[],count}` | 每项 `{name,bundle_id,path,category,...}`；`groups` 按 macOS 官方分类排好序 |
+| `scan` | — | `{report{}}` | 内核原始审计报告（调试用） |
+| `review.payload` | — | `{candidates[],groups[],count,total_bytes}` | **分组已在核内**（系统数据/浏览器/App/开发工具/容器/你的文件/废纸篓） |
+| `updates.list` | — | `{items[],groups[],sparkle_updates[],sparkle_rest[],notes[]}` | 只把**确认有更新**的 Sparkle 放 `sparkle_updates` |
+| `orphans.list` | — | `{items[],groups[],count,total_bytes}` | 按 `~/Library/<子目录>` 分桶 |
+| `large.list` | — | `{items[],count,total_bytes,roots[],min_bytes}` | 按体积降序 |
 | `clean` | `approved_ids[]`,`selected_ids[]` | 清理结果（含回执） | **空 `approved_ids` 直接拒绝** |
 | `uninstall.plan` | `path`（必需）,`bundle_id`,`name` | 卸载计划（`app`,`items[]`,`user_total_bytes`） | 只读，不删 |
 | `uninstall.apply` | `path`,`item_ids[]` | 执行结果 | **空 `item_ids` 直接拒绝** |

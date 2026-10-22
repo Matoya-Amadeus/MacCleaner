@@ -108,6 +108,33 @@ class EventTests(unittest.TestCase):
         self.assertFalse(data["system"]["admin"])
 
 
+    def test_review_payload_returns_ready_groups(self) -> None:
+        """界面不该自己分组：`review.payload` 直接给好 groups（规则在内核）。"""
+        messages = _service().dispatch({"id": "1", "cmd": "review.payload"})
+        self.assertEqual(messages[0]["event"], "started")
+        data = messages[-1]["data"]
+        self.assertEqual(data["count"], 1)
+        self.assertEqual([group["key"] for group in data["groups"]], ["app"])
+        self.assertEqual(data["groups"][0]["bytes"], 4096)
+
+    def test_updates_list_splits_sparkle(self) -> None:
+        def check():
+            return {"items": [], "sparkle": [
+                {"name": "Has", "update_available": True},
+                {"name": "None", "update_available": False}], "notes": []}
+
+        data = _final(_service(updates_check=check).dispatch({"id": "1", "cmd": "updates.list"}))["data"]
+        self.assertEqual([item["name"] for item in data["sparkle_updates"]], ["Has"])
+        self.assertEqual([item["name"] for item in data["sparkle_rest"]], ["None"])
+
+    def test_apps_include_category_groups(self) -> None:
+        apps = lambda: [
+            {"name": "A", "category": "开发工具"},
+            {"name": "B", "category": "浏览器"},
+        ]
+        data = _final(_service(apps=apps).dispatch({"id": "1", "cmd": "apps"}))["data"]
+        self.assertEqual([group["label"] for group in data["groups"]], ["浏览器", "开发工具"])
+
 class SafetyGateTests(unittest.TestCase):
     def test_clean_rejects_empty_approval(self) -> None:
         final = _final(_service().dispatch({"id": "1", "cmd": "clean", "args": {"approved_ids": []}}))

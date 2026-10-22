@@ -21,6 +21,14 @@ import json
 import sys
 from typing import Any, Callable, Iterable
 
+from .view_models import (
+    apps_view,
+    large_view,
+    orphans_view,
+    review_view,
+    updates_view,
+)
+
 PROTOCOL_VERSION = 1
 
 # 错误码：界面按 code 做分支，message 只给人看（可能变）。
@@ -111,10 +119,12 @@ class CoreService:
             "ping": self._ping,
             "disk": self._disk,
             "disk.summary": self._disk_summary,
+            "large.list": self._large_list,
             "system": self._system,
             "skills": self._skills,
             "apps": self._apps,
             "scan": self._scan,
+            "review.payload": self._review_payload,
             # 清理
             "clean": self._clean,
             # 卸载
@@ -122,9 +132,11 @@ class CoreService:
             "uninstall.apply": self._uninstall_apply,
             # 更新
             "updates.check": self._updates_check,
+            "updates.list": self._updates_list,
             "updates.apply": self._updates_apply,
             # 残留
             "orphans.scan": self._orphans_scan,
+            "orphans.list": self._orphans_list,
             "orphans.apply": self._orphans_apply,
             # 系统级目录（需授权）
             "system.measure": self._system_measure,
@@ -166,12 +178,26 @@ class CoreService:
         return {"skills": self._call("skills", default=[]) or []}
 
     def _apps(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
-        return {"apps": self._call("apps", default=[]) or []}
+        """已安装应用 + **已分好的分类组**（规则的唯一来源在内核，界面不复制）。"""
+        return apps_view(self._call("apps", default=[]) or [])
 
     def _scan(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
         """只读扫描。返回内核原始报告；分组/展示留给上层（M1 会把分组也收到内核）。"""
         emit({"id": request_id, "event": "started", "op": "scan"})
         return {"report": self._call("audit", default={}) or {}}
+
+    def _review_payload(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
+        """扫一遍并**直接给出分组好的审阅数据**（界面不用知道分类规则）。"""
+        emit({"id": request_id, "event": "started", "op": "review.payload"})
+        report = self._call("audit", default={}) or {}
+        return review_view(report)
+
+    def _large_list(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
+        emit({"id": request_id, "event": "started", "op": "large.list"})
+        runner = getattr(self.deps, "large_files", None)
+        if runner is None:
+            raise ValueError("这个构建不支持大文件扫描")
+        return large_view(self._call("large_files", default={}) or {})
 
     # ---------- 清理 ----------
 
@@ -215,6 +241,11 @@ class CoreService:
             default={},
         ) or {}
 
+    def _updates_list(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
+        """检查并给出**分组好的更新清单**（Sparkle 只保留确认有更新的）。"""
+        emit({"id": request_id, "event": "started", "op": "updates.list"})
+        return updates_view(self._call("updates_check", default={}) or {})
+
     # ---------- 更新 ----------
 
     def _updates_check(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
@@ -243,6 +274,13 @@ class CoreService:
             raise ValueError("ids 不能为空")
         emit({"id": request_id, "event": "started", "op": "orphans.apply", "count": len(ids)})
         return self._call("orphans_apply", ids, default={}) or {}
+
+    def _orphans_list(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
+        emit({"id": request_id, "event": "started", "op": "orphans.list"})
+        runner = getattr(self.deps, "orphans_scan", None)
+        if runner is None:
+            raise ValueError("这个构建不支持残留扫描")
+        return orphans_view(self._call("orphans_scan", default={}) or {})
 
     # ---------- 系统级目录 ----------
 
