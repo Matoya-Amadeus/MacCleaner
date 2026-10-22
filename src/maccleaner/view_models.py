@@ -311,3 +311,7 @@ def completion_view(report: dict[str, Any]) -> dict[str, Any]:
         "before_free_bytes": int(report.get("before_free_bytes") or 0),
         "after_free_bytes": int(report.get("after_free_bytes") or 0),
     }
+
+def cleaned_count(report: dict[str, Any]) -> int:
+    """统计真正被移走的条目数（`status` 落在 CLEANED_STATES 里）。"""
+    return sum(1 for item in _plan_items(report) if str(item.get("status")) in _CLEANED_STATES)

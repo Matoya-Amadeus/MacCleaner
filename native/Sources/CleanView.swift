@@ -45,6 +45,9 @@ struct RecommendedView: View {
     @State private var error: String?
     @State private var notice: String?
     @State private var confirming = false
+    @StateObject private var timer = ElapsedTimer()
+    @State private var busy = false
+    @State private var completion: CleanCompletion?
 
     struct Item: Identifiable {
         let id: String          // target_id
@@ -114,9 +117,24 @@ struct RecommendedView: View {
             }
             .padding(16)
         }
-        .task { if groups.isEmpty { await scan() } }
+        .task {
+            if groups.isEmpty { await scan() }
+            // 开发钩子：MACCLEANER_DEV_COMPLETION=1 时直接弹一张样例完成页，便于截图/验收。
+            if ProcessInfo.processInfo.environment["MACCLEANER_DEV_COMPLETION"] != nil, completion == nil {
+                completion = CleanCompletion(
+                    recoverableBytes: 2_570_000_000,
+                    freedBytes: 0,
+                    skipped: [(path: "/Users/x/Library/Caches/com.demo/locked.db", reason: "permission denied")],
+                    receiptPath: "/Users/x/.maccleaner/receipts/cleanup-2026-10-22.json"
+                )
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .mcReload)) { _ in
             Task { await scan() }
+        }
+        .progressOverlay(busy, title: "正在清理…", detail: "移入废纸篓，可在废纸篓里恢复", timer: timer)
+        .sheet(item: $completion) { sheet in
+            CompletionSheet(completion: sheet) { completion = nil }
         }
         .sheet(isPresented: $confirming) {
             ConfirmCleanSheet(
@@ -220,14 +238,34 @@ struct RecommendedView: View {
     private func performClean() async {
         confirming = false
         let approved = checked.sorted()
+        busy = true
+        timer.start()
+        defer {
+            busy = false
+            timer.stop()
+        }
         do {
             let result = try await CoreClient.shared.request(
                 "clean",
                 args: ["approved_ids": .array(approved.map { .string($0) }),
                        "selected_ids": .array(approved.map { .string($0) })]
             )
-            let moved = result["moved_count"]?.intValue ?? result["cleaned_count"]?.intValue ?? 0
-            notice = "已把 \(moved) 项移入废纸篓；可在废纸篓里恢复"
+            // 完成页数据由内核给（口径统一）：可恢复 / 实际释放 / 跳过原因。
+            if let payload = result["completion"], let object = payload.objectValue {
+                let skipped = (object["skipped_items"]?.arrayValue ?? []).compactMap { item -> (String, String)? in
+                    guard let path = item["path"]?.stringValue else { return nil }
+                    return (path, item["reason"]?.stringValue ?? "")
+                }
+                completion = CleanCompletion(
+                    recoverableBytes: object["recoverable_bytes"]?.intValue ?? 0,
+                    freedBytes: object["actual_freed_bytes"]?.intValue ?? 0,
+                    skipped: skipped.map { (path: $0.0, reason: $0.1) },
+                    receiptPath: object["receipt_path"]?.stringValue ?? ""
+                )
+            } else {
+                let moved = result["moved_count"]?.intValue ?? 0
+                notice = "已把 \(moved) 项移入废纸篓；可在废纸篓里恢复"
+            }
             checked = []
             await scan()
         } catch {

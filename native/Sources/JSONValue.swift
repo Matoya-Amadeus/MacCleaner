@@ -113,6 +113,8 @@ enum JSONValue: Codable, Equatable {
 /// 字节数统一按十进制显示（1 GB = 1000 MB），与 Finder 一致。
 enum ByteText {
     static func format(_ bytes: Int64) -> String {
+        // `ByteCountFormatter` 对 0 会输出 "Zero KB"——列表里看着像单位错了。
+        guard bytes > 0 else { return "0 B" }
         let formatter = ByteCountFormatter()
         formatter.countStyle = .decimal
         formatter.allowedUnits = [.useKB, .useMB, .useGB, .useTB]

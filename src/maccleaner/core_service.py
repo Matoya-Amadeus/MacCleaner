@@ -24,6 +24,8 @@ from typing import Any, Callable, Iterable
 
 from .view_models import (
     apps_view,
+    cleaned_count,
+    completion_view,
     large_view,
     orphans_view,
     review_view,
@@ -139,6 +141,7 @@ class CoreService:
             "files.trash": self._files_trash,
             "app.open": self._app_open,
             "files.reveal": self._files_reveal,
+            "trash.open": self._trash_open,
             "system": self._system,
             "skills": self._skills,
             "apps": self._apps,
@@ -265,6 +268,14 @@ class CoreService:
         opener(str(target))
         return {"revealed": str(target)}
 
+    def _trash_open(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
+        """打开废纸篓（完成页的"去看看"）。"""
+        opener = getattr(self.deps, "open_trash", None)
+        if opener is None:
+            raise ValueError("这个构建不支持打开废纸篓")
+        opener()
+        return {"opened": True}
+
     # ---------- 清理 ----------
 
     def _clean(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
@@ -276,8 +287,16 @@ class CoreService:
         emit({"id": request_id, "event": "started", "op": "clean", "count": len(approved)})
         runner = getattr(self.deps, "clean_approved", None)
         if runner is not None:
-            return self._call("clean_approved", approved, selected, default={}) or {}
-        return self._call("clean", default={}) or {}
+            report = self._call("clean_approved", approved, selected, default={}) or {}
+        else:
+            report = self._call("clean", default={}) or {}
+        # 完成页口径由内核算（可恢复 / 实际释放 / 跳过），界面只负责显示。
+        return {
+            "completion": completion_view(report),
+            "moved_count": cleaned_count(report),
+            "cleaned_count": cleaned_count(report),
+            "status": str(report.get("mode") or "applied"),
+        }
 
     # ---------- 卸载 ----------
 
