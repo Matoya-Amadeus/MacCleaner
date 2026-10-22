@@ -431,6 +431,8 @@ struct UpdatesListView: View {
     @State private var error: String?
     @State private var notice: String?
     @State private var result: OperationResult?
+    @State private var pendingSparkle: [String: String] = [:]   // path → 打开时的版本
+    @State private var knownVersions: [String: String] = [:]    // path → 当前版本（含"已是最新"的）
     @StateObject private var timer = ElapsedTimer()
 
     struct Item: Identifiable {
@@ -561,6 +563,29 @@ struct UpdatesListView: View {
                                version: raw["version"]?.stringValue ?? "",
                                latest: raw["latest"]?.stringValue ?? "")
             }
+
+            // 版本表要包含**全部** Sparkle 应用（含"已是最新"的）：
+            // 用户刚在应用内更新完，这个应用就已经从"有更新"挪到"已是最新"那一组了。
+            var versions: [String: String] = [:]
+            for key in ["sparkle_updates", "sparkle_rest", "sparkle"] {
+                for raw in data[key]?.arrayValue ?? [] {
+                    guard let path = raw["path"]?.stringValue else { continue }
+                    versions[path] = raw["version"]?.stringValue ?? ""
+                }
+            }
+            knownVersions = versions
+
+            // 核对：点过"在应用内更新"的应用，版本变了吗？
+            for (path, oldVersion) in pendingSparkle {
+                guard let now = versions[path], !now.isEmpty else { continue }
+                if now != oldVersion {
+                    let name = (data["sparkle_updates"]?.arrayValue ?? []).first {
+                        $0["path"]?.stringValue == path
+                    }?["name"]?.stringValue ?? URL(fileURLWithPath: path).lastPathComponent
+                    notice = "\(name) 已更新：\(oldVersion) → \(now)"
+                    pendingSparkle.removeValue(forKey: path)
+                }
+            }
             checked = Set(groups.flatMap(\.items).map(\.id))   // 更新默认为全选
             error = nil
         } catch {
@@ -598,7 +623,9 @@ struct UpdatesListView: View {
     private func open(_ app: Sparkle) async {
         do {
             _ = try await CoreClient.shared.request("app.open", args: ["path": .string(app.path)])
-            notice = "已打开 \(app.name)；请在它的窗口里完成更新"
+            // 记下打开时的版本；它更新完再回到这一页（或按 ⌘R）就会自动核对并报告。
+            pendingSparkle[app.path] = knownVersions[app.path] ?? app.version
+            notice = "已打开 \(app.name)（当前 \(app.version)）；在它里面更新完，回来按 ⌘R 我会核对版本"
         } catch {
             self.error = error.localizedDescription
         }

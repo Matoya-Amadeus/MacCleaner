@@ -78,6 +78,27 @@
 | 排序条 | 列表按分类/体积固定顺序更省心（卸载页以前有，已移除） |
 | 遥测 / 云同步 | 不做 |
 
+## 同类产品的技术栈（2026-10-22 核对）
+
+拆包看过 / 读 README 得到的结论，供"我们该用什么"的参照：
+
+| 产品 | 形态 | UI | 内核 |
+|---|---|---|---|
+| **Mac Cleaner**（本项目） | macOS 原生 App | **SwiftUI**（19 个 Swift 文件，无 WebView） | **Python**（打包成 21 MB 自包含二进制，stdio JSON） |
+| **Codex CLI** | 终端程序 | 无（TUI） | **Rust** |
+| **Codex App**（本机 `ChatGPT.app`，bundle `com.openai.codex`） | 桌面 App | **Electron + React 19 + Vite**（内嵌 Chromium 155；包体 1.6 GB） | 与 CLI 同源 |
+| **Mole** | TUI | 无 | Shell / Go |
+| **Pearcleaner** | macOS 原生 App | **SwiftUI** | Swift |
+
+两点观察：
+
+1. **同一家公司的 CLI 和 App 用两套栈**（Rust / Electron）——栈跟着形态走，不跟着语言偏好走；
+2. 桌面 GUI 用 Web 是工业界常态（Codex App 就是），代价是 1.6 GB 与 Chromium 升级负担；
+   我们用 SwiftUI，代价是 UI 逻辑不能与 CLI 共用（CLI/MCP 走纯文本与 JSON）。
+
+这条也解释了 2026-10 那次迁移的方向：**界面换 SwiftUI、内核留 Python**——
+UI 侧拿原生感，内核侧保住安全规则与 AI 调用面。
+
 ## 附：几处容易记错的事实
 
 | 常见误解 | 事实 |

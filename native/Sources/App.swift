@@ -52,8 +52,6 @@ private func post(_ item: SidebarItem) {
 
 @main
 struct MacCleanerApp: App {
-    @AppStorage(RecentActivity.key) private var lastSummary = ""
-
     var body: some Scene {
         WindowGroup("Mac Cleaner") {
             RootView()
@@ -61,17 +59,7 @@ struct MacCleanerApp: App {
         }
         .windowToolbarStyle(.unified)
 
-        // 菜单栏常驻：关掉窗口也能看到"上次做了什么"、并一键叫回主窗口。
-        // 图标用 internaldrive，与侧栏「磁盘」一致，不会认错是别的 App。
-        MenuBarExtra("Mac Cleaner", systemImage: "internaldrive") {
-            Button("打开 Mac Cleaner") { MainWindow.show() }
-                .keyboardShortcut("o", modifiers: .command)
-            Divider()
-            Text(lastSummary.isEmpty ? "还没有操作记录" : lastSummary)
-            Divider()
-            Button("退出") { NSApp.terminate(nil) }
-                .keyboardShortcut("q", modifiers: .command)
-        }
+
         .commands {
             // 原生菜单：这是 WebView 版永远给不了的那一层的一部分。
             CommandGroup(replacing: .newItem) {}
@@ -102,6 +90,7 @@ struct RootView: View {
                 Label(item.title, systemImage: item.symbol).tag(item)
             }
             .onAppear {
+                StatusItemController.shared.sync()
                 // 开发钩子（MACCLEANER_DEV_PLAN）要落到「软件」页，否则截图得手点一次。
                 if let path = ProcessInfo.processInfo.environment["MACCLEANER_DEV_PLAN"], !path.isEmpty {
                     selection = .software
@@ -137,6 +126,14 @@ struct RootView: View {
                         Label("技能", systemImage: "wand.and.stars")
                     }
                     .help("这台机器上 agent 能调用的 skill")
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        StatusItemController.shared.toggle()
+                    } label: {
+                        Label("菜单栏图标", systemImage: "menubar.rectangle")
+                    }
+                    .help("在菜单栏显示 Mac Cleaner 图标（菜单栏挤的话可以关掉）")
                 }
             }
             .sheet(isPresented: $showSkills) { SkillsSheet() }
