@@ -323,6 +323,7 @@ _RESULT_TITLES = {
     "updates": "更新完成",
     "orphans": "残留清理完成",
     "clean": "清理完成",
+    "files": "大文件清理完成",
 }
 
 

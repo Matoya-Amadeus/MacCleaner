@@ -239,6 +239,9 @@ struct RecommendedView: View {
     private func performClean() async {
         confirming = false
         let approved = checked.sorted()
+        // 指纹确认（没有 Touch ID 的机器直接放行，见 BiometricGate 的注释）。
+        guard await BiometricGate.confirm(reason: "确认清理 \(approved.count) 项") else { return }
+
         busy = true
         timer.start()
         defer {
@@ -268,6 +271,10 @@ struct RecommendedView: View {
                 let moved = result["moved_count"]?.intValue ?? 0
                 notice = "已把 \(moved) 项移入废纸篓；可在废纸篓里恢复"
             }
+            await Notifier.post(
+                title: "清理完成",
+                body: "已把 \(result["moved_count"]?.intValue ?? 0) 项移入废纸篓，可在废纸篓里恢复"
+            )
             checked = []
             await scan()
         } catch {
@@ -320,8 +327,11 @@ struct LargeFilesView: View {
     @State private var items: [Item] = []
     @State private var checked: Set<String> = []
     @State private var loading = false
+    @State private var busy = false
     @State private var error: String?
     @State private var notice: String?
+    @State private var result: OperationResult?
+    @StateObject private var applyTimer = ElapsedTimer()
     @StateObject private var timer = ElapsedTimer()
 
     struct Item: Identifiable {
@@ -390,6 +400,11 @@ struct LargeFilesView: View {
             Task { await load() }
         }
         .progressOverlay(loading, title: "正在扫描大文件…", detail: "只读，不会改动任何文件", timer: timer)
+        .progressOverlay(busy, title: "正在移入废纸篓…", detail: "每项开始前会检查一次取消",
+                         onCancel: { Task { await CoreClient.shared.cancelCurrent() } }, timer: applyTimer)
+        .sheet(item: $result) { sheet in
+            ResultSheet(result: sheet) { result = nil }
+        }
     }
 
     private func load() async {
@@ -413,12 +428,24 @@ struct LargeFilesView: View {
 
     private func trash() async {
         let paths = checked.sorted()
+        guard await BiometricGate.confirm(reason: "确认移走 \(paths.count) 个大文件") else { return }
+        busy = true
+        applyTimer.start()
+        defer {
+            busy = false
+            applyTimer.stop()
+        }
         do {
             let result = try await CoreClient.shared.request(
                 "files.trash", args: ["paths": .array(paths.map { .string($0) })]
             )
-            let moved = (result["moved"]?.arrayValue ?? []).count
-            notice = "已把 \(moved) 个文件移入废纸篓"
+            if let outcome = OperationResult.from(result["result"], canOpenTrash: true) {
+                self.result = outcome
+            } else {
+                let moved = (result["moved"]?.arrayValue ?? []).count
+                notice = "已把 \(moved) 个文件移入废纸篓"
+            }
+            await Notifier.post(title: "大文件已移入废纸篓", body: "移走 \(paths.count) 个，可在废纸篓里恢复")
             checked = []
             await load()
         } catch {

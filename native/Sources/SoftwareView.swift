@@ -391,6 +391,7 @@ struct UninstallPlanSheet: View {
     }
 
     private func apply() async {
+        guard await BiometricGate.confirm(reason: "确认卸载 \(plan.appName)") else { return }
         applying = true
         timer.start()
         defer {
@@ -406,6 +407,7 @@ struct UninstallPlanSheet: View {
                 ]
             )
             let moved = result["moved_count"]?.intValue ?? 0
+            await Notifier.post(title: "卸载完成", body: "\(plan.appName)：已移走 \(moved) 项到废纸篓")
             dismiss()
             onDone("已把 \(moved) 项移入废纸篓；可在废纸篓里恢复",
                    OperationResult.from(result["result"], canOpenTrash: true))
@@ -738,6 +740,7 @@ struct OrphansListView: View {
     }
 
     private func apply() async {
+        guard await BiometricGate.confirm(reason: "确认移走 \(checked.count) 项残留") else { return }
         applying = true
         timer.start()
         defer {
@@ -754,6 +757,7 @@ struct OrphansListView: View {
                 let moved = (result["moved"]?.arrayValue ?? []).count
                 notice = "已把 \(moved) 项移入废纸篓"
             }
+            await Notifier.post(title: "残留清理完成", body: "已移走 \(checked.count) 项到废纸篓")
             checked = []
             await load()
         } catch {

@@ -56,6 +56,21 @@ class FilesTrashTests(unittest.TestCase):
         self.assertEqual(final["error"]["code"], "bad_args")
         self.assertIn("不支持", final["error"]["message"])
 
+    def test_trash_returns_result_envelope(self) -> None:
+        """大文件页复用统一结果页：`files.trash` 要带 result 口径。"""
+        service = _service(trash_paths=lambda paths, **_kwargs: {
+            "moved": [{"path": str(item)} for item in paths],
+            "failed": [],
+            "count": len(paths),
+            "bytes": 1000,
+        })
+        data = _final(service.dispatch(
+            {"id": "1", "cmd": "files.trash", "args": {"paths": ["/Users/x/Downloads/big.bin"]}}
+        ))["data"]
+        self.assertEqual(data["result"]["title"], "大文件清理完成")
+        self.assertEqual(data["result"]["count"], 1)
+        self.assertEqual(data["result"]["bytes"], 1000)
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

@@ -231,7 +231,8 @@ class CoreService:
         runner = getattr(self.deps, "trash_paths", None)
         if runner is None:
             raise ValueError("这个构建不支持移入废纸篓")
-        return self._call("trash_paths", paths, should_stop=self.should_stop, default={}) or {}
+        report = self._call("trash_paths", paths, should_stop=self.should_stop, default={}) or {}
+        return {**report, "result": result_view("files", report)}
 
     def _app_open(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
         """打开一个 .app（自带更新器的「在应用内更新」用它）。
