@@ -65,7 +65,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
 
 # 页面运行时（2026-10-18）：把点击变成一次 `/action` 投递。
 # 为什么不用行内 onclick：动作必须带 CSRF 头，且要按勾选框收集 id——集中一处才不会各页各写一套。
-_RUNTIME_JS = """
+_RUNTIME_JS = r"""
 <script>
 (function(){
   // ---- 复选框多选（2026-10-19）：Web 视图里补回 macOS 表格的手感 ----

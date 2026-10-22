@@ -33,6 +33,7 @@ mcp = ["mcp>=1,<2"]
 [project.scripts]
 maccleaner = "maccleaner.cli:main"
 maccleaner-mcp = "maccleaner.mcp_server:main"
+maccleaner-core = "maccleaner.core_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Matoya-Amadeus/MacCleaner"
