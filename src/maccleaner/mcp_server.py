@@ -32,6 +32,9 @@ def build_mcp_server(service: StorageService | None = None):  # noqa: ANN201
         "MacCleaner",
         instructions=(
             "Audit first, plan second, and apply only exact target IDs from the returned plan_id. "
+            "**Always show the plan (paths + sizes) to the user and get explicit confirmation before "
+            "applying** — never clean on your own initiative, and never expand the approved list. "
+            "Plans are single-use: a used or expired plan_id must be regenerated. "
             "Browser identity and credential data remain blocked."
         ),
     )

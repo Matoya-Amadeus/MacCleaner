@@ -45,6 +45,8 @@ struct ToolCatalogView: View {
     @State private var mcp: [Entry] = []
     @State private var commands: [Entry] = []
     @State private var example = ""
+    @State private var workflow: [(String, String)] = []
+    @State private var safety: [String] = []
     @State private var search = ""
     @State private var error: String?
 
@@ -83,6 +85,33 @@ struct ToolCatalogView: View {
             }
 
             List {
+                if !workflow.isEmpty {
+                    Section("推荐调用顺序 · 先列清单，等用户确认再执行") {
+                        ForEach(Array(workflow.enumerated()), id: \.offset) { index, step in
+                            HStack(alignment: .top, spacing: 8) {
+                                Text("\(index + 1)")
+                                    .font(.caption.weight(.semibold)).monospacedDigit()
+                                    .frame(width: 16, height: 16)
+                                    .background(Color.accentColor.opacity(0.15), in: Circle())
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(step.0).font(.system(.body, design: .monospaced))
+                                    Text(step.1).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                }
+                if !safety.isEmpty {
+                    Section("安全边界") {
+                        ForEach(safety, id: \.self) { line in
+                            Label(line, systemImage: "checkmark.shield")
+                                .font(.caption)
+                                .labelStyle(.titleAndIcon)
+                        }
+                    }
+                }
+
                 let mcps = filtered(mcp)
                 if !mcps.isEmpty {
                     Section("MCP 工具 · \(mcps.count) 个（agent 直接调用）") {
@@ -145,6 +174,11 @@ struct ToolCatalogView: View {
                 return Entry(name: name, summary: item["summary"]?.stringValue ?? "")
             }
             example = data["example"]?.stringValue ?? ""
+            workflow = (data["workflow"]?.arrayValue ?? []).compactMap { step in
+                guard let cmd = step["cmd"]?.stringValue else { return nil }
+                return (cmd, step["note"]?.stringValue ?? "")
+            }
+            safety = (data["safety"]?.arrayValue ?? []).compactMap { $0.stringValue }
             error = nil
         } catch {
             self.error = error.localizedDescription

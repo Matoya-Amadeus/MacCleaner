@@ -82,8 +82,14 @@ class ForwardingTests(unittest.TestCase):
             return {"status": "cancelled", "moved": [], "failed": [], "cancelled": True,
                     "remaining": ["/x/b"]}
 
-        service = CoreService(SessionDeps(audit=lambda: {}, plan=lambda: {}, clean=lambda: {},
-                                          uninstall_apply=uninstall_apply))
+        # 现在 `uninstall.apply` 会先取 plan（见 2026-10-23 的入参修复），假实现要一起给。
+        service = CoreService(SessionDeps(
+            audit=lambda: {}, plan=lambda: {}, clean=lambda: {},
+            uninstall_plan=lambda **kwargs: {"items": [{"id": "a", "path": "/x", "kind": "caches",
+                                                        "allocated_bytes": 1, "confidence": "exact"}],
+                                             "user_total_bytes": 1},
+            uninstall_apply=uninstall_apply,
+        ))
         data = dict(_final(service.dispatch(
             {"id": "1", "cmd": "uninstall.apply",
              "args": {"path": "/Applications/Demo.app", "item_ids": ["a"]}}

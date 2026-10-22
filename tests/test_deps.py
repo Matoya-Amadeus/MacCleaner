@@ -200,7 +200,10 @@ class SkillListingTests(unittest.TestCase):
             (home / "Applications").mkdir(parents=True)
             _fake_app(home / "Applications")
             apps = list_applications(home=home, with_sizes=True)
-            self.assertIn("allocated_bytes", apps[0])
+            # 注意：它也会扫真实的 /Applications，`du` 在机器忙时会超时、那一项就没有体积。
+            # 所以断言"至少有一项带体积"，而不是拍死第一项（否则全量跑时偶发失败，2026-10-23 遇到）。
+            sized = [item for item in apps if "allocated_bytes" in item]
+            self.assertTrue(sized, f"没有一个应用拿到体积（共 {len(apps)} 个）")
 
 
 class ScanCacheTests(unittest.TestCase):

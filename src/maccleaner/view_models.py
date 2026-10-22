@@ -301,9 +301,13 @@ def completion_view(report: dict[str, Any]) -> dict[str, Any]:
         receipt_path = str(receipt.get("json") or receipt.get("path") or "")
     elif receipt:
         receipt_path = str(receipt)
+    # 内核的 `actual_reclaimed_bytes` 是"处理掉的字节"，不等于"释放的字节"：
+    # 移进废纸篓的那部分仍在磁盘上。这里把可恢复部分扣掉（2026-10-23 端到端验收发现
+    # 走废纸篓却报了 100 KB 已释放）。
+    reported = int(report.get("actual_reclaimed_bytes") or 0)
     return {
         "recoverable_bytes": recoverable,
-        "actual_freed_bytes": int(report.get("actual_reclaimed_bytes") or 0),
+        "actual_freed_bytes": max(0, reported - recoverable),
         "failed_count": failed,
         "skipped_count": len(skipped),
         "skipped_items": skipped,
@@ -388,6 +392,21 @@ def tools_view(command_help: dict[str, str]) -> dict[str, Any]:
     return {
         "mcp": [{"name": name, "summary": text} for name, text in MCP_TOOLS],
         "commands": [{"name": name, "summary": text} for name, text in command_help.items()],
+        # 顺序本身就是契约：**先列清单、让人确认，才执行**。
+        # MCP 侧靠 plan_id 单次消费强制这一点；stdio 侧靠调用方守规矩，所以写在这里提醒。
+        "workflow": [
+            {"step": 1, "cmd": "scan 或 audit_storage", "note": "只读扫描，拿到候选与体积"},
+            {"step": 2, "cmd": "plan_storage / review.payload",
+             "note": "把清单（路径 + 体积 + 风险）**给用户看**，等他确认"},
+            {"step": 3, "cmd": "apply_storage_plan / clean",
+             "note": "只执行用户勾选的那些 id；空列表一律拒绝"},
+        ],
+        "safety": [
+            "所有删除都是移入废纸篓（可恢复），不调用 rm",
+            "系统级目录（/Library、/var/log）默认只测量；root 域删除需一次管理员授权",
+            "浏览器 Cookies / 登录数据始终拦掉",
+            "plan_id 一次性消费；过期或已用都要重新生成",
+        ],
         "example": (
             "echo '{\"id\":\"1\",\"cmd\":\"disk.summary\"}' "
             "| maccleaner-core serve --stdio"

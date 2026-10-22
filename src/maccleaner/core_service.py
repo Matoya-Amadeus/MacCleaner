@@ -335,10 +335,20 @@ class CoreService:
         if not items:
             raise ValueError("item_ids 不能为空")
         emit({"id": request_id, "event": "started", "op": "uninstall.apply", "count": len(items)})
+        path = str(args.get("path") or "").strip()
+        if not path:
+            raise ValueError("path 不能为空")
+        # `deps.uninstall_apply` 的入参是**冻结的 plan**（不是 app_path）——
+        # 以前在这里传 app_path/item_ids，签名对不上，命令直接 internal_error（2026-10-23 端到端验收抓到）。
+        plan = self._call("uninstall_plan", app_path=path,
+                          app_name=str(args.get("name") or ""),
+                          bundle_id=str(args.get("bundle_id") or ""), default={}) or {}
+        if not plan.get("items"):
+            raise ValueError("这个应用没有可卸载的残留项")
         report = self._call(
             "uninstall_apply",
-            app_path=str(args.get("path") or ""),
-            item_ids=items,
+            plan=plan,
+            ids=items,
             should_stop=self.should_stop,
             default={},
         ) or {}
