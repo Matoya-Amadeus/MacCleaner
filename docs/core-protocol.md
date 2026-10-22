@@ -47,7 +47,8 @@
 | `updates.list` | — | `{items[],groups[],sparkle_updates[],sparkle_rest[],notes[]}` | 只把**确认有更新**的 Sparkle 放 `sparkle_updates` |
 | `orphans.list` | — | `{items[],groups[],count,total_bytes}` | 按 `~/Library/<子目录>` 分桶 |
 | `large.list` | — | `{items[],count,total_bytes,roots[],min_bytes}` | 按体积降序 |
-| `clean` | `approved_ids[]`,`selected_ids[]` | 清理结果（含回执） | **空 `approved_ids` 直接拒绝** |
+| `clean` | `approved_ids[]`,`selected_ids[]` | `{completion{},moved_count}` | **空 `approved_ids` 直接拒绝**；`completion` 给完成页口径（可恢复/实际释放/跳过/回执） |
+| （以上四个执行命令的公共字段） | — | `result{kind,title,count,bytes,failed_count,failures[],cancelled}` | `uninstall.apply` / `updates.apply` / `orphans.apply` / `clean` 都附 `result`，界面用同一张结果页 |
 | `uninstall.plan` | `path`（必需）,`bundle_id`,`name` | 卸载计划（`app`,`items[]`,`user_total_bytes`） | 只读，不删 |
 | `uninstall.apply` | `path`,`item_ids[]` | 执行结果 | **空 `item_ids` 直接拒绝** |
 | `updates.check` | — | `{items[],sparkle[],notes[]}` | 六源并行 + Sparkle appcast |

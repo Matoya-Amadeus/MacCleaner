@@ -315,3 +315,50 @@ def completion_view(report: dict[str, Any]) -> dict[str, Any]:
 def cleaned_count(report: dict[str, Any]) -> int:
     """统计真正被移走的条目数（`status` 落在 CLEANED_STATES 里）。"""
     return sum(1 for item in _plan_items(report) if str(item.get("status")) in _CLEANED_STATES)
+
+# ---------------------------------------------------------------- 通用结果页
+
+_RESULT_TITLES = {
+    "uninstall": "卸载完成",
+    "updates": "更新完成",
+    "orphans": "残留清理完成",
+    "clean": "清理完成",
+}
+
+
+def result_view(kind: str, report: dict[str, Any]) -> dict[str, Any]:
+    """把四种执行结果收敛成同一张"结果页"需要的字段。
+
+    四种内核返回的形状各不相同（`moved/count/bytes`、`results[].ok`、`plan_items[].status`），
+    界面不该逐个适配——**口径收在内核**。
+    """
+    moved = [item for item in (report.get("moved") or []) if isinstance(item, dict)]
+    failed = [item for item in (report.get("failed") or []) if isinstance(item, dict)]
+    results = [item for item in (report.get("results") or []) if isinstance(item, dict)]
+
+    count = int(report.get("count") or report.get("moved_count") or len(moved) or 0)
+    total_bytes = int(report.get("bytes") or report.get("recovered_bytes") or 0)
+
+    if results:  # 更新：一条命令一项
+        ok_results = [item for item in results if item.get("ok")]
+        count = len(ok_results)
+        failed = [
+            {"path": str(item.get("command") or ""), "reason": str(item.get("stdout_tail") or "")[:120]}
+            for item in results
+            if not item.get("ok")
+        ]
+
+    failures = [
+        {"path": str(item.get("path") or item.get("command") or ""), "reason": str(item.get("reason") or "")[:120]}
+        for item in failed[:20]
+    ]
+    return {
+        "kind": kind,
+        "title": _RESULT_TITLES.get(kind, "完成"),
+        "count": count,
+        "bytes": total_bytes,
+        "failed_count": len(failed),
+        "failures": failures,
+        "cancelled": bool(report.get("cancelled")),
+        "status": str(report.get("status") or ""),
+    }

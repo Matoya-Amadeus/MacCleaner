@@ -26,6 +26,7 @@ from .view_models import (
     apps_view,
     cleaned_count,
     completion_view,
+    result_view,
     large_view,
     orphans_view,
     review_view,
@@ -319,12 +320,13 @@ class CoreService:
         if not items:
             raise ValueError("item_ids 不能为空")
         emit({"id": request_id, "event": "started", "op": "uninstall.apply", "count": len(items)})
-        return self._call(
+        report = self._call(
             "uninstall_apply",
             app_path=str(args.get("path") or ""),
             item_ids=items,
             default={},
         ) or {}
+        return {**report, "result": result_view("uninstall", report)}
 
     def _updates_list(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
         """检查并给出**分组好的更新清单**（Sparkle 只保留确认有更新的）。"""
@@ -342,7 +344,8 @@ class CoreService:
         if not ids:
             raise ValueError("ids 不能为空")
         emit({"id": request_id, "event": "started", "op": "updates.apply", "count": len(ids)})
-        return self._call("updates_apply", ids=ids, default={}) or {}
+        report = self._call("updates_apply", ids=ids, default={}) or {}
+        return {**report, "result": result_view("updates", report)}
 
     # ---------- 残留 ----------
 
@@ -363,7 +366,8 @@ class CoreService:
         if not paths:
             raise ValueError("paths 不能为空")
         emit({"id": request_id, "event": "started", "op": "orphans.apply", "count": len(paths)})
-        return self._call("orphans_apply", paths, should_stop=self.should_stop, default={}) or {}
+        report = self._call("orphans_apply", paths, should_stop=self.should_stop, default={}) or {}
+        return {**report, "result": result_view("orphans", report)}
 
     def _orphans_list(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
         emit({"id": request_id, "event": "started", "op": "orphans.list"})

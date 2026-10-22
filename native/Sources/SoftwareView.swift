@@ -53,6 +53,7 @@ struct UninstallListView: View {
     @State private var plan: Plan?
     @State private var notice: String?
     @StateObject private var timer = ElapsedTimer()
+    @State private var result: OperationResult?
 
     struct App: Identifiable {
         let id: String          // 用 path 做 id：bundle id 可能缺失
@@ -148,11 +149,15 @@ struct UninstallListView: View {
         .progressOverlay(planning != nil, title: "正在清点残留…", detail: "逐个目录核对，不会删除任何东西", timer: timer)
         .dropDestination(for: URL.self) { urls, _ in handleDrop(urls) }
         .sheet(item: $plan) { plan in
-            UninstallPlanSheet(plan: plan) { message in
+            UninstallPlanSheet(plan: plan) { message, outcome in
                 self.plan = nil
                 self.notice = message
+                if let outcome { self.result = outcome }
                 Task { await load() }
             }
+        }
+        .sheet(item: $result) { sheet in
+            ResultSheet(result: sheet) { result = nil }
         }
     }
 
@@ -270,7 +275,8 @@ struct UninstallListView: View {
 
 struct UninstallPlanSheet: View {
     let plan: UninstallListView.Plan
-    let onDone: (String) -> Void
+    /// (一行提示, 结果页数据)；结果页数据可能为空（内核没给 result 时回落到提示）
+    let onDone: (String, OperationResult?) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var checked: Set<String> = []
@@ -399,7 +405,9 @@ struct UninstallPlanSheet: View {
                 ]
             )
             let moved = result["moved_count"]?.intValue ?? 0
-            onDone("已把 \(moved) 项移入废纸篓；可在废纸篓里恢复")
+            dismiss()
+            onDone("已把 \(moved) 项移入废纸篓；可在废纸篓里恢复",
+                   OperationResult.from(result["result"], canOpenTrash: true))
         } catch {
             self.error = error.localizedDescription
         }
@@ -416,6 +424,7 @@ struct UpdatesListView: View {
     @State private var applying = false
     @State private var error: String?
     @State private var notice: String?
+    @State private var result: OperationResult?
     @StateObject private var timer = ElapsedTimer()
 
     struct Item: Identifiable {
@@ -519,6 +528,9 @@ struct UpdatesListView: View {
         }
         .task { if groups.isEmpty && sparkle.isEmpty { await load() } }
         .progressOverlay(applying, title: "正在更新…", detail: "brew 可能要几分钟；完成后会刷新列表", timer: timer)
+        .sheet(item: $result) { sheet in
+            ResultSheet(result: sheet) { result = nil }
+        }
     }
 
     private func load() async {
@@ -562,9 +574,11 @@ struct UpdatesListView: View {
             )
             if result["status"]?.stringValue == "refused" {
                 notice = "没有勾选任何项，什么都没升级"
+            } else if let outcome = OperationResult.from(result["result"], canOpenTrash: false) {
+                self.result = outcome
             } else {
-                let ok = (result["groups"]?.arrayValue ?? []).filter { $0["ok"]?.boolValue == true }.count
-                let total = (result["groups"]?.arrayValue ?? []).count
+                let ok = (result["results"]?.arrayValue ?? []).filter { $0["ok"]?.boolValue == true }.count
+                let total = (result["results"]?.arrayValue ?? []).count
                 notice = "已完成 \(ok)/\(total) 项；失败的项在终端里能看到输出"
             }
             checked = []
@@ -593,6 +607,7 @@ struct OrphansListView: View {
     @State private var applying = false
     @State private var error: String?
     @State private var notice: String?
+    @State private var result: OperationResult?
     @StateObject private var timer = ElapsedTimer()
 
     struct Item: Identifiable {
@@ -675,9 +690,22 @@ struct OrphansListView: View {
             }
             .padding(16)
         }
-        .task { if groups.isEmpty { await load() } }
+        .task {
+            if groups.isEmpty { await load() }
+            // 开发钩子：MACCLEANER_DEV_RESULT=1 弹一张样例结果页（截图/验收用）。
+            if ProcessInfo.processInfo.environment["MACCLEANER_DEV_RESULT"] != nil, result == nil {
+                result = OperationResult(
+                    title: "残留清理完成", count: 18, bytes: 42_000_000,
+                    failures: [(path: "/Users/x/Library/Caches/com.demo/locked.db", reason: "permission denied")],
+                    cancelled: false, canOpenTrash: true
+                )
+            }
+        }
         .progressOverlay(applying, title: "正在移入废纸篓…", detail: "每项开始前会检查一次取消",
                          onCancel: { Task { await CoreClient.shared.cancelCurrent() } }, timer: timer)
+        .sheet(item: $result) { sheet in
+            ResultSheet(result: sheet) { result = nil }
+        }
     }
 
     private func displayPath(_ path: String) -> String {
@@ -718,8 +746,12 @@ struct OrphansListView: View {
             let result = try await CoreClient.shared.request(
                 "orphans.apply", args: ["paths": .array(checked.sorted().map { .string($0) })]
             )
-            let moved = (result["moved"]?.arrayValue ?? []).count
-            notice = "已把 \(moved) 项移入废纸篓"
+            if let outcome = OperationResult.from(result["result"], canOpenTrash: true) {
+                self.result = outcome
+            } else {
+                let moved = (result["moved"]?.arrayValue ?? []).count
+                notice = "已把 \(moved) 项移入废纸篓"
+            }
             checked = []
             await load()
         } catch {
