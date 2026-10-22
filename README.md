@@ -46,6 +46,17 @@ python3 -m build --no-isolation
 
 # 用法
 
+## 安装与构建
+
+```bash
+bash scripts/build_core.sh     # 内核（PyInstaller onedir，21 MB 自包含）
+bash scripts/build_native.sh   # SwiftUI 界面（swiftc，无需 Xcode 工程）
+bash scripts/install_app.sh    # 装到 ~/Applications
+```
+
+首次打开后，在磁盘页点「打开『完全磁盘访问权限』设置」，勾上 MacCleaner 并重启 App——
+否则读不到目录体积（macOS 对清理类应用的硬门槛）。
+
 ## 界面
 
 双击 `~/Applications/MacCleaner.app`，或 `maccleaner ui`（打开原生 App）。侧栏 4 个入口：
