@@ -43,6 +43,8 @@ struct MacCleanerApp: App {
 }
 
 struct RootView: View {
+    // 记住上次停在哪个入口：原生 App 的默认期待（重开还在这儿）。
+    @AppStorage("selectedSection") private var storedSection: String = SidebarItem.disk.rawValue
     @State private var selection: SidebarItem? = .disk
     @State private var showSkills = false
 
@@ -51,13 +53,24 @@ struct RootView: View {
             List(SidebarItem.allCases, selection: $selection) { item in
                 Label(item.title, systemImage: item.symbol).tag(item)
             }
+            .onAppear {
+                // 开发钩子（MACCLEANER_DEV_PLAN）要落到「软件」页，否则截图得手点一次。
+                if let path = ProcessInfo.processInfo.environment["MACCLEANER_DEV_PLAN"], !path.isEmpty {
+                    selection = .software
+                    return
+                }
+                if let restored = SidebarItem(rawValue: storedSection) { selection = restored }
+            }
+            .onChange(of: selection) { _, newValue in
+                if let newValue { storedSection = newValue.rawValue }
+            }
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
             .listStyle(.sidebar)
         } detail: {
             Group {
                 switch selection ?? .disk {
                 case .clean: PlaceholderView(title: "清理", detail: "推荐清理 / 大文件（M2 迁移）")
-                case .software: PlaceholderView(title: "软件", detail: "卸载 / 更新 / 残留（M2 迁移）")
+                case .software: SoftwareView()
                 case .disk: DiskView()
                 case .system: SystemView()
                 }
