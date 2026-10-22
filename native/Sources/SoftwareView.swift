@@ -1,4 +1,6 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 软件页：卸载 / 更新 / 残留（原来是三个侧栏入口，2026-10-22 合并）。
 struct SoftwareView: View {
@@ -144,6 +146,7 @@ struct UninstallListView: View {
             }
         }
         .progressOverlay(planning != nil, title: "正在清点残留…", detail: "逐个目录核对，不会删除任何东西", timer: timer)
+        .dropDestination(for: URL.self) { urls, _ in handleDrop(urls) }
         .sheet(item: $plan) { plan in
             UninstallPlanSheet(plan: plan) { message in
                 self.plan = nil
@@ -172,6 +175,40 @@ struct UninstallListView: View {
             }
         }
         .padding(.vertical, 2)
+        // 原生右键菜单：WebView 版只能自绘下拉，这里直接白拿系统菜单（含服务项）。
+        .contextMenu {
+            Button("在 Finder 中显示") { Task { await reveal(app.path) } }
+            Button("拷贝路径") { copy(app.path) }
+            Divider()
+            Button("卸载…") { Task { await makePlan(app) } }
+        }
+    }
+
+    private func reveal(_ path: String) async {
+        do {
+            _ = try await CoreClient.shared.request("files.reveal", args: ["path": .string(path)])
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func copy(_ path: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(path, forType: .string)
+    }
+
+    /// 拖 .app 进来直接卸载（Pearcleaner 的招牌交互，原生才有）。
+    private func handleDrop(_ urls: [URL]) -> Bool {
+        guard let url = urls.first(where: { $0.pathExtension == "app" }) else {
+            notice = "拖进来的不是 .app（只接受应用程序包）"
+            return false
+        }
+        guard let app = groups.flatMap(\.apps).first(where: { $0.path == url.path }) else {
+            notice = "没在已安装列表里找到 \(url.lastPathComponent)"
+            return false
+        }
+        Task { await makePlan(app) }
+        return true
     }
 
     private func load() async {

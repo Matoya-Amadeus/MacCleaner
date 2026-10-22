@@ -115,6 +115,9 @@ struct RecommendedView: View {
             .padding(16)
         }
         .task { if groups.isEmpty { await scan() } }
+        .onReceive(NotificationCenter.default.publisher(for: .mcReload)) { _ in
+            Task { await scan() }
+        }
         .sheet(isPresented: $confirming) {
             ConfirmCleanSheet(
                 count: checked.count,
@@ -343,6 +346,9 @@ struct LargeFilesView: View {
             .padding(16)
         }
         .task { if items.isEmpty { await load() } }
+        .onReceive(NotificationCenter.default.publisher(for: .mcReload)) { _ in
+            Task { await load() }
+        }
         .progressOverlay(loading, title: "正在扫描大文件…", detail: "只读，不会改动任何文件", timer: timer)
     }
 

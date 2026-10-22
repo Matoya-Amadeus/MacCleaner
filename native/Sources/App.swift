@@ -1,6 +1,13 @@
 import AppKit
 import SwiftUI
 
+extension Notification.Name {
+    /// ⌘R：当前页重新读取（由各页自己监听，RootView 只负责发）。
+    static let mcReload = Notification.Name("mc.reload")
+    /// ⌘1–4：切换侧栏入口（菜单项发，RootView 收）。
+    static let mcSelectSection = Notification.Name("mc.selectSection")
+}
+
 /// 侧边栏 4 个入口（2026-10-22 合并，原 8 个）：
 /// 清理 / 软件 / 磁盘 / 系统。技能列表移到右上角按钮——它不属于"日常清理"这件事。
 enum SidebarItem: String, CaseIterable, Identifiable {
@@ -27,6 +34,10 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     }
 }
 
+private func post(_ item: SidebarItem) {
+    NotificationCenter.default.post(name: .mcSelectSection, object: item.rawValue)
+}
+
 @main
 struct MacCleanerApp: App {
     var body: some Scene {
@@ -38,6 +49,17 @@ struct MacCleanerApp: App {
         .commands {
             // 原生菜单：这是 WebView 版永远给不了的那一层的一部分。
             CommandGroup(replacing: .newItem) {}
+            CommandMenu("前往") {
+                Button("清理") { post(.clean) }.keyboardShortcut("1", modifiers: .command)
+                Button("软件") { post(.software) }.keyboardShortcut("2", modifiers: .command)
+                Button("磁盘") { post(.disk) }.keyboardShortcut("3", modifiers: .command)
+                Button("系统") { post(.system) }.keyboardShortcut("4", modifiers: .command)
+                Divider()
+                Button("重新读取本页") {
+                    NotificationCenter.default.post(name: .mcReload, object: nil)
+                }
+                .keyboardShortcut("r", modifiers: .command)
+            }
         }
     }
 }
@@ -63,6 +85,11 @@ struct RootView: View {
             }
             .onChange(of: selection) { _, newValue in
                 if let newValue { storedSection = newValue.rawValue }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .mcSelectSection)) { note in
+                if let raw = note.object as? String, let item = SidebarItem(rawValue: raw) {
+                    selection = item
+                }
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
             .listStyle(.sidebar)

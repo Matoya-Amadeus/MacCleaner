@@ -138,6 +138,7 @@ class CoreService:
             "large.list": self._large_list,
             "files.trash": self._files_trash,
             "app.open": self._app_open,
+            "files.reveal": self._files_reveal,
             "system": self._system,
             "skills": self._skills,
             "apps": self._apps,
@@ -247,6 +248,22 @@ class CoreService:
             raise ValueError("这个构建不支持打开应用")
         opener(str(target))
         return {"opened": str(target)}
+
+    def _files_reveal(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
+        """在 Finder 中显示某个路径（右键菜单用）。只接受**存在**的路径。"""
+        from pathlib import Path
+
+        raw = str(args.get("path") or "").strip()
+        if not raw:
+            raise ValueError("path 不能为空")
+        target = Path(raw).expanduser()
+        if not target.exists():
+            raise ValueError("路径不存在")
+        opener = getattr(self.deps, "reveal", None)
+        if opener is None:
+            raise ValueError("这个构建不支持在 Finder 中显示")
+        opener(str(target))
+        return {"revealed": str(target)}
 
     # ---------- 清理 ----------
 

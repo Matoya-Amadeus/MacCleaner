@@ -23,11 +23,14 @@ if [[ ! -x "$VENV/bin/pyinstaller" ]]; then
   "$VENV/bin/pip" install -q --disable-pip-version-check pyinstaller
 fi
 
-rm -rf build dist maccleaner-core.spec
+# 只清自己的产物：`build/native` 是 build_native.sh 的目录，以前这里 `rm -rf build`
+# 会把它一起删掉（2026-10-22 踩到：打完内核，原生 app 不见了）。
+rm -rf build/pyinstaller dist maccleaner-core.spec
 "$VENV/bin/pyinstaller" "--$MODE" \
   --name maccleaner-core \
   --paths src \
   --noupx \
+  --workpath build/pyinstaller \
   --log-level WARN \
   scripts/core_entry.py
 

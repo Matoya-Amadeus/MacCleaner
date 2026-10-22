@@ -33,6 +33,7 @@ COMMAND_HELP: dict[str, str] = {
     "large.list": "大文件扫描并返回按体积排序的清单",
     "files.trash": "把路径移入废纸篓 args: paths[]（空数组拒绝）",
     "app.open": "打开一个 .app（Sparkle 应用内更新用，只接受存在的 .app）",
+    "files.reveal": "在 Finder 中显示路径 args: path（必须存在）",
     "clean": "执行清理 args: approved_ids[], selected_ids[]（空勾选会被拒绝）",
     "uninstall.plan": "卸载计划 args: path, bundle_id, name",
     "uninstall.apply": "执行卸载 args: path, item_ids[]（空勾选会被拒绝）",

@@ -48,6 +48,9 @@ struct SystemView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .task { await load() }
+        .onReceive(NotificationCenter.default.publisher(for: .mcReload)) { _ in
+            Task { await load() }
+        }
     }
 
     // MARK: - 区块

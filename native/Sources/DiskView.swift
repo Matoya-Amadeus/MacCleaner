@@ -67,6 +67,9 @@ struct DiskView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .task { await load() }
+        .onReceive(NotificationCenter.default.publisher(for: .mcReload)) { _ in
+            Task { await load() }
+        }
         // 回到前台时重读一次：磁盘占用变化慢，但"切走再回来还是旧数字"会让人怀疑。
         // 只在这一页做（系统状态页按决定保持"进页面读一次"）。
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
