@@ -34,18 +34,44 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     }
 }
 
+enum MainWindow {
+    /// 从菜单栏叫回主窗口：先激活 App，再把主窗口提到最前。
+    /// 不用 `WindowGroup` 的 `openWindow`（那会新开一个窗口，用户看到两个一样的窗口更困惑）。
+    static func show() {
+        NSApp.activate(ignoringOtherApps: true)
+        for window in NSApp.windows where window.canBecomeMain {
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+    }
+}
+
 private func post(_ item: SidebarItem) {
     NotificationCenter.default.post(name: .mcSelectSection, object: item.rawValue)
 }
 
 @main
 struct MacCleanerApp: App {
+    @AppStorage(RecentActivity.key) private var lastSummary = ""
+
     var body: some Scene {
         WindowGroup("Mac Cleaner") {
             RootView()
                 .frame(minWidth: 920, minHeight: 620)
         }
         .windowToolbarStyle(.unified)
+
+        // 菜单栏常驻：关掉窗口也能看到"上次做了什么"、并一键叫回主窗口。
+        // 图标用 internaldrive，与侧栏「磁盘」一致，不会认错是别的 App。
+        MenuBarExtra("Mac Cleaner", systemImage: "internaldrive") {
+            Button("打开 Mac Cleaner") { MainWindow.show() }
+                .keyboardShortcut("o", modifiers: .command)
+            Divider()
+            Text(lastSummary.isEmpty ? "还没有操作记录" : lastSummary)
+            Divider()
+            Button("退出") { NSApp.terminate(nil) }
+                .keyboardShortcut("q", modifiers: .command)
+        }
         .commands {
             // 原生菜单：这是 WebView 版永远给不了的那一层的一部分。
             CommandGroup(replacing: .newItem) {}

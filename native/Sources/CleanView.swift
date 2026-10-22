@@ -271,10 +271,9 @@ struct RecommendedView: View {
                 let moved = result["moved_count"]?.intValue ?? 0
                 notice = "已把 \(moved) 项移入废纸篓；可在废纸篓里恢复"
             }
-            await Notifier.post(
-                title: "清理完成",
-                body: "已把 \(result["moved_count"]?.intValue ?? 0) 项移入废纸篓，可在废纸篓里恢复"
-            )
+            let movedCount = result["moved_count"]?.intValue ?? 0
+            RecentActivity.record("清理 \(movedCount) 项")
+            await Notifier.post(title: "清理完成", body: "已把 \(movedCount) 项移入废纸篓，可在废纸篓里恢复")
             checked = []
             await scan()
         } catch {
@@ -445,6 +444,7 @@ struct LargeFilesView: View {
                 let moved = (result["moved"]?.arrayValue ?? []).count
                 notice = "已把 \(moved) 个文件移入废纸篓"
             }
+            RecentActivity.record("移走 \(paths.count) 个大文件")
             await Notifier.post(title: "大文件已移入废纸篓", body: "移走 \(paths.count) 个，可在废纸篓里恢复")
             checked = []
             await load()

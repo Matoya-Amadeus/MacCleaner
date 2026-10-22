@@ -180,6 +180,8 @@ struct UninstallListView: View {
             }
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(app.bundleID.isEmpty ? "\(app.name)，\(app.path)" : "\(app.name)，\(app.bundleID)")
         // 原生右键菜单：WebView 版只能自绘下拉，这里直接白拿系统菜单（含服务项）。
         .contextMenu {
             Button("在 Finder 中显示") { Task { await reveal(app.path) } }
@@ -407,6 +409,7 @@ struct UninstallPlanSheet: View {
                 ]
             )
             let moved = result["moved_count"]?.intValue ?? 0
+            RecentActivity.record("卸载 \(plan.appName)（\(moved) 项）")
             await Notifier.post(title: "卸载完成", body: "\(plan.appName)：已移走 \(moved) 项到废纸篓")
             dismiss()
             onDone("已把 \(moved) 项移入废纸篓；可在废纸篓里恢复",
@@ -757,6 +760,7 @@ struct OrphansListView: View {
                 let moved = (result["moved"]?.arrayValue ?? []).count
                 notice = "已把 \(moved) 项移入废纸篓"
             }
+            RecentActivity.record("清理残留 \(checked.count) 项")
             await Notifier.post(title: "残留清理完成", body: "已移走 \(checked.count) 项到废纸篓")
             checked = []
             await load()

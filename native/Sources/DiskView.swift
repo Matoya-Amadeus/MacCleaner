@@ -160,6 +160,8 @@ struct DiskView: View {
                 }
                 .padding(.vertical, 9)
                 .padding(.horizontal, 4)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(entry.name)，\(ByteText.format(entry.bytes))")
                 if entry.id != sections.last?.id { Divider().opacity(0.5) }
             }
         }

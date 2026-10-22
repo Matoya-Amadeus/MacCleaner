@@ -59,6 +59,9 @@ struct ProgressOverlay: View {
             .padding(22)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
             .shadow(radius: 12, y: 4)
+            // 读屏：把三行合成一句，否则 VoiceOver 会一个个念"已用""0""秒"。
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(title)，已用 \(timer.seconds) 秒")
         }
         .transition(.opacity)
     }
