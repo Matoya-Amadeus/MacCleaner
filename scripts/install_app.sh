@@ -8,7 +8,7 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SRC="$REPO/build/native/MacCleaner.app"
+SRC="$REPO/.build/native/MacCleaner.app"
 DEST="$HOME/Applications/MacCleaner.app"
 
 if [[ ! -d "$SRC" ]]; then
@@ -17,6 +17,19 @@ if [[ ! -d "$SRC" ]]; then
 fi
 
 mkdir -p "$HOME/Applications"
+
+# 只保留一份：这些位置如果还有同名/旧 bundle 的副本，一并清掉。
+# （构建目录 .build/native 留着——那是源码产物，隐藏目录不会被 Spotlight/Launchpad 列出来。）
+for legacy in \
+  "/Applications/MacCleaner.app" \
+  "$HOME/Applications/Mac Cleaner.app" \
+  "$HOME/Applications/MacCleaner 2.app"; do
+  if [[ -d "$legacy" ]]; then
+    echo "移除旧副本：$legacy"
+    rm -rf "$legacy"
+  fi
+done
+
 rm -rf "$DEST"
 cp -R "$SRC" "$DEST"
 codesign --force --sign - "$DEST" >/dev/null 2>&1 || echo "（签名失败，本机自用可忽略）"

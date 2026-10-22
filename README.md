@@ -50,7 +50,7 @@ python3 -m build --no-isolation
 
 ```bash
 bash scripts/build_core.sh     # 内核（PyInstaller onedir，21 MB 自包含）
-bash scripts/build_native.sh   # SwiftUI 界面（swiftc，无需 Xcode 工程）
+bash scripts/build_native.sh   # SwiftUI 界面（swiftc，无需 Xcode 工程；产物在 .build/native）
 bash scripts/install_app.sh    # 装到 ~/Applications
 ```
 

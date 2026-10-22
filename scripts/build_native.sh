@@ -10,7 +10,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
 
-OUT="build/native"
+OUT=".build/native"   # 隐藏目录：不参与 Spotlight/Launchpad 索引，避免出现"同一个 App 的两份"
 APP="$OUT/MacCleaner.app"
 CORE="$REPO/dist/maccleaner-core"
 
