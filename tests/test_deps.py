@@ -181,26 +181,6 @@ class SkillListingTests(unittest.TestCase):
             names = [item["name"] for item in skills if item["root"] != "本工具"]
             self.assertEqual(names, ["only"], "不存在的根要跳过，而不是整体失败")
 
-    def test_skills_page_renders_rows_and_groups(self) -> None:
-        from maccleaner.ui.pages import render_skills_html
-
-        payload = {
-            "skills": [
-                {"name": "mac-cleaner", "description": "清理磁盘", "path": "/x/SKILL.md", "root": "本工具"},
-                {"name": "alpha", "description": "第一个", "path": "/a/SKILL.md", "root": "~/.codex/skills"},
-            ]
-        }
-        page = render_skills_html(payload)
-        self.assertIn('data-stage="skills"', page)
-        self.assertEqual(page.count('class="row"'), 2)
-        self.assertIn("本工具", page, "自己的那条要标注出来")
-        self.assertIn("~/.codex/skills", page, "按来源分组")
-        self.assertIn("<details", page, "自己的细节仍收进折叠块")
-
-
-class ListingSpeedTests(unittest.TestCase):
-    """列表页不许算体积（2026-10-19：用户看到"正在读取应用列表"卡住 6 秒）。"""
-
     def test_list_does_not_shell_out_by_default(self) -> None:
         from unittest.mock import patch
 

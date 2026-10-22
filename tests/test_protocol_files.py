@@ -9,7 +9,7 @@ from __future__ import annotations
 import unittest
 
 from maccleaner.core_service import CoreService
-from maccleaner.session import SessionDeps
+from maccleaner.deps import SessionDeps
 
 
 def _service(**overrides) -> CoreService:

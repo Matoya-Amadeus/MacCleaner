@@ -12,7 +12,7 @@ macOS 清理 / 卸载 / 更新工具。三个入口，同一套内核：**扫描
 
 - CLI：`maccleaner audit | plan | clean | uninstall | updates | trace | ui`
 - MCP：`maccleaner-mcp`（7 个工具，stdio）
-- 本地界面：`maccleaner ui`
+- 原生界面：`bash scripts/build_native.sh --run`（SwiftUI；`maccleaner ui` 等同打开它）
 
 必须"先计划再执行"：`plan_storage` 给 `plan_id`，`apply_storage_plan` 必须带
 `approved_targets`；`plan_id` 15 分钟过期就作废。高风险目标（`~/Downloads`、Docker 数据）
@@ -48,16 +48,15 @@ python3 -m build --no-isolation
 
 ## 界面
 
-双击 `~/Applications/MacCleaner.app`，或 `maccleaner ui`。侧栏 8 个入口：
+双击 `~/Applications/MacCleaner.app`，或 `maccleaner ui`（打开原生 App）。侧栏 4 个入口：
 
-- **Mac 清理**：扫描 → 逐条勾选 → 确认 → 完成；含安装包（.dmg/.pkg）与 iOS 备份两类长尾目标
-- **软件卸载**：单个看残留，或多选批量卸
-- **软件更新**：按来源分组；自带 Sparkle 的应用先走应用内更新（打开后可核对版本）
-- **残留体检**：应用删了但缓存/日志/容器还在？反向扫出来（默认不勾）
-- **磁盘**：整机占比 + **treemap 方块图**（面积=体积），点方块进下一层；系统级目录可**一次性授权**测量（只读，不删）
-- **大文件**：Downloads / 桌面 / 文稿 / 影片里超过 500 MB 的文件，默认不勾
-- **系统状态**：负载、内存、最吃 CPU 的进程
-- **可调用的 Skill**：本机装了哪些 agent 技能
+- **清理**：推荐清理（缓存 / 日志 / 开发工具 / 容器 / 你的文件）+ 大文件
+- **软件**：卸载（单个看残留，或多选批量）/ 更新（按来源分组；Sparkle 先走应用内更新）/ 残留体检
+- **磁盘**：整机占比 + 目录清单 + 系统级目录（需一次性授权，只读不删）
+- **系统**：负载、内存、电池与节流、占用最高的进程
+
+菜单「前往」可 `⌘1`–`⌘4` 切换入口，`⌘R` 重新读取本页；列表行右键可「在 Finder 中显示 / 拷贝路径 / 卸载」；
+把 `.app` 拖进窗口可直接卸载。
 
 `⌘A` 全选、`Shift+点击` 连选、`Enter` 执行、右键复制路径或在 Finder 中显示。
 

@@ -182,6 +182,6 @@ MacCleaner.app  (SwiftUI, macOS 14+)
 - [ ] 一次真实卸载（含残留）走完：列表 → 详情 → 确认 → 执行 → 结果
 - [ ] 安全规则五条逐条验证通过（废纸篓 / 空勾选 / 高风险 / root 只读 / 授权）
 - [ ] 内核测试数 ≥ 340 且全绿；新增协议测试全绿
-- [ ] `src/maccleaner/ui/` 已删除，仓库内仅一套 UI
+- [x] `src/maccleaner/ui/` 已删除（连同 `bridge.py` / `session.py` / WKWebView 壳），仓库内仅一套 UI
 - [ ] README 与 `docs/comparison.md` 反映新架构
 - [ ] 冷启动 < 0.4 s，交互 < 50 ms（用 Instruments / 日志时间戳测量）

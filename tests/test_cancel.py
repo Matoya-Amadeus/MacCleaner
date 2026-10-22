@@ -18,7 +18,7 @@ from pathlib import Path
 
 from maccleaner.core_service import CoreService, serve_stdio
 from maccleaner.deps import orphans_clean, trash_paths
-from maccleaner.session import SessionDeps
+from maccleaner.deps import SessionDeps
 
 
 class _StopAfter:

@@ -13,7 +13,7 @@ A macOS cleanup / uninstall / update tool. Three entry points, one kernel:
 
 - CLI: `maccleaner audit | plan | clean | uninstall | updates | trace | ui`
 - MCP: `maccleaner-mcp` (7 tools, stdio)
-- Local UI: `maccleaner ui`
+- Native UI: `bash scripts/build_native.sh --run` (SwiftUI; `maccleaner ui` opens it)
 
 Plan first, then apply: `plan_storage` returns a `plan_id`; `apply_storage_plan` requires
 `approved_targets`, and the `plan_id` expires after 15 minutes. High-risk targets
@@ -50,7 +50,7 @@ python3 -m build --no-isolation
 
 ## The window
 
-Open `~/Applications/MacCleaner.app`, or run `maccleaner ui`. Eight entries in the sidebar:
+Open `~/Applications/MacCleaner.app`, or run `maccleaner ui` (opens the native app). Four entries:
 
 - **Mac Cleanup**: scan → tick items → confirm → done; includes installers (.dmg/.pkg) and iOS backups
 - **Uninstall**: inspect leftovers one by one, or batch-uninstall

@@ -268,3 +268,46 @@ def large_view(report: dict[str, Any]) -> dict[str, Any]:
         "roots": [str(root) for root in (report.get("roots") or [])],
         "min_bytes": int(report.get("min_bytes") or 0),
     }
+
+
+# ---------------------------------------------------------------- 完成页
+
+def _actual_bytes(item: dict[str, Any]) -> int:
+    actual = int(item.get("actual_bytes") or 0)
+    if actual:
+        return actual
+    status = str(item.get("status") or "")
+    return int(item.get("estimated_bytes") or 0) if status in _CLEANED_STATES else 0
+
+
+def completion_view(report: dict[str, Any]) -> dict[str, Any]:
+    """完成页数据：可恢复字节优先，实际释放量取内核的 `actual_reclaimed_bytes`。"""
+    items = _plan_items(report)
+    recoverable = sum(_actual_bytes(item) for item in items if item.get("recoverable"))
+    failed = sum(1 for item in items if str(item.get("status")) == "failed")
+    # 这两类都不是"出问题"，不该计进"跳过"：
+    # - `target path missing`：目标是空的/不存在；
+    # - `outside approved cleanup plan`：用户没勾的目标。
+    ignored = ("target path missing", "outside approved cleanup plan")
+    skipped = [
+        {"path": _first_path(item), "reason": str(item.get("reason") or "")}
+        for item in items
+        if str(item.get("status")) in {"skipped", "blocked", "protected"}
+        and not any(marker in str(item.get("reason") or "") for marker in ignored)
+    ]
+    receipt = report.get("receipt")
+    receipt_path = ""
+    if isinstance(receipt, dict):
+        receipt_path = str(receipt.get("json") or receipt.get("path") or "")
+    elif receipt:
+        receipt_path = str(receipt)
+    return {
+        "recoverable_bytes": recoverable,
+        "actual_freed_bytes": int(report.get("actual_reclaimed_bytes") or 0),
+        "failed_count": failed,
+        "skipped_count": len(skipped),
+        "skipped_items": skipped,
+        "receipt_path": receipt_path,
+        "before_free_bytes": int(report.get("before_free_bytes") or 0),
+        "after_free_bytes": int(report.get("after_free_bytes") or 0),
+    }

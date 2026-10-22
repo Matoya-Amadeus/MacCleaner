@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 
 from maccleaner.deps import build_deps
-from maccleaner.ui.adapter import completion_payload
+from maccleaner.view_models import completion_view
 
 
 def _make_home(tmp: Path) -> tuple[Path, Path]:
@@ -49,7 +49,7 @@ class CleanFlowTests(unittest.TestCase):
             trash = home / ".Trash"
             self.assertTrue(trash.is_dir() and any(trash.iterdir()), "移走的东西必须进废纸篓")
 
-            payload = completion_payload(cleaned)
+            payload = completion_view(cleaned)
             self.assertEqual(payload["actual_freed_bytes"], 0, "走废纸篓时空间还没释放")
             self.assertGreater(payload["recoverable_bytes"], 0, "可恢复字节必须是真实移走的量")
 

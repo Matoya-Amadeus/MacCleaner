@@ -10,7 +10,7 @@ import json
 import unittest
 
 from maccleaner.core_service import PROTOCOL_VERSION, CoreService, serve_stdio
-from maccleaner.session import SessionDeps
+from maccleaner.deps import SessionDeps
 
 
 def _deps(**overrides) -> SessionDeps:

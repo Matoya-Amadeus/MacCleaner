@@ -12,7 +12,7 @@ from pathlib import Path
 
 from maccleaner.core_service import CoreService
 from maccleaner.deps import _update_key, select_updates
-from maccleaner.session import SessionDeps
+from maccleaner.deps import SessionDeps
 from maccleaner.view_models import updates_view
 
 

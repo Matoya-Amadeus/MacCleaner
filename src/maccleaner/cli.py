@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Sequence
@@ -123,31 +124,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     manager = StorageManager(ctx)
 
     if args.command == "ui":
-        from .deps import build_deps
-        from .session import InteractiveSession, SessionBusy
-
-        deps = build_deps(
-            home=Path(ctx.home),
-            root=Path(ctx.root) if str(ctx.root) else None,
-            state_root=Path(args.state_root) if str(args.state_root) else None,
-            dry_run=bool(args.dry_run),
-        )
-        session = InteractiveSession(deps, state_root=Path(args.state_root) if str(args.state_root) else None)
-        try:
-            # 先拿锁 + 起桥，**再**打印 URL：否则会话锁冲突时会先广告一个随即失效的地址，
-            # 调用方只会看到"连接失败"，而真实原因是"已有会话在运行"（2026-10-18 用户实际遇到）。
-            url = session.prepare()
-            print(url, flush=True)
-            if not args.no_open:
-                import webbrowser
-
-                webbrowser.open(url)
-            result = session.run()
-        except SessionBusy as exc:
-            print(str(exc), file=sys.stderr)
+        # 2026-10-22：本地网页 UI 已随原生界面迁移一起删除（见 docs/plan-2026-10-native.md）。
+        # 这里保留 `maccleaner ui` 只是为了让老习惯能用——它现在**打开原生 App**。
+        app = _native_app_path()
+        if app is None:
+            print(
+                "原生界面还没构建：先跑\n"
+                "  bash scripts/build_core.sh\n"
+                "  bash scripts/build_native.sh --run\n"
+                "（旧版 `maccleaner ui` 的本地网页已移除）",
+                file=sys.stderr,
+            )
             return 2
-        if getattr(args, "json", False):
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+        if args.no_open:
+            print(str(app), flush=True)
+            return 0
+        import subprocess as _subprocess
+
+        _subprocess.Popen(["open", str(app)])
+        print(f"已打开 {app}", flush=True)
         return 0
 
     if args.command == "updates":
@@ -257,6 +252,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         print(render_text(report))
     return 0
+
+
+def _native_app_path() -> Path | None:
+    """找原生 App：先看环境变量，再看仓库构建产物，最后看 ~/Applications 的安装版。"""
+    candidates: list[Path] = []
+    env = os.environ.get("MACCLEANER_APP")
+    if env:
+        candidates.append(Path(env).expanduser())
+    candidates.append(Path("build/native/MacCleaner.app"))
+    candidates.append(Path.home() / "Applications" / "MacCleaner.app")
+    for path in candidates:
+        if path.exists():
+            return path.resolve()
+    return None
 
 
 if __name__ == "__main__":

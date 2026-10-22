@@ -25,7 +25,7 @@ cd "$COPY" || exit 1
 HOME="$FAKE_HOME" ./bin/maccleaner --help 2>&1 | head -3
 echo "--- ui --no-open（3 秒后关掉）---"
 HOME="$FAKE_HOME" PYTHONPATH="$COPY/src" no_proxy='*' NO_PROXY='*' \
-  /usr/local/bin/python3 -m maccleaner ui --no-open --state-root "$WORK/state" \
+  printf '{"id":"1","cmd":"disk.summary"}\n' | ./dist/maccleaner-core/maccleaner-core serve --stdio \
   > "$WORK/ui.out" 2> "$WORK/ui.err" &
 UI_PID=$!
 sleep 4

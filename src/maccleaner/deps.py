@@ -29,11 +29,11 @@ from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .core import move_to_trash, _protected_session_reason, StorageContext, StorageManager
-from .session import SessionDeps
 from .uninstall import apply_plan, build_plan, read_app_identity
 from .updates import apply_updates, build_upgrade_plan, discover_updates
 
@@ -1621,6 +1621,62 @@ def select_updates(
 
 
 
+@dataclass
+class SessionDeps:
+    """会话要用的内核能力。默认真实实现，测试可整体替换（全部是零参/简单参的函数）。"""
+
+    audit: Callable[[], dict[str, Any]]
+    plan: Callable[[], dict[str, Any]]
+    clean: Callable[[], dict[str, Any]]
+    # 带批准 id 的执行入口：界面点过的那批 target id。没有它只能走无参 `clean`（dry-run）。
+    clean_approved: Callable[[list[str], list[str]], dict[str, Any]] | None = None
+    # 打开废纸篓（完成页的按钮）。默认不做事，真实实现由 deps 注入。
+    open_trash: Callable[[], None] | None = None
+    # 在 Finder 中显示（右键菜单）。会话负责白名单校验。
+    reveal: Callable[[str], None] | None = None
+    # 打开 App Store 更新页（mas 不可用时的合法兜底）。
+    open_app_store: Callable[[], None] | None = None
+    # 打开某个应用，让它的 Sparkle 更新器自己工作。
+    open_app: Callable[[str], None] | None = None
+    # 自带 Sparkle 更新器的应用列表（随更新结果一起渲染）。
+    sparkle_apps: Callable[[], list[dict[str, Any]]] = lambda: []
+    # 孤儿残留体检：扫描与清理（清理只允许页面出现过的路径）。
+    orphans_scan: Callable[[], dict[str, Any]] | None = None
+    orphans_apply: Callable[[list[str]], dict[str, Any]] | None = None
+    # 用 Homebrew 卸载 cask（只在预览页显式点击时调用）。
+    uninstall_cask: Callable[[str], dict[str, Any]] | None = None
+    # 读某个 .app 的版本号（判断 Sparkle 是否真的更新了）。
+    app_version: Callable[[str], str] | None = None
+    # 已安装浏览器的图标（data URI），给"浏览器缓存"那一行配真实图标。
+    browser_icons: Callable[[], dict[str, str]] | None = None
+    # 批量取应用图标（卸载列表 / Sparkle 行）。
+    app_icons: Callable[[list[str]], dict[str, str]] | None = None
+    # 大文件视图：扫描 + 移入废纸篓。
+    large_files: Callable[[], dict[str, Any]] | None = None
+    trash_paths: Callable[[list[str]], dict[str, Any]] | None = None
+    # 系统级目录体积：只测量（第二次可走一次性授权）。
+    system_sizes: Callable[[], dict[str, Any]] | None = None
+    # 只读缓存（页面加载用）：不发 du、不弹授权。
+    system_sizes_cached: Callable[[], dict[str, Any]] | None = None
+    # 把系统级目录移进用户废纸篓（需一次管理员授权）。
+    system_trash_paths: Callable[[list[str]], dict[str, Any]] | None = None
+    system_sizes_admin: Callable[[], dict[str, Any]] | None = None
+    # 只读的"看一眼"页面（磁盘/系统）。
+    disk: Callable[[], dict[str, Any]] = lambda: {}
+    # 磁盘钻取：传目录路径，返回下一级条目。
+    system: Callable[[], dict[str, Any]] = lambda: {}
+    # 清理历史（读回执文件）。
+    history: Callable[[], dict[str, Any]] = lambda: {}
+    apps: Callable[[], list[dict[str, Any]]] = lambda: []
+    skills: Callable[[], list[dict[str, Any]]] = lambda: []
+    uninstall_plan: Callable[..., dict[str, Any]] = lambda **_kwargs: {}
+    uninstall_apply: Callable[..., dict[str, Any]] = lambda **_kwargs: {"status": "refused"}
+    updates_check: Callable[[], dict[str, Any]] = lambda: {"items": [], "count": 0, "notes": []}
+    updates_apply: Callable[..., dict[str, Any]] = lambda **_kwargs: {"status": "refused", "groups": []}
+    # 强制重查（绕过 120s 缓存）；不传就退回 updates_check。
+    updates_refresh: Callable[[], dict[str, Any]] | None = None
+
+
 def build_deps(
     *,
     home: Path | None = None,
@@ -1628,7 +1684,7 @@ def build_deps(
     state_root: Path | None = None,
     dry_run: bool = False,
 ) -> SessionDeps:
-    """真实装配。`dry_run=True` 时 clean 不落盘（给 `maccleaner ui --dry-run` 用）。"""
+    """真实装配。`dry_run=True` 时 clean 不落盘（给自测用）。"""
     home_path = Path(home) if home is not None else Path.home()
     root_path = Path(root) if root is not None else home_path
     state_path = Path(state_root) if state_root is not None else home_path / ".maccleaner" / "state"
