@@ -345,33 +345,117 @@ struct UninstallPlanSheet: View {
     }
 }
 
-// MARK: - 更新 / 残留（先只读，M2 后续接线）
+// MARK: - 更新
 
 struct UpdatesListView: View {
-    @State private var groups: [(label: String, count: Int)] = []
+    @State private var groups: [Group] = []
+    @State private var sparkle: [Sparkle] = []
+    @State private var checked: Set<String> = []
     @State private var loading = false
+    @State private var applying = false
     @State private var error: String?
+    @State private var notice: String?
+
+    struct Item: Identifiable {
+        let id: String          // 内核给的稳定键 manager|kind|name
+        let name: String
+        let installed: String
+        let available: String
+    }
+
+    struct Group: Identifiable {
+        var id: String { label }
+        let label: String
+        let items: [Item]
+    }
+
+    struct Sparkle: Identifiable {
+        var id: String { path }
+        let name: String
+        let path: String
+        let version: String
+        let latest: String
+    }
+
+    private var allItems: [Item] { groups.flatMap(\.items) }
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).padding(12)
+            }
+            if let notice {
+                Text(notice).font(.callout).foregroundStyle(.secondary).padding(.top, 8)
+            }
+
             if loading {
                 ProgressView("检查更新…（brew outdated 可能要几秒）")
-            } else if let error {
-                Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if groups.isEmpty && sparkle.isEmpty {
+                Text("全部是最新的").foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
-                    ForEach(groups, id: \.label) { group in
-                        HStack {
-                            Text(group.label)
-                            Spacer()
-                            Text("\(group.count) 项").foregroundStyle(.secondary).monospacedDigit()
+                    if !sparkle.isEmpty {
+                        Section("自带更新（Sparkle）· 确认有更新的") {
+                            ForEach(sparkle) { app in
+                                HStack(spacing: 10) {
+                                    Image(systemName: "arrow.triangle.2.circlepath")
+                                        .frame(width: 20).foregroundStyle(.secondary)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(app.name)
+                                        Text("\(app.version) → \(app.latest)")
+                                            .font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                    Spacer(minLength: 8)
+                                    Button("在应用内更新") { Task { await open(app) } }
+                                        .controlSize(.small)
+                                }
+                            }
+                        }
+                    }
+                    ForEach(groups) { group in
+                        Section("\(group.label) · \(group.items.count)") {
+                            ForEach(group.items) { item in
+                                Toggle(isOn: Binding(
+                                    get: { checked.contains(item.id) },
+                                    set: { isOn in
+                                        if isOn { checked.insert(item.id) } else { checked.remove(item.id) }
+                                    }
+                                )) {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: "shippingbox").frame(width: 20).foregroundStyle(.secondary)
+                                        Text(item.name).lineLimit(1)
+                                        Spacer(minLength: 8)
+                                        Text("\(item.installed) → \(item.available)")
+                                            .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                                    }
+                                }
+                                .toggleStyle(.checkbox)
+                            }
                         }
                     }
                 }
                 .listStyle(.inset)
             }
+
+            Divider()
+            HStack {
+                Text("已选 \(checked.count) 项 · 共 \(allItems.count) 项")
+                    .font(.callout.weight(.medium)).monospacedDigit()
+                Spacer()
+                Button {
+                    Task { await apply() }
+                } label: {
+                    if applying { ProgressView().controlSize(.small) }
+                    else { Text(checked.isEmpty ? "更新" : "更新 \(checked.count) 项") }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(checked.isEmpty || applying)
+            }
+            .padding(16)
         }
-        .task { await load() }
+        .task { if groups.isEmpty && sparkle.isEmpty { await load() } }
     }
 
     private func load() async {
@@ -381,43 +465,154 @@ struct UpdatesListView: View {
             let data = try await CoreClient.shared.request("updates.list")
             groups = (data["groups"]?.arrayValue ?? []).compactMap { group in
                 guard let label = group["label"]?.stringValue else { return nil }
-                return (label, Int(group["count"]?.intValue ?? 0))
+                let items = (group["items"]?.arrayValue ?? []).compactMap { raw -> Item? in
+                    guard let id = raw["id"]?.stringValue, let name = raw["name"]?.stringValue else { return nil }
+                    return Item(id: id, name: name,
+                                installed: raw["installed"]?.stringValue ?? "",
+                                available: raw["available"]?.stringValue ?? "")
+                }
+                return items.isEmpty ? nil : Group(label: label, items: items)
             }
-            if let sparkle = data["sparkle_updates"]?.arrayValue, !sparkle.isEmpty {
-                groups.append(("自带更新（Sparkle）", sparkle.count))
+            sparkle = (data["sparkle_updates"]?.arrayValue ?? []).compactMap { raw in
+                guard let path = raw["path"]?.stringValue, let name = raw["name"]?.stringValue else { return nil }
+                return Sparkle(name: name, path: path,
+                               version: raw["version"]?.stringValue ?? "",
+                               latest: raw["latest"]?.stringValue ?? "")
             }
+            checked = Set(groups.flatMap(\.items).map(\.id))   // 更新默认为全选
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func apply() async {
+        applying = true
+        defer { applying = false }
+        do {
+            let result = try await CoreClient.shared.request(
+                "updates.apply", args: ["ids": .array(checked.sorted().map { .string($0) })]
+            )
+            if result["status"]?.stringValue == "refused" {
+                notice = "没有勾选任何项，什么都没升级"
+            } else {
+                let ok = (result["groups"]?.arrayValue ?? []).filter { $0["ok"]?.boolValue == true }.count
+                let total = (result["groups"]?.arrayValue ?? []).count
+                notice = "已完成 \(ok)/\(total) 项；失败的项在终端里能看到输出"
+            }
+            checked = []
+            await load()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func open(_ app: Sparkle) async {
+        do {
+            _ = try await CoreClient.shared.request("app.open", args: ["path": .string(app.path)])
+            notice = "已打开 \(app.name)；请在它的窗口里完成更新"
         } catch {
             self.error = error.localizedDescription
         }
     }
 }
 
+// MARK: - 残留
+
 struct OrphansListView: View {
-    @State private var groups: [(label: String, count: Int, bytes: Int64)] = []
+    @State private var groups: [Group] = []
+    @State private var checked: Set<String> = []
     @State private var loading = false
+    @State private var applying = false
     @State private var error: String?
+    @State private var notice: String?
+
+    struct Item: Identifiable {
+        var id: String { path }
+        let path: String
+        let name: String
+        let bytes: Int64
+    }
+
+    struct Group: Identifiable {
+        var id: String { label }
+        let label: String
+        let items: [Item]
+    }
+
+    private var allItems: [Item] { groups.flatMap(\.items) }
+    private var checkedBytes: Int64 {
+        allItems.filter { checked.contains($0.id) }.reduce(0) { $0 + $1.bytes }
+    }
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).padding(12)
+            }
+            if let notice {
+                Text(notice).font(.callout).foregroundStyle(.secondary).padding(.top, 8)
+            }
+
             if loading {
                 ProgressView("扫描残留…（会读 LaunchServices，可能要几秒）")
-            } else if let error {
-                Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if groups.isEmpty {
+                Text("没有发现残留").foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
-                    ForEach(groups, id: \.label) { group in
-                        HStack {
-                            Text(group.label)
-                            Spacer()
-                            Text(ByteText.format(group.bytes)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                            Text("\(group.count) 项").foregroundStyle(.secondary).monospacedDigit()
+                    ForEach(groups) { group in
+                        Section("\(group.label) · \(group.items.count)") {
+                            ForEach(group.items) { item in
+                                Toggle(isOn: Binding(
+                                    get: { checked.contains(item.id) },
+                                    set: { isOn in
+                                        if isOn { checked.insert(item.id) } else { checked.remove(item.id) }
+                                    }
+                                )) {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: "questionmark.folder").frame(width: 20).foregroundStyle(.secondary)
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text(item.name).lineLimit(1)
+                                            Text(displayPath(item.path))
+                                                .font(.caption2).foregroundStyle(.tertiary)
+                                                .lineLimit(1).truncationMode(.middle)
+                                        }
+                                        Spacer(minLength: 8)
+                                        Text(ByteText.format(item.bytes)).monospacedDigit().foregroundStyle(.secondary)
+                                    }
+                                }
+                                .toggleStyle(.checkbox)
+                            }
                         }
                     }
                 }
                 .listStyle(.inset)
             }
+
+            Divider()
+            HStack {
+                Text("已选 \(checked.count) 项 · \(ByteText.format(checkedBytes))")
+                    .font(.callout.weight(.medium)).monospacedDigit()
+                Spacer()
+                Button {
+                    Task { await apply() }
+                } label: {
+                    if applying { ProgressView().controlSize(.small) }
+                    else { Text(checked.isEmpty ? "移入废纸篓" : "移入废纸篓 \(checked.count) 项") }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(checked.isEmpty || applying)
+            }
+            .padding(16)
         }
-        .task { await load() }
+        .task { if groups.isEmpty { await load() } }
+    }
+
+    private func displayPath(_ path: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
     }
 
     private func load() async {
@@ -427,8 +622,32 @@ struct OrphansListView: View {
             let data = try await CoreClient.shared.request("orphans.list")
             groups = (data["groups"]?.arrayValue ?? []).compactMap { group in
                 guard let label = group["label"]?.stringValue else { return nil }
-                return (label, Int(group["count"]?.intValue ?? 0), group["bytes"]?.intValue ?? 0)
+                let items = (group["items"]?.arrayValue ?? []).compactMap { raw -> Item? in
+                    guard let path = raw["path"]?.stringValue else { return nil }
+                    return Item(path: path,
+                                name: raw["name"]?.stringValue ?? URL(fileURLWithPath: path).lastPathComponent,
+                                bytes: raw["bytes"]?.intValue ?? 0)
+                }
+                return items.isEmpty ? nil : Group(label: label, items: items)
             }
+            checked = Set(groups.first(where: { $0.label == "Caches" })?.items.map(\.path) ?? [])
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func apply() async {
+        applying = true
+        defer { applying = false }
+        do {
+            let result = try await CoreClient.shared.request(
+                "orphans.apply", args: ["paths": .array(checked.sorted().map { .string($0) })]
+            )
+            let moved = (result["moved"]?.arrayValue ?? []).count
+            notice = "已把 \(moved) 项移入废纸篓"
+            checked = []
+            await load()
         } catch {
             self.error = error.localizedDescription
         }

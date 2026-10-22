@@ -1569,6 +1569,27 @@ def uninstall_cask(token: str, *, runner: Any | None = None) -> dict[str, Any]:
     }
 
 
+def _update_key(item: dict[str, Any]) -> str:
+    """稳定 id：`manager|kind|name`。
+
+    为什么不用索引：索引只在"刚刚那次 discover_updates()"里成立，界面把项目分组/排序后
+    再回传就错位；而且检查与执行之间包列表一变，索引指向的就不是同一个包了（原生界面会踩到）。
+    """
+    return f"{item.get('manager') or ''}|{item.get('kind') or ''}|{item.get('name') or ''}"
+
+def select_updates(
+    items: list[dict[str, Any]], ids: list[str]
+) -> list[dict[str, Any]]:
+    """按 id 选包：**同时接受索引与稳定键**（老界面传索引，新界面传键）。"""
+    wanted = {str(value) for value in ids}
+    return [
+        item
+        for index, item in enumerate(items)
+        if str(index) in wanted or _update_key(item) in wanted
+    ]
+
+
+
 def build_deps(
     *,
     home: Path | None = None,
@@ -1701,13 +1722,7 @@ def build_deps(
         if not ids:
             return {"status": "refused", "reason": "nothing selected", "groups": []}
         found = discover_updates()
-        wanted = {str(value) for value in ids}
-        selected = [
-            item
-            for index, item in enumerate(found["items"])
-            # 页面传的是**索引**（`data-update-id`），这里用同一编号定位，避免页面知道包名以外的结构。
-            if not wanted or str(index) in wanted
-        ]
+        selected = select_updates(found["items"], ids)
         return apply_updates(build_upgrade_plan(selected), dry_run=dry_run)
 
     return SessionDeps(

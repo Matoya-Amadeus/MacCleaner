@@ -121,6 +121,7 @@ class CoreService:
             "disk.summary": self._disk_summary,
             "large.list": self._large_list,
             "files.trash": self._files_trash,
+            "app.open": self._app_open,
             "system": self._system,
             "skills": self._skills,
             "apps": self._apps,
@@ -211,6 +212,26 @@ class CoreService:
             raise ValueError("这个构建不支持移入废纸篓")
         return self._call("trash_paths", paths, default={}) or {}
 
+    def _app_open(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
+        """打开一个 .app（自带更新器的「在应用内更新」用它）。
+
+        只接受**存在且以 .app 结尾**的路径：这条命令会把控制权交给别的程序，
+        不能让它变成"打开任意路径"。
+        """
+        from pathlib import Path
+
+        raw = str(args.get("path") or "").strip()
+        if not raw:
+            raise ValueError("path 不能为空")
+        target = Path(raw)
+        if target.suffix != ".app" or not target.exists():
+            raise ValueError("只允许打开存在的 .app")
+        opener = getattr(self.deps, "open_app", None)
+        if opener is None:
+            raise ValueError("这个构建不支持打开应用")
+        opener(str(target))
+        return {"opened": str(target)}
+
     # ---------- 清理 ----------
 
     def _clean(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
@@ -281,11 +302,16 @@ class CoreService:
         return self._call("orphans_scan", default={}) or {}
 
     def _orphans_apply(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
-        ids = [str(value) for value in (args.get("ids") or [])]
-        if not ids:
-            raise ValueError("ids 不能为空")
-        emit({"id": request_id, "event": "started", "op": "orphans.apply", "count": len(ids)})
-        return self._call("orphans_apply", ids, default={}) or {}
+        """按**路径**清残留：内核那层就是 `orphans_clean(home, paths)`。
+
+        参数名必须是 `paths`：之前写成 `ids` 再把它当路径传下去，只是名字骗自己
+        （2026-10-22 对齐原生界面时发现）。
+        """
+        paths = [str(value) for value in (args.get("paths") or [])]
+        if not paths:
+            raise ValueError("paths 不能为空")
+        emit({"id": request_id, "event": "started", "op": "orphans.apply", "count": len(paths)})
+        return self._call("orphans_apply", paths, default={}) or {}
 
     def _orphans_list(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
         emit({"id": request_id, "event": "started", "op": "orphans.list"})

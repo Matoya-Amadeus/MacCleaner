@@ -174,7 +174,12 @@ def update_group_label(item: dict[str, Any]) -> str:
 
 def updates_view(found: dict[str, Any]) -> dict[str, Any]:
     """更新清单：按来源分组 + Sparkle **只保留确认有更新**的（其余单列）。"""
-    items = [item for item in (found.get("items") or []) if isinstance(item, dict)]
+    # 给每一项补一个**稳定 id**（manager|kind|name）：界面按分组渲染后回传时不会错位。
+    items = [
+        {**item, "id": f"{item.get('manager') or ''}|{item.get('kind') or ''}|{item.get('name') or ''}"}
+        for item in (found.get("items") or [])
+        if isinstance(item, dict)
+    ]
     buckets: dict[str, list[dict[str, Any]]] = {}
     for item in items:
         buckets.setdefault(update_group_label(item), []).append(item)

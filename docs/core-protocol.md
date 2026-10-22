@@ -46,9 +46,11 @@
 | `uninstall.plan` | `path`（必需）,`bundle_id`,`name` | 卸载计划（`app`,`items[]`,`user_total_bytes`） | 只读，不删 |
 | `uninstall.apply` | `path`,`item_ids[]` | 执行结果 | **空 `item_ids` 直接拒绝** |
 | `updates.check` | — | `{items[],sparkle[],notes[]}` | 六源并行 + Sparkle appcast |
-| `updates.apply` | `ids[]` | 结果分组 | 空数组拒绝 |
+| `updates.apply` | `ids[]` | 结果分组 | id 用 **`manager\|kind\|name`**（也兼容旧的数组下标）；空数组拒绝 |
 | `orphans.scan` | — | 残留报告 | |
-| `orphans.apply` | `ids[]` | 结果 | 空数组拒绝 |
+| `orphans.apply` | `paths[]` | 结果 | 传**路径**（内核 `orphans_clean(home, paths)`）；空数组拒绝 |
+| `files.trash` | `paths[]` | `{moved[],failed[]}` | 大文件页用；空数组拒绝 |
+| `app.open` | `path` | `{opened}` | 只接受**存在且以 `.app` 结尾**的路径（Sparkle 应用内更新） |
 | `system.measure` | — | 系统级目录体积 | **弹一次管理员授权，只读** |
 | `system.trash` | `paths[]` | `{moved[],failed[]}` | 需授权；只接受白名单子项 |
 
