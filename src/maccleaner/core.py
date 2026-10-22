@@ -1055,6 +1055,9 @@ class StorageManager:
         self.context = context
         self.runner = runner or CommandRunner()
         self.cache = ScanCache()
+        # 协作式取消（2026-10-22）：执行循环每处理一个 target 前问一次。
+        self.should_stop: Callable[[], bool] | None = None
+        self.cancelled = False
         self._validate_static_context()
 
     def _validate_static_context(self) -> None:
@@ -2189,6 +2192,11 @@ class StorageManager:
         should_apply = not (self.context.dry_run or not self.context.apply)
 
         for scan in scans:
+            # 协作式取消：每处理一个 target 前问一次。取消后**已移走的不会回滚**，
+            # 剩下的保持 "planned"，由上层如实报告"还剩几项"。
+            if self.should_stop is not None and self.should_stop():
+                self.cancelled = True
+                break
             target = scan.target
             item = items_by_id[target.target_id]
             if item.status not in {"ready", "planned"}:

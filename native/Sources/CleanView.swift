@@ -132,7 +132,8 @@ struct RecommendedView: View {
         .onReceive(NotificationCenter.default.publisher(for: .mcReload)) { _ in
             Task { await scan() }
         }
-        .progressOverlay(busy, title: "正在清理…", detail: "移入废纸篓，可在废纸篓里恢复", timer: timer)
+        .progressOverlay(busy, title: "正在清理…", detail: "移入废纸篓，可在废纸篓里恢复",
+                         onCancel: { Task { await CoreClient.shared.cancelCurrent() } }, timer: timer)
         .sheet(item: $completion) { sheet in
             CompletionSheet(completion: sheet) { completion = nil }
         }
@@ -260,7 +261,8 @@ struct RecommendedView: View {
                     recoverableBytes: object["recoverable_bytes"]?.intValue ?? 0,
                     freedBytes: object["actual_freed_bytes"]?.intValue ?? 0,
                     skipped: skipped.map { (path: $0.0, reason: $0.1) },
-                    receiptPath: object["receipt_path"]?.stringValue ?? ""
+                    receiptPath: object["receipt_path"]?.stringValue ?? "",
+                    cancelled: result["cancelled"]?.boolValue ?? false
                 )
             } else {
                 let moved = result["moved_count"]?.intValue ?? 0

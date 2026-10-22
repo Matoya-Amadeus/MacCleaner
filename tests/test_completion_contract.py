@@ -36,7 +36,7 @@ def _service(**overrides) -> CoreService:
         audit=lambda: {"plan_items": []},
         plan=lambda: {},
         clean=lambda: _report(ITEMS),
-        clean_approved=lambda approved, selected: _report(ITEMS),
+        clean_approved=lambda approved, selected, **_kwargs: _report(ITEMS),
     )
     base.update(overrides)
     return CoreService(SessionDeps(**base))

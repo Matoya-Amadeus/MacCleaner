@@ -12,6 +12,7 @@ struct CleanCompletion: Identifiable {
     let freedBytes: Int64
     let skipped: [(path: String, reason: String)]
     let receiptPath: String
+    var cancelled: Bool = false
 }
 
 struct CompletionSheet: View {
@@ -23,10 +24,11 @@ struct CompletionSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 10) {
-                Image(systemName: "checkmark.seal.fill")
+                Image(systemName: completion.cancelled ? "pause.circle.fill" : "checkmark.seal.fill")
                     .font(.title2)
-                    .foregroundStyle(.green)
-                Text("清理完成").font(.title3.weight(.semibold))
+                    .foregroundStyle(completion.cancelled ? .orange : .green)
+                Text(completion.cancelled ? "已取消（部分完成）" : "清理完成")
+                    .font(.title3.weight(.semibold))
             }
 
             HStack(alignment: .top, spacing: 14) {

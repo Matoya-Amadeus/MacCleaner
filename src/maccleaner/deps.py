@@ -1732,7 +1732,12 @@ def build_deps(
     def plan() -> dict[str, Any]:
         return report_of("plan")
 
-    def clean(approved: Sequence[str] = (), confirm: Sequence[str] = ()) -> dict[str, Any]:
+    def clean(
+        approved: Sequence[str] = (),
+        confirm: Sequence[str] = (),
+        *,
+        should_stop: Callable[[], bool] | None = None,
+    ) -> dict[str, Any]:
         """执行清理。
 
         `approved` 必须由调用方给出（界面上就是用户点过的那批 target id）；
@@ -1748,7 +1753,9 @@ def build_deps(
                 "actual_reclaimed_bytes": 0,
                 "notes": ["refused: nothing approved"],
             }
-        report = approved_manager(wanted, [str(item) for item in confirm if str(item)]).clean().to_dict()
+        manager = approved_manager(wanted, [str(item) for item in confirm if str(item)])
+        manager.should_stop = should_stop
+        report = manager.clean().to_dict()
         # 走废纸篓时内核不把字节算作"已释放"（它们还在 .Trash 里），所以 actual_bytes 是 0。
         # 但界面必须能说"可恢复 N"——否则完成页又变成"可恢复 0 B"，用户以为没清掉。
         # 这里按"已移入废纸篓"的语义补上字节数：可恢复 = 移走的量，释放仍要等清空废纸篓。
@@ -1758,6 +1765,16 @@ def build_deps(
         report["notes"] = list(report.get("notes") or []) + [
             "files were moved to Trash: recoverable until the Trash is emptied"
         ]
+        if manager.cancelled:
+            # 取消后：已移走的不回滚，剩下保持 "planned"。把账如实交出去。
+            remaining = [
+                str(item.get("target_id"))
+                for item in report.get("plan_items") or []
+                if str(item.get("status")) in {"planned", "ready"}
+            ]
+            report["cancelled"] = True
+            report["remaining"] = remaining
+            report["notes"].append(f"cancelled: {len(remaining)} targets not processed")
         return report
 
     def uninstall_plan(*, app_path: str, bundle_id: str = "", app_name: str = "") -> dict[str, Any]:
