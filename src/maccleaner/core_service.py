@@ -330,6 +330,7 @@ class CoreService:
             "uninstall_apply",
             app_path=str(args.get("path") or ""),
             item_ids=items,
+            should_stop=self.should_stop,
             default={},
         ) or {}
         return {**report, "result": result_view("uninstall", report)}
@@ -350,7 +351,7 @@ class CoreService:
         if not ids:
             raise ValueError("ids 不能为空")
         emit({"id": request_id, "event": "started", "op": "updates.apply", "count": len(ids)})
-        report = self._call("updates_apply", ids=ids, default={}) or {}
+        report = self._call("updates_apply", ids=ids, should_stop=self.should_stop, default={}) or {}
         return {**report, "result": result_view("updates", report)}
 
     # ---------- 残留 ----------

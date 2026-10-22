@@ -21,7 +21,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Sequence, Callable
 
 BREW_CANDIDATES = ("/opt/homebrew/bin/brew", "/usr/local/bin/brew")
 # mas 与 brew 一样有 Apple Silicon / Intel 两种默认前缀；写死一个在另一种机器上必然找不到。
@@ -654,7 +654,13 @@ def build_upgrade_plan(items: Sequence[dict[str, Any]], *, brew: str = "", mas: 
     return {"groups": groups, "count": sum(len(g["targets"]) for g in groups), "ignored": ignored}
 
 
-def apply_updates(plan: dict[str, Any], *, runner: Any | None = None, dry_run: bool = False) -> dict[str, Any]:
+def apply_updates(
+    plan: dict[str, Any],
+    *,
+    runner: Any | None = None,
+    dry_run: bool = False,
+    should_stop: Callable[[], bool] | None = None,
+) -> dict[str, Any]:
     """按组执行更新；一组失败不影响其它组。`dry_run=True` 只回命令、不执行。"""
     groups = [g for g in (plan.get("groups") or []) if isinstance(g, dict) and g.get("argv")]
     if not groups:
@@ -664,7 +670,12 @@ def apply_updates(plan: dict[str, Any], *, runner: Any | None = None, dry_run: b
         return {"status": "dry-run", "groups": groups, "commands": commands}
 
     results: list[dict[str, Any]] = []
+    cancelled = False
     for group in groups:
+        # 协作式取消：**组与组之间**检查（正在跑的 brew 不打断——半途 kill 会留下坏状态）。
+        if should_stop is not None and should_stop():
+            cancelled = True
+            break
         argv = [str(part) for part in group["argv"]]
         code, out, err = _run(argv, runner=runner, timeout=1800)
         results.append(
@@ -682,13 +693,17 @@ def apply_updates(plan: dict[str, Any], *, runner: Any | None = None, dry_run: b
 
     ok_count = sum(1 for item in results if item["ok"])
     status = "applied" if ok_count == len(results) else ("failed" if ok_count == 0 else "partial")
-    return {
+    payload = {
         "status": status,
         "groups": results,
         "commands": commands,
         "ok_count": ok_count,
         "total": len(results),
     }
+    if cancelled:
+        payload["cancelled"] = True
+        payload["remaining"] = [str(g.get("command") or "") for g in groups[len(results):]]
+    return payload
 
 
 def render_updates_text(payload: dict[str, Any], *, applied: dict[str, Any] | None = None) -> str:

@@ -25,7 +25,7 @@ import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence
 
 from .leftover_rules import rule_candidates
 from .core import _allocated_bytes, _protected_session_reason
@@ -267,6 +267,7 @@ def apply_plan(
     home: Path | None = None,
     selected_ids: Sequence[str] | None = None,
     dry_run: bool = False,
+    should_stop: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     """执行卸载计划：**只移勾选项、只移用户域**，一律移入废纸篓（可恢复）。
 
@@ -311,7 +312,12 @@ def apply_plan(
     trash = _trash_dir(home_path)
     moved: list[dict[str, str]] = []
     failed: list[dict[str, str]] = []
-    for path_text in would_move:
+    cancelled = False
+    for index, path_text in enumerate(would_move):
+        if should_stop is not None and should_stop():
+            cancelled = True
+            remaining = would_move[index:]
+            break
         source = Path(path_text)
         try:
             destination = _move_to_trash(source, trash)
@@ -321,7 +327,7 @@ def apply_plan(
         moved.append({"path": path_text, "trash_path": str(destination)})
 
     status = "applied" if not failed else ("failed" if not moved else "partial")
-    return {
+    payload = {
         "status": status,
         "moved": moved,
         "moved_count": len(moved),
@@ -330,6 +336,11 @@ def apply_plan(
         "failed_count": len(failed),
         "trash_dir": str(trash),
     }
+    if cancelled:
+        payload["status"] = "cancelled"
+        payload["cancelled"] = True
+        payload["remaining"] = remaining
+    return payload
 
 
 def _dict_home(plan: dict[str, Any], home: Path | None) -> Path:

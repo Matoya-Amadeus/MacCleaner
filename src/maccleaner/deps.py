@@ -1792,7 +1792,9 @@ def build_deps(
         plan["cask"] = cask_app_map().get(str(app_path), "")
         return plan
 
-    def uninstall_apply(*, plan: dict[str, Any], ids: list[str] | None) -> dict[str, Any]:
+    def uninstall_apply(
+        *, plan: dict[str, Any], ids: list[str] | None, should_stop: Callable[[], bool] | None = None
+    ) -> dict[str, Any]:
         """执行卸载。
 
         `ids=None` 表示"全部用户域项"（命令行默认）；`ids=[]` 表示**用户什么都没勾**，
@@ -1800,7 +1802,8 @@ def build_deps(
         于是"全不勾"被当成"全选"，点一下卸载就把所有残留都搬走了（2026-10-19 复查发现）。
         """
         selected = None if ids is None else [str(item) for item in ids]
-        return apply_plan(plan, home=home_path, selected_ids=selected, dry_run=dry_run)
+        return apply_plan(plan, home=home_path, selected_ids=selected, dry_run=dry_run,
+                          should_stop=should_stop)
 
     def updates_refresh() -> dict[str, Any]:
         return updates_report(state_root=state_path, force=True)
@@ -1817,7 +1820,9 @@ def build_deps(
             found.setdefault("sparkle", [])
         return found
 
-    def updates_apply(*, ids: list[str]) -> dict[str, Any]:
+    def updates_apply(
+        *, ids: list[str], should_stop: Callable[[], bool] | None = None
+    ) -> dict[str, Any]:
         """按页面勾选执行更新。
 
         **空勾选必须拒绝**：原来 `if not wanted or ...` 让"一个都不勾"变成"全部升级"，
@@ -1827,7 +1832,7 @@ def build_deps(
             return {"status": "refused", "reason": "nothing selected", "groups": []}
         found = discover_updates()
         selected = select_updates(found["items"], ids)
-        return apply_updates(build_upgrade_plan(selected), dry_run=dry_run)
+        return apply_updates(build_upgrade_plan(selected), dry_run=dry_run, should_stop=should_stop)
 
     return SessionDeps(
         audit=audit,

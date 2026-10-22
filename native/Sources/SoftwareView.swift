@@ -357,7 +357,8 @@ struct UninstallPlanSheet: View {
             .padding(16)
         }
         .frame(width: 640, height: 560)
-        .progressOverlay(applying, title: "正在移入废纸篓…", detail: nil, timer: timer)
+        .progressOverlay(applying, title: "正在移入废纸篓…", detail: "每项开始前会检查一次取消",
+                         onCancel: { Task { await CoreClient.shared.cancelCurrent() } }, timer: timer)
         .confirmationDialog(
             "确认卸载 \(plan.appName)？",
             isPresented: $confirming
@@ -527,7 +528,8 @@ struct UpdatesListView: View {
             .padding(16)
         }
         .task { if groups.isEmpty && sparkle.isEmpty { await load() } }
-        .progressOverlay(applying, title: "正在更新…", detail: "brew 可能要几分钟；完成后会刷新列表", timer: timer)
+        .progressOverlay(applying, title: "正在更新…", detail: "在当前这条命令跑完后停下（不打断 brew）",
+                         onCancel: { Task { await CoreClient.shared.cancelCurrent() } }, timer: timer)
         .sheet(item: $result) { sheet in
             ResultSheet(result: sheet) { result = nil }
         }

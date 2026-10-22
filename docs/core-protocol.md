@@ -26,8 +26,9 @@
 
 > **取消语义（2026-10-22）**：协作式取消——响应当前命令的部分结果（`status: "cancelled"`、
 > `moved[]`、`remaining[]`），**已移走的不回滚**。目前支持：`files.trash`、`orphans.apply`；
-> 已支持：`files.trash`、`orphans.apply`、**`clean`**（2026-10-22 补齐，`remaining[]` 如实给）。
-> 仍未支持：`uninstall.apply` / `updates.apply`。
+> **已支持全部五个执行命令**：`files.trash`、`orphans.apply`、`clean`、`uninstall.apply`、`updates.apply`。
+> 粒度：`updates.apply` 在**组与组之间**停（不打断正在跑的 brew），`uninstall.apply`/`clean` 在**项与项之间**停；
+> 都返回 `cancelled: true` 与 `remaining[]`。
 
 `progress` 目前未使用：细粒度进度需要内核在扫描/清理里回调，计划在 M2 里补
 （届时会带 `done` / `bytes` / `phase`）。**界面不能假设一定会有 `progress`**。
