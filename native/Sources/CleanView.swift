@@ -240,7 +240,7 @@ struct RecommendedView: View {
         defer { scanning = false }
         do {
             // 没授权就**不碰**受保护目录（否则 macOS 会为每个文件夹各弹一次框）。
-            let skipProtected = !PermissionStore.shared.hasFullDiskAccess
+            let skipProtected = !PermissionStore.shared.canScanProtected
             let data = try await CoreClient.shared.request(
                 "review.payload", args: skipProtected ? ["skip_protected": .bool(true)] : [:]
             )

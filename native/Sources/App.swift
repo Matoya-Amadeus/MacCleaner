@@ -96,6 +96,10 @@ struct RootView: View {
             .onAppear {
                 StatusItemController.shared.sync()
                 permissions.refresh()
+                // 开发钩子：MACCLEANER_DEV_PERM=1 直接弹出授权面板（截图/验收用）。
+                if ProcessInfo.processInfo.environment["MACCLEANER_DEV_PERM"] != nil {
+                    showPermissions = true
+                }
                 // 开发钩子（MACCLEANER_DEV_PLAN）要落到「软件」页，否则截图得手点一次。
                 if let path = ProcessInfo.processInfo.environment["MACCLEANER_DEV_PLAN"], !path.isEmpty {
                     selection = .software
@@ -125,16 +129,16 @@ struct RootView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .toolbar {
-                if !permissions.hasFullDiskAccess {
+                if !permissions.canScanProtected {
                     ToolbarItem(placement: .primaryAction) {
                         Button {
                             showPermissions = true
                         } label: {
                             Label("权限", systemImage: "lock.shield")
                         }
-                        .help("有几个受保护目录读不到，点开看怎么一次授权")
-                        .popover(isPresented: $showPermissions, arrowEdge: .bottom) {
-                            PermissionPopover(store: permissions)
+                        .help("有几个受保护目录读不到；点这里可以一次勾选授权")
+                        .sheet(isPresented: $showPermissions) {
+                            PermissionSheet(store: permissions) { showPermissions = false }
                         }
                     }
                 }
