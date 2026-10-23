@@ -90,7 +90,7 @@ struct ToolCatalogView: View {
             .padding(.top, 12)
 
             HStack {
-                FilterBar(status: .constant(.all), category: $sectionFilter, categories: sections)
+                FilterBar(status: .constant(.all), category: $sectionFilter, categories: sections, showsStatus: false)
                 Spacer()
                 if let loadedAt {
                     Text("读取于 \(Self.clock.string(from: loadedAt))")

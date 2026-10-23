@@ -28,14 +28,20 @@ struct FilterBar: View {
     @Binding var status: SelectionFilter
     @Binding var category: String?          // nil = 全部分类
     let categories: [(label: String, count: Int)]
+    /// AI 页没有勾选概念，只需要分类——那时不显示"状态"这一维。
+    var showsStatus: Bool = true
+    @Environment(\.colorScheme) private var colorScheme
 
     /// 有没有在筛选（用于高亮图标）
     private var isFiltering: Bool { status != .all || category != nil }
 
     var body: some View {
-        HStack(spacing: 6) {
-            Menu {
-                Section("状态") {
+        // 拆成**两个**独立下拉：状态 / 分类，各自都有"全部"，结果是两者的**交集**。
+        // 之前塞在一个菜单里（两段标题），选完一个得重新打开才能选另一个，
+        // 而且看不出"这两个条件是并列的"（用户 2026-10-23 要求拆开）。
+        HStack(spacing: 8) {
+            if showsStatus {
+                Menu {
                     ForEach(SelectionFilter.allCases) { option in
                         Button {
                             status = option
@@ -44,46 +50,81 @@ struct FilterBar: View {
                             else { Text(option.title) }
                         }
                     }
+                } label: {
+                    chip(
+                        title: status == .all ? "全部状态" : status.title,
+                        symbol: status.symbol,
+                        active: status != .all
+                    )
                 }
-                Section("分类") {
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("按勾选状态筛选")
+            }
+
+            Menu {
+                Button {
+                    category = nil
+                } label: {
+                    if category == nil { Label("全部分类", systemImage: "checkmark") }
+                    else { Text("全部分类") }
+                }
+                Divider()
+                ForEach(categories, id: \.label) { item in
                     Button {
-                        category = nil
+                        category = item.label
                     } label: {
-                        if category == nil { Label("全部分类", systemImage: "checkmark") }
-                        else { Text("全部分类") }
-                    }
-                    ForEach(categories, id: \.label) { item in
-                        Button {
-                            category = item.label
-                        } label: {
-                            if category == item.label {
-                                Label("\(item.label) · \(item.count)", systemImage: "checkmark")
-                            } else {
-                                Text("\(item.label) · \(item.count)")
-                            }
+                        if category == item.label {
+                            Label("\(item.label) · \(item.count)", systemImage: "checkmark")
+                        } else {
+                            Text("\(item.label) · \(item.count)")
                         }
                     }
                 }
-                if isFiltering {
-                    Divider()
-                    Button("清除筛选") {
-                        status = .all
-                        category = nil
-                    }
-                }
             } label: {
-                Label(currentLabel, systemImage: SelectionFilter.allCases.contains(status) ? status.symbol : "line.3.horizontal.decrease.circle")
-                    .font(.callout)
+                chip(
+                    title: category ?? "全部分类",
+                    symbol: "square.grid.2x2",
+                    active: category != nil
+                )
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .help("按状态或分类筛选")
+            .help("按分组筛选")
+
+            if isFiltering {
+                Button {
+                    status = .all
+                    category = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("清除筛选（状态与分类一起清）")
+            }
         }
     }
 
-    private var currentLabel: String {
-        if let category { return "\(category) · \(status.title)" }
-        return status == .all ? "筛选" : status.title
+    /// 下拉按钮的样子：有筛选时用主色，一眼看出"这一维被限定了"。
+    private func chip(title: String, symbol: String, active: Bool) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: symbol).font(.system(size: 11, weight: .medium))
+            Text(title).font(.callout)
+            Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+        }
+        .foregroundStyle(active ? Theme.accentText(colorScheme) : Color.secondary)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(
+            active ? Theme.accentFill(colorScheme) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 7)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 7)
+                .strokeBorder(active ? Theme.accent.opacity(0.35) : Theme.cardStroke(colorScheme), lineWidth: 1)
+        )
     }
 }
 
