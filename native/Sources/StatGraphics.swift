@@ -147,3 +147,25 @@ struct CoreGrid: View {
         .accessibilityLabel("\(count) 个核心")
     }
 }
+
+/// 列表行下方的迷你占比条（高 3pt，不抢文字）。
+/// 用在"目录清单""进程列表"这类**同一基准可比较**的地方；不可比较时不要加。
+struct MiniBar: View {
+    let ratio: Double
+    var tint: Color = .accentColor
+
+    private var clamped: Double { min(max(ratio, 0), 1) }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.secondary.opacity(0.10))
+                Capsule()
+                    .fill(tint.opacity(0.55))
+                    .frame(width: max(proxy.size.width * clamped, clamped > 0 ? 2 : 0))
+            }
+        }
+        .frame(height: 3)
+        .accessibilityHidden(true)   // 行本身已有整句标签，条是纯视觉
+    }
+}

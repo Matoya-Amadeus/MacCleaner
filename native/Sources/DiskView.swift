@@ -49,7 +49,7 @@ struct DiskView: View {
 
                 if let report {
                     header(report)
-                    directoryList(report.sections)
+                    directoryList(report.sections, total: report.total)
                 } else if loading {
                     ProgressView("读取磁盘…").frame(maxWidth: .infinity, alignment: .center).padding(.top, 60)
                 }
@@ -106,9 +106,18 @@ struct DiskView: View {
         }
     }
 
-    private func directoryList(_ sections: [Entry]) -> some View {
-        VStack(spacing: 0) {
+    private func directoryList(_ sections: [Entry], total: Int64) -> some View {
+        let maxBytes = sections.map(\.bytes).max() ?? 0
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("目录").font(.caption).foregroundStyle(.secondary)
+                Text("条长按最大项归一").font(.caption2).foregroundStyle(.tertiary)
+                Spacer()
+            }
+            .padding(.horizontal, 4)
+            .padding(.bottom, 4)
             ForEach(sections) { entry in
+                VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 10) {
                     Image(systemName: Symbol.folder(for: entry.name))
                         .frame(width: 20)
@@ -118,6 +127,12 @@ struct DiskView: View {
                     Text(ByteText.format(entry.bytes))
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
+                }
+                // 基准取**本列表里最大的那个目录**。
+                // 按整机容量归一会让 629 MB 在 2 TB 上只有 0.03%，条根本看不见——
+                // 这条的目的不是"占全盘多少"，而是"目录之间谁大谁小"。
+                MiniBar(ratio: maxBytes > 0 ? Double(entry.bytes) / Double(maxBytes) : 0)
+                    .padding(.trailing, 6)
                 }
                 .padding(.vertical, 9)
                 .padding(.horizontal, 4)

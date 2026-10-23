@@ -205,15 +205,24 @@ struct SystemView: View {
                     Text("占用最高的进程").font(.headline)
                     Text("按 CPU 排序 · \(model.processes.count) 个").font(.caption).foregroundStyle(.secondary)
                 }
+                let peak = max(model.processes.map(\.cpu).max() ?? 100, 100)
                 VStack(spacing: 0) {
                     ForEach(model.processes) { item in
-                        HStack {
-                            Image(systemName: "terminal").foregroundStyle(.secondary).frame(width: 20)
-                            Text(item.name).lineLimit(1)
-                            Spacer(minLength: 12)
-                            Text(ByteText.format(item.rss)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                            Text(String(format: "%.1f%%", item.cpu))
-                                .font(.caption).monospacedDigit().frame(width: 56, alignment: .trailing)
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Image(systemName: "terminal").foregroundStyle(.secondary).frame(width: 20)
+                                Text(item.name).lineLimit(1)
+                                Spacer(minLength: 12)
+                                Text(ByteText.format(item.rss)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                                Text(String(format: "%.1f%%", item.cpu))
+                                    .font(.caption).monospacedDigit()
+                                    .foregroundStyle(item.cpu >= 100 ? Color.orange : Color.primary)
+                                    .frame(width: 56, alignment: .trailing)
+                            }
+                            // 基准取"最高的那个进程"与 100% 的较大者，条长度才有可比性。
+                            MiniBar(ratio: item.cpu / peak,
+                                    tint: item.cpu >= 100 ? .orange : .accentColor)
+                                .padding(.leading, 30)
                         }
                         .padding(.vertical, 7)
                         Divider().opacity(0.4)
