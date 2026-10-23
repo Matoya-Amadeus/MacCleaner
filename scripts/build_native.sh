@@ -44,7 +44,8 @@ cp native/Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp -R "$CORE" "$APP/Contents/Resources/core"
 
 # 开发期内核走仓库构建产物时可用：MACCLEANER_CORE_BINARY=... open ...
-codesign --force --sign - "$APP" >/dev/null 2>&1 || echo "（跳过签名，本机自用可忽略）"
+source "$(dirname "$0")/sign_app.sh"
+sign_app "$APP"
 
 echo "构建完成：$APP"
 if [[ "${1:-}" == "--run" ]]; then

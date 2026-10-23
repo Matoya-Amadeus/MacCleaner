@@ -32,7 +32,8 @@ done
 
 rm -rf "$DEST"
 cp -R "$SRC" "$DEST"
-codesign --force --sign - "$DEST" >/dev/null 2>&1 || echo "（签名失败，本机自用可忽略）"
+source "$(dirname "$0")/sign_app.sh"
+sign_app "$DEST"
 
 echo "已安装：$DEST"
 echo "提示：首次打开后在磁盘页点一下「打开『完全磁盘访问权限』设置」，勾上 MacCleaner 再重启 App。"
