@@ -9,6 +9,10 @@ import LocalAuthentication
 /// - 过程中出错（比如被系统锁）→ 返回 `false`，宁可让用户再点一次。
 enum BiometricGate {
     static func confirm(reason: String) async -> Bool {
+        // 开发/验收钩子：无人值守的自动化里没法按指纹，用它跳过（默认关闭）。
+        if ProcessInfo.processInfo.environment["MACCLEANER_DEV_NO_BIO"] != nil {
+            return true
+        }
         let context = LAContext()
         context.localizedCancelTitle = "取消"
         var error: NSError?

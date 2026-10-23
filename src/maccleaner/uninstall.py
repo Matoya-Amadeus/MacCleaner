@@ -335,6 +335,13 @@ def apply_plan(
         try:
             destination = _move_to_trash(source, trash)
         except OSError as exc:
+            # **报错不等于没卸掉**：如果源已经不在了，说明它其实已经被移走
+            # （前一次尝试成功、或用户手动拖走、或 Finder 代劳时我们没拿到返回）。
+            # 之前这里一律记 failed，于是界面上"完成 0 项"、而 App 其实早没了
+            # （2026-10-23 验收发现：/Applications/同花顺.app 已消失，结果页仍报失败）。
+            if not _exists(source):
+                moved.append({"path": path_text, "trash_path": "", "note": "already gone"})
+                continue
             failed.append({"path": path_text, "reason": f"{type(exc).__name__}: {exc}"})
             continue
         moved.append({"path": path_text, "trash_path": str(destination)})

@@ -491,6 +491,12 @@ struct BatchUninstallSheet: View {
         let viaAdmin = await runOsascript(admin, timeout: 120)
         if viaAdmin.ok { return (true, "") }
 
+        // 三条路都报错，但源可能已经不在了（前一次成功 / 用户拖走 / Finder 代劳后
+        // 我们没拿到返回）。**以磁盘事实为准**，别把已经卸掉的算成失败。
+        if !FileManager.default.fileExists(atPath: path) {
+            return (true, "")
+        }
+
         let reason = viaFinder.message.isEmpty ? viaAdmin.message : viaFinder.message
         return (false, reason.isEmpty ? "移动被系统拒绝" : reason)
     }
