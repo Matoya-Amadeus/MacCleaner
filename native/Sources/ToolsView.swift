@@ -42,6 +42,7 @@ struct ToolCatalogView: View {
     @State private var example = ""
     @State private var workflow: [(String, String)] = []
     @State private var safety: [String] = []
+    @State private var launch: [(kind: String, command: String, note: String)] = []
     @State private var loadedAt: Date?
     @State private var sectionFilter: String?   // nil = 全部分类
     @State private var search = ""
@@ -64,6 +65,7 @@ struct ToolCatalogView: View {
     private var sections: [(label: String, count: Int)] {
         var out: [(String, Int)] = []
         if !workflow.isEmpty { out.append(("推荐调用顺序", workflow.count)) }
+        if !launch.isEmpty { out.append(("怎么接上", launch.count)) }
         if !safety.isEmpty { out.append(("安全边界", safety.count)) }
         if !mcp.isEmpty { out.append(("MCP 工具", mcp.count)) }
         if !commands.isEmpty { out.append(("stdio 命令", commands.count)) }
@@ -118,6 +120,25 @@ struct ToolCatalogView: View {
                         }
                     }
                 }
+                if !launch.isEmpty, sectionFilter == nil || sectionFilter == "怎么接上" {
+                    Section("怎么接上") {
+                        ForEach(launch, id: \.command) { item in
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text(item.kind)
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .padding(.horizontal, 5).padding(.vertical, 1)
+                                        .background(Theme.accent.opacity(0.18), in: Capsule())
+                                    Text(item.command)
+                                        .font(.system(.body, design: .monospaced))
+                                }
+                                Text(item.note).font(.caption2).foregroundStyle(.tertiary)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                }
+
                 if !safety.isEmpty, sectionFilter == nil || sectionFilter == "安全边界" {
                     Section("安全边界") {
                         ForEach(safety, id: \.self) { line in
@@ -201,6 +222,11 @@ struct ToolCatalogView: View {
                 return (cmd, step["note"]?.stringValue ?? "")
             }
             safety = (data["safety"]?.arrayValue ?? []).compactMap { $0.stringValue }
+            launch = (data["launch"]?.arrayValue ?? []).compactMap { item in
+                guard let kind = item["kind"]?.stringValue,
+                      let command = item["command"]?.stringValue else { return nil }
+                return (kind: kind, command: command, note: item["note"]?.stringValue ?? "")
+            }
             loadedAt = Date()
             error = nil
         } catch {

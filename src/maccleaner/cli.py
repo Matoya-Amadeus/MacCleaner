@@ -63,10 +63,14 @@ def build_parser() -> argparse.ArgumentParser:
     uninstall.add_argument("--ids", default="", help="comma separated plan item ids (default: all user-scope items)")
     uninstall.add_argument("--accept-admin", action="store_true", help="also remove system-level leftovers (asks for admin once)")
 
-    ui = sub.add_parser("ui", help="Open the local UI (loopback page, one session at a time)")
+    ui = sub.add_parser("ui", help="Open the native Mac Cleaner app (SwiftUI)")
     add_common(ui)
-    ui.add_argument("--no-open", action="store_true", help="print the URL instead of opening a browser")
-    ui.add_argument("--dry-run", action="store_true", help="rehearse cleanup without touching files")
+    ui.add_argument("--no-open", action="store_true", help="print the app path instead of opening it")
+
+    # MCP：给 agent 直接调的工具入口。之前只能 `python -m maccleaner.mcp_server`，
+    # 界面上列了 7 个 MCP 工具却没说怎么启动——这是真缺口（2026-10-23 补）。
+    mcp = sub.add_parser("mcp", help="Run the MCP server over stdio (for AI agents)")
+    add_common(mcp)
 
     updates = sub.add_parser("updates", help="List third-party updates (brew/mas); --apply to install")
     add_common(updates)
@@ -122,6 +126,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     ctx = _context_from_args(args)
     manager = StorageManager(ctx)
+
+    if args.command == "mcp":
+        from .mcp_server import main as mcp_main
+
+        return mcp_main()
 
     if args.command == "ui":
         # 2026-10-22：本地网页 UI 已随原生界面迁移一起删除（见 docs/plan-2026-10-native.md）。

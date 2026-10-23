@@ -401,6 +401,13 @@ def tools_view(command_help: dict[str, str]) -> dict[str, Any]:
             {"step": 3, "cmd": "apply_storage_plan / clean",
              "note": "只执行用户勾选的那些 id；空列表一律拒绝"},
         ],
+        # 界面上列了工具却不说怎么启动，等于只给了半张说明书（2026-10-23 补）。
+        "launch": [
+            {"kind": "MCP", "command": "maccleaner mcp",
+             "note": "在 agent 的 MCP 配置里指向这条命令（stdio，无需端口）"},
+            {"kind": "stdio", "command": "maccleaner-core serve --stdio",
+             "note": "脚本或其它前端：一行 JSON 一次请求，事件逐行返回"},
+        ],
         "safety": [
             "所有删除都是移入废纸篓（可恢复），不调用 rm",
             "系统级目录（/Library、/var/log）默认只测量；root 域删除需一次管理员授权",
