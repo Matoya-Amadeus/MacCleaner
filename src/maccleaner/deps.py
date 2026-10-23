@@ -1354,6 +1354,200 @@ def sparkle_latest_version(appcast_xml: str) -> str:
     return ""
 
 
+def undetectable_apps(home: Path, report: dict[str, Any]) -> list[dict[str, Any]]:
+    """装了、但没有任何公开更新源的应用。
+
+    判定：已安装列表 − Sparkle − Electron − brew cask − App Store 已购。
+    剩下的（Steam / Adobe / JetBrains / Epic…）**由应用自身更新**，第三方查不到版本，
+    所以只标注、不猜——静默丢弃才是真的"扫描有问题"。
+    """
+    covered: set[str] = set()
+    for item in report.get("sparkle") or []:
+        covered.add(str(item.get("path") or ""))
+    for item in report.get("electron") or []:
+        covered.add(str(item.get("path") or ""))
+
+    cask_names: set[str] = set()
+    try:
+        import subprocess
+
+        out = subprocess.run(["brew", "list", "--cask"], capture_output=True, text=True, timeout=8)
+        cask_names = {line.strip() for line in out.stdout.splitlines() if line.strip()}
+    except Exception:  # noqa: BLE001
+        cask_names = set()
+
+    found: list[dict[str, Any]] = []
+    for app in list_applications(home=home, limit=500):
+        path = str(app.get("path") or "")
+        if path in covered:
+            continue
+        # App Store 应用有自己的通道（mas / 商店更新），不该落进"无法检测"。
+        # 2026-10-23 实测：Logic Pro 同时出现在"App Store 更新"和这一档，自相矛盾。
+        if (Path(path) / "Contents" / "_MASReceipt").exists():
+            continue
+        name = str(app.get("name") or "")
+        slug = Path(path).stem.lower().replace(" ", "-")
+        if slug in cask_names or name.lower().replace(" ", "-") in cask_names:
+            continue
+        found.append({"name": name, "path": path, "reason": "由应用自身更新（无公开更新源）"})
+    return found
+
+
+def _read_app_update_yml(app: Path) -> dict[str, str]:
+    """读 Electron 打包的 `Contents/Resources/app-update.yml`（electron-builder 产物）。
+
+    里面写着这个 App 自己的更新源：`provider: generic` + `url`，或 `provider: github` + `owner`/`repo`。
+    读它不是"猜版本"——是 App 自己声明去哪查。
+    """
+    path = app / "Contents" / "Resources" / "app-update.yml"
+    if not path.exists():
+        return {}
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {}
+    import re
+
+    cfg: dict[str, str] = {}
+    for line in text.splitlines():
+        match = re.match(r"^\s*([A-Za-z_]+):\s*(.+?)\s*$", line)
+        if match:
+            cfg[match.group(1)] = match.group(2).strip("'\"")
+    return cfg
+
+
+def _app_short_version(app: Path) -> str:
+    """读 `CFBundleShortVersionString`（营销版本号，和 appcast/latest-mac.yml 同一口径）。
+
+    注意：`read_app_identity` 只给 bundle id 与名字，不含版本——这里必须自己读，
+    否则"已装版本"为空会被判成"有更新"（2026-10-23 实测踩到：4 个 App 全被误报）。
+    """
+    import plistlib
+
+    try:
+        with (app / "Contents" / "Info.plist").open("rb") as handle:
+            data = plistlib.load(handle)
+    except Exception:  # noqa: BLE001 - 坏 plist 不该让整页失败
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    return str(data.get("CFBundleShortVersionString") or data.get("CFBundleVersion") or "").strip()
+
+
+def electron_apps(home: Path, *, system: bool = True) -> list[dict[str, Any]]:
+    """列出**自带 Electron 更新源**的应用。
+
+    为什么值得单独一层（2026-10-23）：本机 9 个 App 有 `app-update.yml`（Notion、抖音、Kimi Code…），
+    Sparkle 完全看不到它们——只认 `SUFeedURL` 会漏掉半个应用市场。
+    """
+    found: list[dict[str, Any]] = []
+    for base in _app_dirs(home, system=system):
+        if not base.is_dir():
+            continue
+        for app in sorted(base.glob("*.app")):
+            cfg = _read_app_update_yml(app)
+            if not cfg or not cfg.get("provider"):
+                continue
+            found.append(
+                {
+                    "name": app.stem,
+                    "path": str(app),
+                    "version": _app_short_version(app),
+                    "provider": cfg.get("provider", ""),
+                    "url": cfg.get("url", ""),
+                    "owner": cfg.get("owner", ""),
+                    "repo": cfg.get("repo", ""),
+                    "channel": cfg.get("channel", ""),
+                }
+            )
+    return found
+
+
+def electron_check(
+    apps: list[dict[str, Any]] | None = None,
+    *,
+    fetcher: Callable[[str], str] | None = None,
+    timeout: float = 6.0,
+) -> list[dict[str, Any]]:
+    """按每个 App 声明的更新源查最新版本。
+
+    支持：`generic`（拉 `{url}/latest-mac.yml`）与 `github`（Releases API）。
+    `custom` 或 url 为空的，**如实标"无法检查"**，不猜版本。
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    import json as _json
+    import urllib.request
+
+    if apps is None:
+        apps = electron_apps(Path.home())
+
+    def fetch(url: str) -> str:
+        if fetcher is not None:
+            return fetcher(url)
+        request = urllib.request.Request(url, headers={"User-Agent": "MacCleaner"})
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - 只允许 http(s)
+            return response.read(500_000).decode("utf-8", "replace")
+
+    def inspect(app: dict[str, Any]) -> dict[str, Any]:
+        provider = str(app.get("provider") or "")
+        latest = ""
+        reason = ""
+        if provider == "generic":
+            base = str(app.get("url") or "").strip()
+            if not base:
+                reason = "更新源里没有地址"
+            else:
+                for name in ("latest-mac.yml", "latest.yml"):
+                    try:
+                        text = fetch(f"{base.rstrip('/')}/{name}")
+                    except Exception:  # noqa: BLE001 - 网络问题不该拖垮整页
+                        continue
+                    import re as _re
+
+                    match = _re.search(r"^version:\s*(\S+)", text, _re.M)
+                    if match:
+                        latest = match.group(1).strip("'\"")
+                        break
+                if not latest and not reason:
+                    reason = "更新源不可用（拿不到 latest-mac.yml）"
+        elif provider == "github":
+            owner, repo = app.get("owner", ""), app.get("repo", "")
+            if not owner or not repo:
+                reason = "更新源里没有仓库信息"
+            else:
+                try:
+                    raw = fetch(f"https://api.github.com/repos/{owner}/{repo}/releases/latest")
+                    latest = str(_json.loads(raw).get("tag_name") or "").lstrip("v")
+                except Exception as exc:  # noqa: BLE001
+                    reason = f"GitHub 查询失败（{type(exc).__name__}）"
+                if not latest and not reason:
+                    reason = "GitHub 上没有正式版本"
+        else:
+            reason = f"更新源类型不支持（{provider or '未知'}）"
+
+        installed = str(app.get("version") or "")
+        if not latest:
+            return {**app, "latest": "", "status": "unknown", "update_available": False,
+                    "reason": reason or "无法检查"}
+        if not installed:
+            # 读不到已装版本 → 只能说"查到了最新版本，但没法比对"，不能报"有更新"。
+            return {**app, "latest": latest, "status": "unknown", "update_available": False,
+                    "reason": "读不到已装版本"}
+        newer = _version_key(latest) > _version_key(installed)
+        return {
+            **app,
+            "latest": latest,
+            "status": "ok",
+            "update_available": bool(newer),
+            "reason": "" if newer else "已是最新",
+        }
+
+    if not apps:
+        return []
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        return list(pool.map(inspect, apps))
+
+
 def sparkle_check(
     apps: list[dict[str, Any]] | None = None,
     *,
@@ -1829,6 +2023,20 @@ def build_deps(
             found["sparkle"] = sparkle_check(sparkle_apps(home_path))
         except Exception:  # noqa: BLE001 - 图标/plist 读坏了不该拖垮整个检查
             found.setdefault("sparkle", [])
+
+        # Electron 应用（自带 app-update.yml）也是独立通道：本机 9 个，
+        # Sparkle 一个都看不到（2026-10-23 用户指出"Steam 类 app 没检测上"后补的）。
+        try:
+            found["electron"] = electron_check(electron_apps(home_path))
+        except Exception:  # noqa: BLE001
+            found.setdefault("electron", [])
+
+        # 「无法自动检测」：装了、但四个通道都不覆盖的应用（Steam、Adobe、JetBrains…）。
+        # 必须列出来并说明原因——直接消失会让人以为漏扫（用户第一反应就是"你扫描有问题"）。
+        try:
+            found["undetectable"] = undetectable_apps(home_path, found)
+        except Exception:  # noqa: BLE001
+            found.setdefault("undetectable", [])
         return found
 
     def updates_apply(

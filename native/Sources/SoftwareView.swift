@@ -52,6 +52,8 @@ struct UpdatesListView: View {
     @State private var groups: [Group] = []
     @State private var sparkle: [Sparkle] = []
     @State private var sparkleRest: [SparkleRest] = []
+    @State private var electronUpdates: [ElectronApp] = []
+    @State private var undetectable: [Undetectable] = []
     @State private var checked: Set<String> = []
     @State private var loading = false
     @State private var applying = false
@@ -92,6 +94,23 @@ struct UpdatesListView: View {
         let latest: String
     }
 
+    /// Electron 应用（读包内 app-update.yml，走 latest-mac.yml / GitHub Releases）。
+    struct ElectronApp: Identifiable {
+        var id: String { path }
+        let name: String
+        let path: String
+        let version: String
+        let latest: String
+    }
+
+    /// 装了、但没有任何公开更新源（Steam / Adobe / JetBrains…）：只标注，不猜版本。
+    struct Undetectable: Identifiable {
+        var id: String { path }
+        let name: String
+        let path: String
+        let reason: String
+    }
+
     /// 检查过但没有更新的 Sparkle 应用（含"没有更新源""更新源不可达"）。
     /// 单独展示的理由：整段消失会让人以为"这个功能没做"，而不是"查过了，确实没有"。
     struct SparkleRest: Identifiable {
@@ -115,7 +134,8 @@ struct UpdatesListView: View {
             if loading {
                 ProgressView("检查更新…（brew outdated 可能要几秒）")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if groups.isEmpty && sparkle.isEmpty && sparkleRest.isEmpty {
+            } else if groups.isEmpty && sparkle.isEmpty && sparkleRest.isEmpty
+                        && electronUpdates.isEmpty && undetectable.isEmpty {
                 Text("全部是最新的").foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -158,6 +178,9 @@ struct UpdatesListView: View {
                                             
 
                     }
+                    // 开发钩子：MACCLEANER_DEV_EXTRA_ONLY=1 时只显示 Electron / 无法检测两组，
+                    // 方便一屏内验收（brew 那 79 行会把它们顶到屏幕外）。
+                    if ProcessInfo.processInfo.environment["MACCLEANER_DEV_EXTRA_ONLY"] == nil {
                     ForEach(filteredGroups) { group in
                                                 Text("\(group.label) · \(group.items.count)").font(.caption.weight(.medium)).foregroundStyle(.secondary)
                             .listSectionHeaderRow()
@@ -182,6 +205,8 @@ struct UpdatesListView: View {
 
                     }
 
+                    }
+
                     if !sparkleRest.isEmpty {
                         Text("App 更新检查 · \(sparkleRest.count)")
                             .font(.caption.weight(.medium))
@@ -200,6 +225,44 @@ struct UpdatesListView: View {
                                         .lineLimit(1)
                                 }
                                 Spacer(minLength: 8)
+                            }
+                        }
+                    }
+                    if !electronUpdates.isEmpty {
+                        Text("Electron 应用 · \(electronUpdates.count)")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .listSectionHeaderRow()
+                        ForEach(electronUpdates) { item in
+                            HStack(spacing: 10) {
+                                Image(systemName: "bolt.horizontal.circle")
+                                    .frame(width: 20)
+                                    .foregroundStyle(Theme.accent)
+                                Text(item.name).lineLimit(1)
+                                Spacer(minLength: 8)
+                                Text("\(item.version) → \(item.latest)")
+                                    .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    if !undetectable.isEmpty {
+                        Text("无法自动检测 · \(undetectable.count)")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .listSectionHeaderRow()
+                        Text("这些应用由自身更新（Steam、Adobe、JetBrains 等），没有公开更新源；不猜版本。")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .padding(.vertical, 2)
+                        ForEach(undetectable) { item in
+                            HStack(spacing: 10) {
+                                Image(systemName: "minus.circle")
+                                    .frame(width: 20)
+                                    .foregroundStyle(.tertiary)
+                                Text(item.name).lineLimit(1)
+                                Spacer(minLength: 8)
+                                Text(item.reason).font(.caption2).foregroundStyle(.tertiary)
                             }
                         }
                     }
@@ -270,6 +333,23 @@ struct UpdatesListView: View {
                 return Sparkle(name: name, path: path,
                                version: raw["version"]?.stringValue ?? "",
                                latest: raw["latest"]?.stringValue ?? "")
+            }
+
+            // 直接用内核分好的 electron_updates（已经筛过 update_available），
+            // 界面不重复判断布尔——之前这里判空导致整组不显示。
+            electronUpdates = (data["electron_updates"]?.arrayValue ?? []).compactMap { raw in
+                guard let name = raw["name"]?.stringValue,
+                      let path = raw["path"]?.stringValue else { return nil }
+                return ElectronApp(
+                    name: name, path: path,
+                    version: raw["version"]?.stringValue ?? "",
+                    latest: raw["latest"]?.stringValue ?? ""
+                )
+            }
+            undetectable = (data["undetectable"]?.arrayValue ?? []).compactMap { raw in
+                guard let name = raw["name"]?.stringValue, let path = raw["path"]?.stringValue else { return nil }
+                return Undetectable(name: name, path: path,
+                                    reason: raw["reason"]?.stringValue ?? "由应用自身更新")
             }
 
             sparkleRest = (data["sparkle_rest"]?.arrayValue ?? []).compactMap { raw in

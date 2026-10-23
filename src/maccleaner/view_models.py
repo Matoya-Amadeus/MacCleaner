@@ -199,6 +199,14 @@ def updates_view(found: dict[str, Any]) -> dict[str, Any]:
     sparkle_updates = [item for item in sparkle if item.get("update_available")]
     sparkle_rest = [item for item in sparkle if not item.get("update_available")]
 
+    # Electron（自带 app-update.yml）与"无法自动检测"也要透出去。
+    # 之前这里只挑固定字段，deps 里算好的 electron/undetectable 被静默丢掉，
+    # 界面自然一条都不显示（2026-10-23 排查：内核有数据、界面空白）。
+    electron = [item for item in (found.get("electron") or []) if isinstance(item, dict)]
+    electron_updates = [item for item in electron if item.get("update_available")]
+    electron_rest = [item for item in electron if not item.get("update_available")]
+    undetectable = [item for item in (found.get("undetectable") or []) if isinstance(item, dict)]
+
     return {
         "items": items,
         "groups": groups,
@@ -206,6 +214,10 @@ def updates_view(found: dict[str, Any]) -> dict[str, Any]:
         "sparkle": sparkle,
         "sparkle_updates": sparkle_updates,
         "sparkle_rest": sparkle_rest,
+        "electron": electron,
+        "electron_updates": electron_updates,
+        "electron_rest": electron_rest,
+        "undetectable": undetectable,
         "notes": [str(note) for note in (found.get("notes") or [])],
         "scope": str(found.get("scope") or ""),
     }
