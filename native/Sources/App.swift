@@ -57,7 +57,7 @@ struct MacCleanerApp: App {
     var body: some Scene {
         WindowGroup("Mac Cleaner") {
             RootView()
-                .frame(minWidth: 920, minHeight: 620)
+                .frame(minWidth: 760, minHeight: 520)   // 1080×729 这类小屏上 920 宽会顶出屏幕
         }
         .windowToolbarStyle(.unified)
 
@@ -86,6 +86,7 @@ struct RootView: View {
     @AppStorage("selectedSection") private var storedSection: String = SidebarItem.disk.rawValue
     @State private var selection: SidebarItem? = .disk
     @StateObject private var permissions = PermissionStore.shared
+    @State private var showPermissions = false
 
     var body: some View {
         NavigationSplitView {
@@ -113,23 +114,30 @@ struct RootView: View {
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
             .listStyle(.sidebar)
         } detail: {
-            VStack(spacing: 0) {
-                // 只在缺权限时出现，且**全 App 一条**（不再每页各弹一条）。
-                if !permissions.hasFullDiskAccess {
-                    PermissionNotice(store: permissions)
+            Group {
+                switch selection ?? .disk {
+                case .clean: CleanView()
+                case .software: SoftwareView()
+                case .disk: DiskView()
+                case .system: SystemView()
+                case .ai: ToolsView()
                 }
-                Group {
-                    switch selection ?? .disk {
-                    case .clean: CleanView()
-                    case .software: SoftwareView()
-                    case .disk: DiskView()
-                    case .system: SystemView()
-                        case .ai: ToolsView()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .toolbar {
+                if !permissions.hasFullDiskAccess {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            showPermissions = true
+                        } label: {
+                            Label("权限", systemImage: "lock.shield")
+                        }
+                        .help("有几个受保护目录读不到，点开看怎么一次授权")
+                        .popover(isPresented: $showPermissions, arrowEdge: .bottom) {
+                            PermissionPopover(store: permissions)
+                        }
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         StatusItemController.shared.toggle()
