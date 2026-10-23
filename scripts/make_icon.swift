@@ -112,6 +112,70 @@ func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
     CGPoint(x: rect.minX + rect.width * x, y: rect.minY + rect.height * y)
 }
 
+/// 实心磁盘：盘身用蓝色渐变，上盖缝与指示灯用背景色挖空，最后加一层高光。
+func drawDisk() {
+    let plate = CGRect(x: rect.minX + rect.width * 0.155,
+                       y: rect.minY + rect.height * 0.255,
+                       width: rect.width * 0.72,
+                       height: rect.height * 0.42)
+    let plateRadius = rect.width * 0.115
+    let platePath = CGPath(roundedRect: plate, cornerWidth: plateRadius,
+                           cornerHeight: plateRadius, transform: nil)
+
+    // ① 盘身（带发光）
+    func fillPlate() {
+        ctx.saveGState()
+        ctx.addPath(platePath)
+        ctx.clip()
+        let g = CGGradient(colorsSpace: colorSpace, colors: [blueTop, blueMid, blueDeep] as CFArray,
+                           locations: [0, 0.55, 1])!
+        ctx.drawLinearGradient(g,
+                               start: CGPoint(x: plate.minX, y: plate.maxY),
+                               end: CGPoint(x: plate.maxX, y: plate.minY),
+                               options: [])
+        ctx.restoreGState()
+    }
+    withGlow { fillPlate() }
+
+    // ② 上盖缝：用背景色挖一条，制造"盘盖"的层次
+    let slot = CGRect(x: plate.minX + plate.width * 0.075,
+                      y: plate.maxY - plate.height * 0.235,
+                      width: plate.width * 0.85,
+                      height: plate.height * 0.115)
+    ctx.saveGState()
+    ctx.addPath(CGPath(roundedRect: slot, cornerWidth: slot.height * 0.42,
+                       cornerHeight: slot.height * 0.42, transform: nil))
+    ctx.setFillColor(CGColor(red: 0.075, green: 0.075, blue: 0.086, alpha: 1))
+    ctx.fillPath()
+    ctx.restoreGState()
+
+    // ③ 指示灯
+    let ledSize = plate.width * 0.062
+    let led = CGRect(x: plate.maxX - plate.width * 0.115 - ledSize,
+                     y: plate.minY + plate.height * 0.20,
+                     width: ledSize, height: ledSize)
+    ctx.saveGState()
+    ctx.setShadow(offset: .zero, blur: s * 0.03,
+                  color: CGColor(red: 0.6, green: 0.9, blue: 1, alpha: 0.9))
+    ctx.setFillColor(CGColor(red: 0.80, green: 0.94, blue: 1.0, alpha: 1))
+    ctx.fillEllipse(in: led)
+    ctx.restoreGState()
+
+    // ④ 盘身顶部一道高光，玻璃质感
+    ctx.saveGState()
+    ctx.addPath(platePath)
+    ctx.clip()
+    let sheen = CGGradient(colorsSpace: colorSpace, colors: [
+        CGColor(red: 1, green: 1, blue: 1, alpha: 0.28),
+        CGColor(red: 1, green: 1, blue: 1, alpha: 0.0),
+    ] as CFArray, locations: [0, 1])!
+    ctx.drawLinearGradient(sheen,
+                           start: CGPoint(x: 0, y: plate.maxY),
+                           end: CGPoint(x: 0, y: plate.midY + plate.height * 0.12),
+                           options: [])
+    ctx.restoreGState()
+}
+
 func drawMark() {
     let path = CGMutablePath()
     switch variant {
@@ -137,18 +201,9 @@ func drawMark() {
         path.move(to: pt(0.54, 0.62))
         path.addLine(to: pt(0.54, 0.82))
     default:
-        // 磁盘 + 星光：一横一竖的储物盘轮廓 + 右上角四角星
-        path.move(to: pt(0.26, 0.34))
-        path.addLine(to: pt(0.74, 0.34))
-        path.move(to: pt(0.26, 0.34))
-        path.addLine(to: pt(0.26, 0.72))
-        path.move(to: pt(0.74, 0.34))
-        path.addLine(to: pt(0.74, 0.72))
-        path.move(to: pt(0.26, 0.72))
-        path.addLine(to: pt(0.74, 0.72))
-        // 内部横线（盘片）
-        path.move(to: pt(0.26, 0.56))
-        path.addLine(to: pt(0.74, 0.56))
+        // 磁盘：实心盘身 + 挖空的上盖缝 + 指示灯（线条版在 512px 下会糊成一团）
+        drawDisk()
+        return
     }
     withGlow { strokeGradient(path) }
 
@@ -185,7 +240,7 @@ func drawSparkle(center c: CGPoint, radius r: CGFloat, alpha: CGFloat = 0.95) {
 
 var sparkleCenter = pt(0.845, 0.815)
 var sparkleRadius = s * 0.042
-if variant == "drive" { sparkleCenter = pt(0.80, 0.20); sparkleRadius = s * 0.058 }
+if variant == "drive" || variant == "disk" { sparkleCenter = pt(0.845, 0.815); sparkleRadius = s * 0.042 }
 if variant == "broom" { sparkleCenter = pt(0.74, 0.22); sparkleRadius = s * 0.05 }
 ctx.saveGState()
 ctx.setShadow(offset: .zero, blur: s * 0.05, color: CGColor(red: 0.4, green: 0.7, blue: 1, alpha: 0.8))
