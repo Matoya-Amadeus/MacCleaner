@@ -1057,6 +1057,9 @@ class StorageManager:
         self.cache = ScanCache()
         # 协作式取消（2026-10-22）：执行循环每处理一个 target 前问一次。
         self.should_stop: Callable[[], bool] | None = None
+        # 没给「完全磁盘访问权限」时，这些前缀下的目标**一律不碰**：
+        # 碰一下 macOS 就弹一次授权框（2026-10-23 用户反馈"点清理还是连续弹"）。
+        self.skip_protected_paths: tuple[str, ...] = ()
         self.cancelled = False
         self._validate_static_context()
 
@@ -2200,6 +2203,14 @@ class StorageManager:
             target = scan.target
             item = items_by_id[target.target_id]
             if item.status not in {"ready", "planned"}:
+                continue
+
+            # 受保护目录：没授权就不执行（否则 du / open 一碰就弹系统授权框）。
+            if self.skip_protected_paths and any(
+                str(path).startswith(self.skip_protected_paths) for path in target.paths
+            ):
+                item.status = "skipped"
+                item.reason = "protected folder (no full disk access)"
                 continue
 
             if target.kind == "command":

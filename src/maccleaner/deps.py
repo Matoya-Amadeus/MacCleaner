@@ -1737,6 +1737,7 @@ def build_deps(
         confirm: Sequence[str] = (),
         *,
         should_stop: Callable[[], bool] | None = None,
+        skip_protected: bool = False,
     ) -> dict[str, Any]:
         """执行清理。
 
@@ -1755,6 +1756,12 @@ def build_deps(
             }
         manager = approved_manager(wanted, [str(item) for item in confirm if str(item)])
         manager.should_stop = should_stop
+        if skip_protected:
+            manager.skip_protected_paths = (
+                str(home_path / "Downloads"),
+                str(home_path / "Desktop"),
+                str(home_path / "Documents"),
+            )
         report = manager.clean().to_dict()
         # 走废纸篓时内核不把字节算作"已释放"（它们还在 .Trash 里），所以 actual_bytes 是 0。
         # 但界面必须能说"可恢复 N"——否则完成页又变成"可恢复 0 B"，用户以为没清掉。

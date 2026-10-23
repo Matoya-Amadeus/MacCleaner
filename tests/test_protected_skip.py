@@ -69,5 +69,53 @@ class ReviewPayloadArgsTests(unittest.TestCase):
         self.assertNotIn("user", kinds)
 
 
+class ExecuteGuardTests(unittest.TestCase):
+    """**执行阶段**的闸门：界面过滤挡不住执行，内核自己要拦。
+
+    用户反馈（2026-10-23）：清单里已经没有 Downloads/Desktop，点【清理】却仍连续弹系统授权框——
+    因为 `clean` 按 id 重新规划，执行时又碰到了那些目录。
+    """
+
+    def test_target_under_protected_folder_is_skipped(self) -> None:
+        from maccleaner.core import StorageContext, StorageManager
+        from maccleaner.policy import CleanupTarget, PlanItem, TargetScan
+
+        home = Path.home()
+        ctx = StorageContext(home=home, root=home, state_root=home / ".state", apply=True)
+        manager = StorageManager(ctx)
+        manager.skip_protected_paths = (str(home / "Desktop"), str(home / "Downloads"),
+                                        str(home / "Documents"))
+
+        target = CleanupTarget(target_id="desktop-test", name="桌面", category="user",
+                               kind="trash_tree", paths=(home / "Desktop",))
+        item = PlanItem(target_id="desktop-test", name="桌面", category="user", kind="trash_tree",
+                        risk="high", status="ready", reason="", estimated_bytes=100,
+                        paths=(str(home / "Desktop"),))
+        scan = TargetScan(target=target, exists=True, total_bytes=100, eligible_bytes=100,
+                          total_files=1, eligible_files=1, newest_mtime=None, oldest_mtime=None)
+
+        manager.execute([scan], [item])
+
+        self.assertEqual(item.status, "skipped")
+        self.assertIn("protected", item.reason)
+
+    def test_clean_receives_skip_protected_flag(self) -> None:
+        """界面点清理时要显式告诉内核"别碰受保护目录"。"""
+        seen: dict[str, object] = {}
+
+        def clean_approved(approved, selected, **kwargs):
+            seen.update(kwargs)
+            return {"mode": "clean", "plan_items": [], "actual_reclaimed_bytes": 0}
+
+        service = CoreService(
+            SessionDeps(audit=lambda: {}, plan=lambda: {}, clean=lambda: {},
+                        clean_approved=clean_approved),
+            home=HOME,
+        )
+        service.dispatch({"id": "1", "cmd": "clean",
+                          "args": {"approved_ids": ["a"], "skip_protected": True}})
+        self.assertTrue(seen.get("skip_protected"), "内核要收到 skip_protected")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

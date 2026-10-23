@@ -96,7 +96,12 @@ struct RootView: View {
             .onAppear {
                 StatusItemController.shared.sync()
                 permissions.refresh()
-                // 开发钩子：MACCLEANER_DEV_PERM=1 直接弹出授权面板（截图/验收用）。
+                // 授权**统一收到启动时的一次弹窗**里（用户 2026-10-23 要求）：
+                // 不授权也照常能用——我们只是跳过受保护目录，不在清理过程中反复弹系统框。
+                if !permissions.canScanProtected {
+                    showPermissions = true
+                }
+                // 开发钩子：MACCLEANER_DEV_PERM=1 强制弹出（截图/验收用）。
                 if ProcessInfo.processInfo.environment["MACCLEANER_DEV_PERM"] != nil {
                     showPermissions = true
                 }
@@ -109,6 +114,9 @@ struct RootView: View {
             }
             .onChange(of: selection) { _, newValue in
                 if let newValue { storedSection = newValue.rawValue }
+            }
+            .sheet(isPresented: $showPermissions) {
+                PermissionSheet(store: permissions) { showPermissions = false }
             }
             .onReceive(NotificationCenter.default.publisher(for: .mcSelectSection)) { note in
                 if let raw = note.object as? String, let item = SidebarItem(rawValue: raw) {
@@ -137,9 +145,6 @@ struct RootView: View {
                             Label("权限", systemImage: "lock.shield")
                         }
                         .help("有几个受保护目录读不到；点这里可以一次勾选授权")
-                        .sheet(isPresented: $showPermissions) {
-                            PermissionSheet(store: permissions) { showPermissions = false }
-                        }
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {

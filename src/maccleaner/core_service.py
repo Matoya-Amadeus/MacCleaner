@@ -343,8 +343,12 @@ class CoreService:
         emit({"id": request_id, "event": "started", "op": "clean", "count": len(approved)})
         runner = getattr(self.deps, "clean_approved", None)
         if runner is not None:
-            report = self._call("clean_approved", approved, selected,
-                                should_stop=self.should_stop, default={}) or {}
+            report = self._call(
+                "clean_approved", approved, selected,
+                should_stop=self.should_stop,
+                skip_protected=bool(args.get("skip_protected")),
+                default={},
+            ) or {}
         else:
             report = self._call("clean", default={}) or {}
         # 完成页口径由内核算（可恢复 / 实际释放 / 跳过），界面只负责显示。

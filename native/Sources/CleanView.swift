@@ -306,7 +306,10 @@ struct RecommendedView: View {
             let result = try await CoreClient.shared.request(
                 "clean",
                 args: ["approved_ids": .array(approved.map { .string($0) }),
-                       "selected_ids": .array(approved.map { .string($0) })]
+                       "selected_ids": .array(approved.map { .string($0) }),
+                       // 让**内核**也守一遍：没授权就不碰 Downloads/Desktop/Documents，
+                       // 否则执行阶段一碰就弹系统授权框（界面过滤挡不住执行）。
+                       "skip_protected": .bool(!PermissionStore.shared.canScanProtected)]
             )
             // 完成页数据由内核给（口径统一）：可恢复 / 实际释放 / 跳过原因。
             if let payload = result["completion"], let object = payload.objectValue {
