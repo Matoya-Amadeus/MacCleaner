@@ -214,28 +214,28 @@ func drawDisk(withFace: Bool = false) {
 
 /// 磁盘（照参考图轮廓）：上圆下宽的身形 + 底部指示灯带。轮廓描边、指示条填色。
 
-/// v5：整体居中、左右留白；扫帚斜压在磁盘**前面**，中间留一圈空隙（描边挖空）。
-/// 扫帚照 emoji 🧹 复刻：细长柄 + 刷箍 + 上窄下宽的毛束。
+/// v6：磁盘保持原来的身形/大小/位置（底部带点阵指示带），
+/// 表情用 "> <"，右侧一支**纯白简笔**扫帚，扫帚外圈用背景色描一圈与磁盘分开。
 func drawBuddy() {
-    // ── 磁盘（居中偏左一点，给扫帚留视觉重量）──
-    let body = CGRect(x: rect.minX + rect.width * 0.245,
-                      y: rect.minY + rect.height * 0.435,
-                      width: rect.width * 0.450,
-                      height: rect.height * 0.270)
+    // ── 磁盘（与原版同尺寸/位置）──
+    let body = CGRect(x: rect.minX + rect.width * 0.115,
+                      y: rect.minY + rect.height * 0.315,
+                      width: rect.width * 0.610,
+                      height: rect.height * 0.370)
 
     let outline = CGMutablePath()
-    outline.move(to: CGPoint(x: body.minX + rect.width * 0.040, y: body.minY))
-    outline.addLine(to: CGPoint(x: body.maxX - rect.width * 0.040, y: body.minY))
-    outline.addQuadCurve(to: CGPoint(x: body.maxX, y: body.minY + rect.height * 0.048),
+    outline.move(to: CGPoint(x: body.minX + rect.width * 0.050, y: body.minY))
+    outline.addLine(to: CGPoint(x: body.maxX - rect.width * 0.050, y: body.minY))
+    outline.addQuadCurve(to: CGPoint(x: body.maxX, y: body.minY + rect.height * 0.055),
                          control: CGPoint(x: body.maxX, y: body.minY))
-    outline.addLine(to: CGPoint(x: body.maxX, y: body.maxY - rect.height * 0.120))
-    outline.addQuadCurve(to: CGPoint(x: body.maxX - rect.width * 0.090, y: body.maxY),
-                         control: CGPoint(x: body.maxX, y: body.maxY - rect.height * 0.040))
-    outline.addLine(to: CGPoint(x: body.minX + rect.width * 0.090, y: body.maxY))
-    outline.addQuadCurve(to: CGPoint(x: body.minX, y: body.maxY - rect.height * 0.120),
-                         control: CGPoint(x: body.minX, y: body.maxY - rect.height * 0.040))
-    outline.addLine(to: CGPoint(x: body.minX, y: body.minY + rect.height * 0.048))
-    outline.addQuadCurve(to: CGPoint(x: body.minX + rect.width * 0.040, y: body.minY),
+    outline.addLine(to: CGPoint(x: body.maxX, y: body.maxY - rect.height * 0.155))
+    outline.addQuadCurve(to: CGPoint(x: body.maxX - rect.width * 0.115, y: body.maxY),
+                         control: CGPoint(x: body.maxX, y: body.maxY - rect.height * 0.048))
+    outline.addLine(to: CGPoint(x: body.minX + rect.width * 0.115, y: body.maxY))
+    outline.addQuadCurve(to: CGPoint(x: body.minX, y: body.maxY - rect.height * 0.155),
+                         control: CGPoint(x: body.minX, y: body.maxY - rect.height * 0.048))
+    outline.addLine(to: CGPoint(x: body.minX, y: body.minY + rect.height * 0.055))
+    outline.addQuadCurve(to: CGPoint(x: body.minX + rect.width * 0.050, y: body.minY),
                          control: CGPoint(x: body.minX, y: body.minY))
 
     ctx.saveGState()
@@ -244,126 +244,127 @@ func drawBuddy() {
     ctx.fillPath()
     ctx.restoreGState()
 
-    strokeWidthValue = s * 0.040
+    strokeWidthValue = s * 0.042
     withGlow { strokeGradient(outline) }
 
-    // ── 眼睛 "> <"（居中在盘面上）──
-    let eyeY = body.midY + rect.height * 0.012
-    let eyeW = body.width * 0.100
-    let eyeH = body.height * 0.150
+    // ── 底部指示带：一条横线 + 八根细竖条（原版的"点点点点"）──
+    let bandTop = body.minY + body.height * 0.330
+    let bandLine = CGMutablePath()
+    bandLine.move(to: CGPoint(x: body.minX + rect.width * 0.008, y: bandTop))
+    bandLine.addLine(to: CGPoint(x: body.maxX - rect.width * 0.008, y: bandTop))
+    withGlow { strokeGradient(bandLine) }
 
-    let leftEye = CGMutablePath()
-    leftEye.move(to: CGPoint(x: body.minX + body.width * 0.250, y: eyeY + eyeH))
-    leftEye.addLine(to: CGPoint(x: body.minX + body.width * 0.250 + eyeW, y: eyeY))
-    leftEye.addLine(to: CGPoint(x: body.minX + body.width * 0.250, y: eyeY - eyeH))
-
-    let rightEyeX = body.minX + body.width * 0.640
-    let rightEye = CGMutablePath()
-    rightEye.move(to: CGPoint(x: rightEyeX, y: eyeY + eyeH))
-    rightEye.addLine(to: CGPoint(x: rightEyeX - eyeW, y: eyeY))
-    rightEye.addLine(to: CGPoint(x: rightEyeX, y: eyeY - eyeH))
-
-    ctx.saveGState()
-    for eye in [leftEye, rightEye] { ctx.addPath(eye) }
-    ctx.setLineWidth(s * 0.034)
-    ctx.setLineCap(.round)
-    ctx.setLineJoin(.round)
-    ctx.setStrokeColor(blueTop)
-    ctx.strokePath()
-    ctx.restoreGState()
-
-    // ── 扫帚（emoji 姿态：柄在右上，毛束在左下）──
-    let bristleTip = CGPoint(x: rect.minX + rect.width * 0.270, y: rect.minY + rect.height * 0.250)
-    let handleTop = CGPoint(x: rect.minX + rect.width * 0.735, y: rect.minY + rect.height * 0.640)
-    let angle = atan2(handleTop.y - bristleTip.y, handleTop.x - bristleTip.x)
-    let length = hypot(handleTop.x - bristleTip.x, handleTop.y - bristleTip.y)
-
-    // 在"沿柄方向"的局部坐标里画：x 轴朝柄顶
-    ctx.saveGState()
-    ctx.translateBy(x: bristleTip.x, y: bristleTip.y)
-    ctx.rotate(by: angle)
-
-    let w = rect.width                  // 便于按比例写尺寸
-    let h = rect.height
-    let gap = s * 0.010                 // 与磁盘之间的空隙（细一圈，别像描黑边）
-
-    // 毛束轮廓（局部坐标：x 从 0 向柄方向延伸）
-    let bristle = CGMutablePath()
-    bristle.move(to: CGPoint(x: w * 0.120, y: -w * 0.032))
-    bristle.addLine(to: CGPoint(x: w * 0.120, y: w * 0.032))
-    bristle.addLine(to: CGPoint(x: -w * 0.020, y: w * 0.070))
-    bristle.addQuadCurve(to: CGPoint(x: -w * 0.020, y: -w * 0.070),
-                         control: CGPoint(x: -w * 0.052, y: 0))
-    bristle.closeSubpath()
-
-    // 刷箍
-    let ferrule = CGRect(x: w * 0.100, y: -w * 0.034, width: w * 0.052, height: w * 0.068)
-
-    // ① 先描一圈背景色，制造"压在磁盘上但留缝"的效果
-    ctx.saveGState()
-    ctx.addPath(bristle)
-    ctx.setLineWidth(gap * 2)
-    ctx.setLineJoin(.round)
-    ctx.setStrokeColor(CGColor(red: 0.086, green: 0.086, blue: 0.098, alpha: 1))
-    ctx.strokePath()
-    ctx.addPath(CGPath(roundedRect: ferrule.insetBy(dx: -gap, dy: -gap),
-                       cornerWidth: ferrule.height * 0.3, cornerHeight: ferrule.height * 0.3,
-                       transform: nil))
-    ctx.setFillColor(CGColor(red: 0.086, green: 0.086, blue: 0.098, alpha: 1))
-    ctx.fillPath()
-    // 柄的缝隙
-    let handleGap = CGMutablePath()
-    handleGap.move(to: CGPoint(x: w * 0.150, y: 0))
-    handleGap.addLine(to: CGPoint(x: length, y: 0))
-    ctx.addPath(handleGap)
-    ctx.setLineWidth(s * 0.020 + gap * 2)
-    ctx.setLineCap(.round)
-    ctx.setStrokeColor(CGColor(red: 0.086, green: 0.086, blue: 0.098, alpha: 1))
-    ctx.strokePath()
-    ctx.restoreGState()
-
-    // ② 柄
-    ctx.saveGState()
-    let handle = CGMutablePath()
-    handle.move(to: CGPoint(x: w * 0.140, y: 0))
-    handle.addLine(to: CGPoint(x: length, y: 0))
-    ctx.addPath(handle)
-    ctx.setLineWidth(s * 0.026)
-    ctx.setLineCap(.round)
-    ctx.setStrokeColor(blueTop)
-    ctx.strokePath()
-    ctx.restoreGState()
-
-    // ③ 毛束
-    ctx.saveGState()
-    ctx.addPath(bristle)
-    ctx.setFillColor(blueMid)
-    ctx.fillPath()
-    ctx.restoreGState()
-
-    // ④ 毛束纹理（三道细线，沿柄方向）
-    for offset in [-0.026, 0.0, 0.026] {
-        let hair = CGMutablePath()
-        hair.move(to: CGPoint(x: w * 0.010, y: CGFloat(offset) * w))
-        hair.addLine(to: CGPoint(x: w * 0.100, y: CGFloat(offset) * w * 1.25))
+    for index in 0..<8 {
+        let bar = CGRect(x: body.minX + body.width * (0.560 + CGFloat(index) * 0.050),
+                         y: body.minY + body.height * 0.085,
+                         width: rect.width * 0.011, height: rect.height * 0.062)
         ctx.saveGState()
-        ctx.addPath(hair)
-        ctx.setLineWidth(s * 0.009)
-        ctx.setLineCap(.round)
-        ctx.setStrokeColor(CGColor(red: 0.05, green: 0.26, blue: 0.22, alpha: 0.5))
-        ctx.strokePath()
+        ctx.addPath(CGPath(roundedRect: bar, cornerWidth: rect.width * 0.0055,
+                           cornerHeight: rect.width * 0.0055, transform: nil))
+        ctx.setFillColor(blueTop)
+        ctx.fillPath()
         ctx.restoreGState()
     }
 
-    // ⑤ 刷箍
+    // ── 表情 "> <"（在指示带上方）──
+    let eyeY = body.minY + body.height * 0.600
+    let eyeW = body.width * 0.090
+    let eyeH = body.height * 0.135
+
+    let leftEye = CGMutablePath()
+    leftEye.move(to: CGPoint(x: body.minX + body.width * 0.245, y: eyeY + eyeH))
+    leftEye.addLine(to: CGPoint(x: body.minX + body.width * 0.245 + eyeW, y: eyeY))
+    leftEye.addLine(to: CGPoint(x: body.minX + body.width * 0.245, y: eyeY - eyeH))
+
+    let rightX = body.minX + body.width * 0.590
+    let rightEye = CGMutablePath()
+    rightEye.move(to: CGPoint(x: rightX, y: eyeY + eyeH))
+    rightEye.addLine(to: CGPoint(x: rightX - eyeW, y: eyeY))
+    rightEye.addLine(to: CGPoint(x: rightX, y: eyeY - eyeH))
+
     ctx.saveGState()
-    ctx.addPath(CGPath(roundedRect: ferrule,
-                       cornerWidth: ferrule.height * 0.35, cornerHeight: ferrule.height * 0.35,
-                       transform: nil))
-    ctx.setFillColor(blueTop)
-    ctx.fillPath()
+    for eye in [leftEye, rightEye] { ctx.addPath(eye) }
+    ctx.setLineWidth(s * 0.032)
+    ctx.setLineCap(.round)
+    ctx.setLineJoin(.round)
+    ctx.setStrokeColor(blueTop)
+    ctx.strokePath()
     ctx.restoreGState()
 
+    // ── 扫帚：纯白简笔，右移，外圈背景色分隔 ──
+    let brushPoint = CGPoint(x: body.maxX + rect.width * 0.020, y: body.minY + rect.height * 0.115)
+    let handleTop = CGPoint(x: rect.minX + rect.width * 0.900, y: body.minY + body.height * 1.170)
+    let halo = CGColor(red: 0.078, green: 0.078, blue: 0.090, alpha: 1)
+    let white = CGColor(red: 1, green: 1, blue: 1, alpha: 0.96)
+
+    let stick = CGMutablePath()
+    stick.move(to: brushPoint)
+    stick.addLine(to: handleTop)
+
+    // 毛束：四条放射短线（简笔）
+    // 刷毛：从左下往右下张开（简笔四根），根部有一小段"扎口"
+    let hairBase = CGPoint(x: brushPoint.x - rect.width * 0.010,
+                           y: brushPoint.y - rect.height * 0.020)
+    var hairs: [CGPath] = []
+    for offset in [0.0, 1.0, 2.0, 3.0] {
+        let angle = CGFloat.pi * (1.155 + 0.075 * offset)    // 208° → 约 250°（收窄的扇形）
+        let length = rect.width * (0.098 - 0.006 * abs(offset - 1.5))
+        let hair = CGMutablePath()
+        hair.move(to: hairBase)
+        hair.addLine(to: CGPoint(x: hairBase.x + cos(angle) * length,
+                                 y: hairBase.y + sin(angle) * length))
+        hairs.append(hair)
+    }
+
+    // ① 背景色描边（先画粗一圈，形成与磁盘之间的缝）
+    ctx.saveGState()
+    ctx.addPath(stick)
+    ctx.setLineWidth(s * 0.020 + s * 0.020)
+    ctx.setLineCap(.round)
+    ctx.setStrokeColor(halo)
+    ctx.strokePath()
+    for hair in hairs {
+        ctx.addPath(hair)
+    }
+    ctx.setLineWidth(s * 0.018 + s * 0.020)
+    ctx.setLineCap(.round)
+    ctx.setStrokeColor(halo)
+    ctx.strokePath()
+    ctx.restoreGState()
+
+    // ② 白色简笔本体
+    ctx.saveGState()
+    ctx.addPath(stick)
+    ctx.setLineWidth(s * 0.020)
+    ctx.setLineCap(.round)
+    ctx.setStrokeColor(white)
+    ctx.strokePath()
+
+    for hair in hairs {
+        ctx.addPath(hair)
+    }
+    ctx.setLineWidth(s * 0.018)
+    ctx.setLineCap(.round)
+    ctx.setStrokeColor(white)
+    ctx.strokePath()
+    ctx.restoreGState()
+
+    // ③ 刷箍：一小段白色短横
+    ctx.saveGState()
+    let angle = atan2(handleTop.y - brushPoint.y, handleTop.x - brushPoint.x)
+    ctx.translateBy(x: brushPoint.x, y: brushPoint.y)
+    ctx.rotate(by: angle)
+    let ferrule = CGRect(x: -rect.width * 0.014, y: -rect.width * 0.026,
+                         width: rect.width * 0.040, height: rect.width * 0.052)
+    ctx.addPath(CGPath(roundedRect: ferrule.insetBy(dx: -s * 0.010, dy: -s * 0.010),
+                       cornerWidth: rect.width * 0.012, cornerHeight: rect.width * 0.012,
+                       transform: nil))
+    ctx.setFillColor(halo)
+    ctx.fillPath()
+    ctx.addPath(CGPath(roundedRect: ferrule, cornerWidth: rect.width * 0.010,
+                       cornerHeight: rect.width * 0.010, transform: nil))
+    ctx.setFillColor(white)
+    ctx.fillPath()
     ctx.restoreGState()
 }
 
@@ -430,7 +431,7 @@ func drawSparkle(center c: CGPoint, radius r: CGFloat, alpha: CGFloat = 0.95) {
     ctx.restoreGState()
 }
 
-var sparkleCenter = pt(0.225, 0.795)
+var sparkleCenter = pt(0.205, 0.790)
 var sparkleRadius = s * 0.030
 if variant == "drive" || variant == "disk" { sparkleCenter = pt(0.845, 0.815); sparkleRadius = s * 0.042 }
 if variant == "broom" { sparkleCenter = pt(0.74, 0.22); sparkleRadius = s * 0.05 }
