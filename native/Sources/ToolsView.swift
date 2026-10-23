@@ -43,6 +43,8 @@ struct ToolCatalogView: View {
     @State private var workflow: [(String, String)] = []
     @State private var safety: [String] = []
     @State private var launch: [(kind: String, command: String, note: String)] = []
+    @State private var mcpAvailable = true
+    @State private var mcpInstallHint = ""
     @State private var loadedAt: Date?
     @State private var sectionFilter: String?   // nil = 全部分类
     @State private var search = ""
@@ -100,6 +102,12 @@ struct ToolCatalogView: View {
 
             if let error {
                 StatusBanner(level: .error, text: error)
+            } else if !mcpAvailable {
+                // 不说"有 7 个工具"却不告诉你现在用不了。
+                StatusBanner(
+                    level: .warn,
+                    text: "MCP 工具需要可选依赖，当前未安装：\(mcpInstallHint)"
+                )
             }
 
             List {
@@ -222,6 +230,8 @@ struct ToolCatalogView: View {
                 return (cmd, step["note"]?.stringValue ?? "")
             }
             safety = (data["safety"]?.arrayValue ?? []).compactMap { $0.stringValue }
+            mcpAvailable = data["mcp_available"]?.boolValue ?? true
+            mcpInstallHint = data["mcp_install_hint"]?.stringValue ?? ""
             launch = (data["launch"]?.arrayValue ?? []).compactMap { item in
                 guard let kind = item["kind"]?.stringValue,
                       let command = item["command"]?.stringValue else { return nil }

@@ -389,7 +389,15 @@ def tools_view(command_help: dict[str, str]) -> dict[str, Any]:
 
     两个入口分开列：MCP（agent 直接调）与 stdio 命令（脚本/别的前端用）。
     """
+    import importlib.util
+
+    # MCP server 依赖可选包 `mcp`（pip install "maccleaner[mcp]"）。
+    # 没装时列表照样有，但要**如实标出来**，否则界面等于画了一张不能用的图
+    # （2026-10-23 实测：`maccleaner mcp` 直接报缺依赖）。
+    mcp_available = importlib.util.find_spec("mcp") is not None
     return {
+        "mcp_available": mcp_available,
+        "mcp_install_hint": "" if mcp_available else 'pipx install "maccleaner[mcp]"',
         "mcp": [{"name": name, "summary": text} for name, text in MCP_TOOLS],
         "commands": [{"name": name, "summary": text} for name, text in command_help.items()],
         # 顺序本身就是契约：**先列清单、让人确认，才执行**。
