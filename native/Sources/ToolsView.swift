@@ -12,7 +12,7 @@ struct ToolsView: View {
         var title: String {
             switch self {
             case .tools: return "可调用"
-            case .skills: return "本机 Skill"
+            case .skills: return "软件 Skill"
             }
         }
     }
@@ -48,6 +48,7 @@ struct ToolCatalogView: View {
     @State private var workflow: [(String, String)] = []
     @State private var safety: [String] = []
     @State private var loadedAt: Date?
+    @State private var sectionFilter: String?   // nil = 全部分类
     @State private var search = ""
     @State private var error: String?
 
@@ -65,6 +66,15 @@ struct ToolCatalogView: View {
         }
     }
 
+    private var sections: [(label: String, count: Int)] {
+        var out: [(String, Int)] = []
+        if !workflow.isEmpty { out.append(("推荐调用顺序", workflow.count)) }
+        if !safety.isEmpty { out.append(("安全边界", safety.count)) }
+        if !mcp.isEmpty { out.append(("MCP 工具", mcp.count)) }
+        if !commands.isEmpty { out.append(("stdio 命令", commands.count)) }
+        return out
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
@@ -80,11 +90,8 @@ struct ToolCatalogView: View {
             .padding(.horizontal, 16)
             .padding(.top, 12)
 
-            if let error {
-                StatusBanner(level: .error, text: error)
-            }
-
             HStack {
+                FilterBar(status: .constant(.all), category: $sectionFilter, categories: sections)
                 Spacer()
                 if let loadedAt {
                     Text("读取于 \(Self.clock.string(from: loadedAt))")
@@ -94,8 +101,12 @@ struct ToolCatalogView: View {
             .padding(.horizontal, 20)
             .padding(.top, 6)
 
+            if let error {
+                StatusBanner(level: .error, text: error)
+            }
+
             List {
-                if !workflow.isEmpty {
+                if !workflow.isEmpty, sectionFilter == nil || sectionFilter == "推荐调用顺序" {
                     Section("推荐调用顺序 · 先列清单，等用户确认再执行") {
                         ForEach(Array(workflow.enumerated()), id: \.offset) { index, step in
                             HStack(alignment: .top, spacing: 8) {
@@ -112,7 +123,7 @@ struct ToolCatalogView: View {
                         }
                     }
                 }
-                if !safety.isEmpty {
+                if !safety.isEmpty, sectionFilter == nil || sectionFilter == "安全边界" {
                     Section("安全边界") {
                         ForEach(safety, id: \.self) { line in
                             Label(line, systemImage: "checkmark.shield")
@@ -122,13 +133,13 @@ struct ToolCatalogView: View {
                     }
                 }
 
-                let mcps = filtered(mcp)
+                let mcps = sectionFilter == nil || sectionFilter == "MCP 工具" ? filtered(mcp) : []
                 if !mcps.isEmpty {
                     Section("MCP 工具 · \(mcps.count) 个（agent 直接调用）") {
                         ForEach(mcps) { entry in row(entry) }
                     }
                 }
-                let cmds = filtered(commands)
+                let cmds = sectionFilter == nil || sectionFilter == "stdio 命令" ? filtered(commands) : []
                 if !cmds.isEmpty {
                     Section("stdio 命令 · \(cmds.count) 个（脚本 / 其它前端）") {
                         ForEach(cmds) { entry in row(entry) }

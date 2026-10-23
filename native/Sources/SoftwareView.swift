@@ -57,6 +57,8 @@ struct UpdatesListView: View {
     @State private var result: OperationResult?
     @State private var pendingSparkle: [String: String] = [:]   // path → 打开时的版本
     @State private var checkedAt: Date?
+    @State private var filter: SelectionFilter = .all
+    @State private var category: String?
     @State private var knownVersions: [String: String] = [:]    // path → 当前版本（含"已是最新"的）
     @StateObject private var timer = ElapsedTimer()
 
@@ -104,6 +106,13 @@ struct UpdatesListView: View {
                 Text("全部是最新的").foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                HStack {
+                    FilterBar(status: $filter, category: $category, categories: categories)
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 6)
+
                 List {
                     if !sparkle.isEmpty {
                         Section("自带更新（Sparkle）· 确认有更新的") {
@@ -123,7 +132,7 @@ struct UpdatesListView: View {
                             }
                         }
                     }
-                    ForEach(groups) { group in
+                    ForEach(filteredGroups) { group in
                         Section("\(group.label) · \(group.items.count)") {
                             ForEach(group.items) { item in
                                 Toggle(isOn: Binding(
@@ -171,6 +180,24 @@ struct UpdatesListView: View {
         .sheet(item: $result) { sheet in
             ResultSheet(result: sheet) { result = nil }
         }
+    }
+
+    private var filteredGroups: [Group] {
+        groups.compactMap { group -> Group? in
+            if let category, group.label != category { return nil }
+            let items = group.items.filter { item in
+                switch filter {
+                case .all: return true
+                case .selected: return checked.contains(item.id)
+                case .unselected: return !checked.contains(item.id)
+                }
+            }
+            return items.isEmpty ? nil : Group(label: group.label, items: items)
+        }
+    }
+
+    private var categories: [(label: String, count: Int)] {
+        groups.map { (label: $0.label, count: $0.items.count) }
     }
 
     private func load() async {
@@ -275,6 +302,8 @@ struct OrphansListView: View {
     @State private var notice: String?
     @State private var result: OperationResult?
     @State private var scannedAt: Date?
+    @State private var filter: SelectionFilter = .all
+    @State private var category: String?
     @StateObject private var timer = ElapsedTimer()
 
     struct Item: Identifiable {
@@ -310,8 +339,15 @@ struct OrphansListView: View {
                 Text("没有发现残留").foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                HStack {
+                    FilterBar(status: $filter, category: $category, categories: categories)
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 6)
+
                 List {
-                    ForEach(groups) { group in
+                    ForEach(filteredGroups) { group in
                         Section("\(group.label) · \(group.items.count)") {
                             ForEach(group.items) { item in
                                 Toggle(isOn: Binding(
@@ -384,6 +420,24 @@ struct OrphansListView: View {
     private func displayPath(_ path: String) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
+    }
+
+    private var filteredGroups: [Group] {
+        groups.compactMap { group -> Group? in
+            if let category, group.label != category { return nil }
+            let items = group.items.filter { item in
+                switch filter {
+                case .all: return true
+                case .selected: return checked.contains(item.path)
+                case .unselected: return !checked.contains(item.path)
+                }
+            }
+            return items.isEmpty ? nil : Group(label: group.label, items: items)
+        }
+    }
+
+    private var categories: [(label: String, count: Int)] {
+        groups.map { (label: $0.label, count: $0.items.count) }
     }
 
     private func load() async {

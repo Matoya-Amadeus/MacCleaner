@@ -11,6 +11,8 @@ struct UninstallListView: View {
     @State private var error: String?
     @State private var search = ""
     @State private var selected: Set<String> = []        // 应用 path
+    @State private var filter: SelectionFilter = .all
+    @State private var category: String?
     @State private var preparing = false
     @State private var batch: BatchPlan?
     @State private var result: OperationResult?
@@ -62,13 +64,26 @@ struct UninstallListView: View {
 
     private var filtered: [Category] {
         let needle = search.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !needle.isEmpty else { return groups }
-        return groups.compactMap { group in
-            let hits = group.apps.filter {
-                $0.name.lowercased().contains(needle) || $0.bundleID.lowercased().contains(needle)
+        return groups.compactMap { group -> Category? in
+            if let category, group.label != category { return nil }
+            let hits = group.apps.filter { app in
+                let matchesSearch = needle.isEmpty
+                    || app.name.lowercased().contains(needle)
+                    || app.bundleID.lowercased().contains(needle)
+                let matchesStatus: Bool
+                switch filter {
+                case .all: matchesStatus = true
+                case .selected: matchesStatus = selected.contains(app.id)
+                case .unselected: matchesStatus = !selected.contains(app.id)
+                }
+                return matchesSearch && matchesStatus
             }
             return hits.isEmpty ? nil : Category(label: group.label, apps: hits)
         }
+    }
+
+    private var categories: [(label: String, count: Int)] {
+        groups.map { (label: $0.label, count: $0.apps.count) }
     }
 
     private var visibleApps: [App] { filtered.flatMap(\.apps) }
@@ -157,6 +172,8 @@ struct UninstallListView: View {
                         .font(.callout)
                 }
                 .toggleStyle(.checkbox)
+
+                FilterBar(status: $filter, category: $category, categories: categories)
 
                 Spacer()
 

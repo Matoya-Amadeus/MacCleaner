@@ -124,7 +124,7 @@ struct PermissionSheet: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
 
-            Text("点【选择这些文件夹】后只会弹出**一次**系统窗口：按住 ⌘ 把它们一起选中即可。")
+            Text("点【授权】后只会弹出**一次**系统窗口：按住 ⌘ 把它们一起选中即可。")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -139,7 +139,7 @@ struct PermissionSheet: View {
                     .controlSize(.small)
                 Spacer()
                 Button("以后再说", action: onClose).keyboardShortcut(.cancelAction)
-                Button("选择这些文件夹") {
+                Button("授权") {
                     store.requestAccess(for: Array(checked))
                     onClose()
                 }

@@ -43,6 +43,8 @@ struct RecommendedView: View {
     @State private var loading = false
     @State private var scanning = false
     @State private var scannedAt: Date?
+    @State private var filter: SelectionFilter = .all
+    @State private var category: String?
     @State private var error: String?
     @State private var notice: String?
     @State private var confirming = false
@@ -87,6 +89,7 @@ struct RecommendedView: View {
                 scanningView
             } else {
                 HStack {
+                    FilterBar(status: $filter, category: $category, categories: categories)
                     Spacer()
                     if let scannedAt {
                         Text("读取于 \(Self.clock.string(from: scannedAt))")
@@ -97,7 +100,7 @@ struct RecommendedView: View {
                 .padding(.top, 6)
 
                 List {
-                    ForEach(groups) { group in
+                    ForEach(filteredGroups) { group in
                         Section {
                             ForEach(group.items) { item in row(item) }
                         } header: {
@@ -233,6 +236,24 @@ struct RecommendedView: View {
     private func displayPath(_ path: String) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
+    }
+
+    private var filteredGroups: [Group] {
+        groups.compactMap { group -> Group? in
+            if let category, group.key != category { return nil }
+            let items = group.items.filter { item in
+                switch filter {
+                case .all: return true
+                case .selected: return checked.contains(item.id)
+                case .unselected: return !checked.contains(item.id)
+                }
+            }
+            return items.isEmpty ? nil : Group(key: group.key, label: group.label, hint: group.hint, items: items)
+        }
+    }
+
+    private var categories: [(label: String, count: Int)] {
+        groups.map { (label: $0.label, count: $0.items.count) }
     }
 
     private func scan() async {
