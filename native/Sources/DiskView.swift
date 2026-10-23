@@ -11,7 +11,6 @@ struct DiskView: View {
     @State private var error: String?
     @State private var measuring = false
     @State private var loading = false
-    @State private var needsPermission = false
     @State private var loadedAt: Date?
 
     struct Entry: Identifiable {
@@ -45,12 +44,7 @@ struct DiskView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 if let error {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                }
-
-                if needsPermission {
-                    permissionBanner
+                    StatusBanner(level: .error, text: error)
                 }
 
                 if let report {
@@ -76,39 +70,6 @@ struct DiskView: View {
             guard !measuring else { return }
             Task { await load() }
         }
-    }
-
-    /// 探测「完全磁盘访问权限」：读 TCC 数据库是最可靠的探针（无权限必然失败）。
-    nonisolated static func hasFullDiskAccess() -> Bool {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let probe = home.appendingPathComponent("Library/Application Support/com.apple.TCC/TCC.db")
-        guard let handle = try? FileHandle(forReadingFrom: probe) else { return false }
-        defer { try? handle.close() }
-        _ = try? handle.read(upToCount: 1)
-        return true
-    }
-
-    private var permissionBanner: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "lock.trianglebadge.exclamationmark")
-                .font(.title3)
-                .foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("读不到目录体积：需要「完全磁盘访问权限」").font(.callout.weight(.semibold))
-                Text("系统会保护 macOS 与「个人文件夹」里的内容。授权一次即可，随时可在系统设置里撤销。")
-                    .font(.caption).foregroundStyle(.secondary)
-                Button("打开「完全磁盘访问权限」设置") {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-                .controlSize(.small)
-                .padding(.top, 2)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
     }
 
     // MARK: - 区块
@@ -241,10 +202,7 @@ struct DiskView: View {
         // ② 目录体积：没有「完全磁盘访问权限」就先不读——
         //    否则 macOS 会对每个受保护目录弹一次授权框，界面还会卡住（真机撞到）。
         let isDevRoot = ProcessInfo.processInfo.environment["MACCLEANER_CORE_HOME"] != nil
-        guard isDevRoot || Self.hasFullDiskAccess() else {
-            needsPermission = true
-            return
-        }
+        guard isDevRoot || PermissionStore.shared.hasFullDiskAccess else { return }
 
         do {
             let data = try await CoreClient.shared.request("disk")

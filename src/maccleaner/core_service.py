@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import sys
 import threading
+from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from .view_models import (
@@ -49,12 +50,53 @@ ERROR_CODES = {
 class CoreService:
     """把内核能力暴露成命令。一个实例对应一个调用方（stdio 会话）。"""
 
-    def __init__(self, deps: Any, *, emit: Callable[[dict[str, Any]], None] | None = None) -> None:
+    # macOS 会针对这三个目录**分别**弹一次授权框（除非给了「完全磁盘访问权限」）。
+    # 用户在真机上点得很累（2026-10-23 反馈），所以没授权时我们**整块跳过**，
+    # 由界面用**一条**全局提示告诉他"授权一次就能全读到"。
+    PROTECTED_FOLDERS = ("Downloads", "Desktop", "Documents")
+
+    def __init__(
+        self,
+        deps: Any,
+        *,
+        emit: Callable[[dict[str, Any]], None] | None = None,
+        home: str | None = None,
+    ) -> None:
         self.deps = deps
+        # `--home ~` 这种写法要展开，否则拼出来的 `~/Downloads` 跟绝对路径永远匹配不上。
+        self.home = str(Path(home).expanduser()) if home else str(Path.home())
         self._emit = emit or (lambda message: None)
         # 协作式取消：命令是同步执行的，所以靠一个标志让执行循环自己收手，
         # 而不是杀进程（杀进程会留下"不知道删了哪些"的半成品）。
         self._cancel = threading.Event()
+
+    # ---------- 受保护目录 ----------
+
+    def protected_paths(self) -> list[str]:
+        return [str(Path(self.home) / name) for name in self.PROTECTED_FOLDERS]
+
+    def drop_protected(self, report: dict[str, Any]) -> dict[str, Any]:
+        """把落在受保护目录下的候选摘掉（没授权时用，避免触发一串系统授权框）。"""
+        roots = self.protected_paths()
+        kept: list[dict[str, Any]] = []
+        dropped = 0
+        for item in report.get("plan_items") or []:
+            # 报告里的路径是 `~/Downloads` 这种波浪线形式，必须展开后再比，
+            # 否则永远匹配不上（第一次实现就踩到，跳过数一直是 0）。
+            paths = [str(Path(str(p)).expanduser()) for p in (item.get("paths") or [])]
+            if paths and all(any(path.startswith(root) for root in roots) for path in paths):
+                dropped += 1
+                continue
+            kept.append(item)
+        if not dropped:
+            return report
+        out = dict(report)
+        out["plan_items"] = kept
+        notes = list(out.get("notes") or [])
+        notes.append(f"skipped {dropped} targets under protected folders (no full disk access)")
+        out["notes"] = notes
+        out["skipped_protected"] = dropped
+        return out
 
     # ---------- 取消 ----------
 
@@ -215,7 +257,11 @@ class CoreService:
         """扫一遍并**直接给出分组好的审阅数据**（界面不用知道分类规则）。"""
         emit({"id": request_id, "event": "started", "op": "review.payload"})
         report = self._call("audit", default={}) or {}
-        return review_view(report)
+        if bool(args.get("skip_protected")):
+            report = self.drop_protected(report)
+        view = review_view(report)
+        view["skipped_protected"] = int(report.get("skipped_protected") or 0)
+        return view
 
     def _large_list(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
         emit({"id": request_id, "event": "started", "op": "large.list"})
@@ -441,7 +487,7 @@ class CoreService:
         return json.dumps(message, ensure_ascii=False, separators=(",", ":"))
 
 
-def serve_stdio(deps: Any, stdin=None, stdout=None) -> int:
+def serve_stdio(deps: Any, stdin=None, stdout=None, home: str | None = None) -> int:
     """stdio 循环：读请求、**在后台线程执行**、逐行写消息。
 
     为什么要分线程（2026-10-22 加取消）：命令是同步阻塞的（一次清理可能几十秒），
@@ -452,7 +498,7 @@ def serve_stdio(deps: Any, stdin=None, stdout=None) -> int:
 
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
-    service = CoreService(deps)
+    service = CoreService(deps, home=home)
     write_lock = threading.Lock()
 
     def write(payload: dict[str, Any]) -> None:

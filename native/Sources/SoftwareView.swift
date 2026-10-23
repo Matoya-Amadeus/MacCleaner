@@ -54,6 +54,7 @@ struct UninstallListView: View {
     @State private var notice: String?
     @StateObject private var timer = ElapsedTimer()
     @State private var result: OperationResult?
+    @State private var loadedAt: Date?
 
     struct App: Identifiable {
         let id: String          // 用 path 做 id：bundle id 可能缺失
@@ -113,16 +114,24 @@ struct UninstallListView: View {
             .padding(.top, 12)
 
             if let error {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red).padding(12)
-            }
-            if let notice {
-                Text(notice).font(.callout).foregroundStyle(.secondary).padding(.top, 8)
+                StatusBanner(level: .error, text: error)
+            } else if let notice {
+                StatusBanner(level: .info, text: notice)
             }
 
             if loading && groups.isEmpty {
                 ProgressView("读取应用列表…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                HStack {
+                    Spacer()
+                    if let loadedAt {
+                        Text("读取于 \(Self.clock.string(from: loadedAt))")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 6)
+
                 List {
                     ForEach(filtered) { group in
                         Section {
@@ -231,11 +240,18 @@ struct UninstallListView: View {
                 }
                 return apps.isEmpty ? nil : Category(label: label, apps: apps)
             }
+            loadedAt = Date()
             error = nil
         } catch {
             self.error = error.localizedDescription
         }
     }
+
+    private static let clock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
 
     private func makePlan(_ app: App) async {
         planning = app.path
@@ -432,6 +448,7 @@ struct UpdatesListView: View {
     @State private var notice: String?
     @State private var result: OperationResult?
     @State private var pendingSparkle: [String: String] = [:]   // path → 打开时的版本
+    @State private var checkedAt: Date?
     @State private var knownVersions: [String: String] = [:]    // path → 当前版本（含"已是最新"的）
     @StateObject private var timer = ElapsedTimer()
 
@@ -448,6 +465,12 @@ struct UpdatesListView: View {
         let items: [Item]
     }
 
+    private static let clock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
     struct Sparkle: Identifiable {
         var id: String { path }
         let name: String
@@ -461,10 +484,9 @@ struct UpdatesListView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let error {
-                Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).padding(12)
-            }
-            if let notice {
-                Text(notice).font(.callout).foregroundStyle(.secondary).padding(.top, 8)
+                StatusBanner(level: .error, text: error)
+            } else if let notice {
+                StatusBanner(level: .info, text: notice)
             }
 
             if loading {
@@ -520,7 +542,8 @@ struct UpdatesListView: View {
 
             Divider()
             HStack {
-                Text("已选 \(checked.count) 项 · 共 \(allItems.count) 项")
+                Text("已选 \(checked.count) 项 · 共 \(allItems.count) 项"
+                     + (checkedAt.map { " · 检查于 \(Self.clock.string(from: $0))" } ?? ""))
                     .font(.callout.weight(.medium)).monospacedDigit()
                 Spacer()
                 Button {
@@ -574,6 +597,7 @@ struct UpdatesListView: View {
                 }
             }
             knownVersions = versions
+            checkedAt = Date()
 
             // 核对：点过"在应用内更新"的应用，版本变了吗？
             for (path, oldVersion) in pendingSparkle {
@@ -642,6 +666,7 @@ struct OrphansListView: View {
     @State private var error: String?
     @State private var notice: String?
     @State private var result: OperationResult?
+    @State private var scannedAt: Date?
     @StateObject private var timer = ElapsedTimer()
 
     struct Item: Identifiable {
@@ -665,10 +690,9 @@ struct OrphansListView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let error {
-                Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).padding(12)
-            }
-            if let notice {
-                Text(notice).font(.callout).foregroundStyle(.secondary).padding(.top, 8)
+                StatusBanner(level: .error, text: error)
+            } else if let notice {
+                StatusBanner(level: .info, text: notice)
             }
 
             if loading {
@@ -710,7 +734,8 @@ struct OrphansListView: View {
 
             Divider()
             HStack {
-                Text("已选 \(checked.count) 项 · \(ByteText.format(checkedBytes))")
+                Text("已选 \(checked.count) 项 · \(ByteText.format(checkedBytes))"
+                     + (scannedAt.map { " · 读取于 \(Self.clock.string(from: $0))" } ?? ""))
                     .font(.callout.weight(.medium)).monospacedDigit()
                 Spacer()
                 Button {
@@ -742,6 +767,12 @@ struct OrphansListView: View {
         }
     }
 
+    private static let clock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
     private func displayPath(_ path: String) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
@@ -763,6 +794,7 @@ struct OrphansListView: View {
                 return items.isEmpty ? nil : Group(label: label, items: items)
             }
             checked = Set(groups.first(where: { $0.label == "Caches" })?.items.map(\.path) ?? [])
+            scannedAt = Date()
             error = nil
         } catch {
             self.error = error.localizedDescription

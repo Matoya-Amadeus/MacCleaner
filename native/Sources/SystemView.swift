@@ -4,6 +4,7 @@ import SwiftUI
 struct SystemView: View {
     @State private var model: Model?
     @State private var error: String?
+    @State private var sampledAt: Date?
 
     struct Process: Identifiable {
         let id = UUID()
@@ -33,9 +34,16 @@ struct SystemView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 if let error {
-                    Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                    StatusBanner(level: .error, text: error)
                 }
                 if let model {
+                    HStack {
+                        Spacer()
+                        if let sampledAt {
+                            Text("采样于 \(Self.clock.string(from: sampledAt))")
+                                .font(.caption2).foregroundStyle(.tertiary)
+                        }
+                    }
                     statsGrid(model)
                     batteryBlock(model)
                     processList(model)
@@ -52,6 +60,12 @@ struct SystemView: View {
             Task { await load() }
         }
     }
+
+    private static let clock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
 
     // MARK: - 区块
 
@@ -168,6 +182,7 @@ struct SystemView: View {
                 },
                 throttled: data["thermal"]?["throttled"]?.boolValue ?? false
             )
+            sampledAt = Date()
         } catch {
             self.error = error.localizedDescription
         }

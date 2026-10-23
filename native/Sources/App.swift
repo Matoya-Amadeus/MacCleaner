@@ -85,6 +85,7 @@ struct RootView: View {
     // 记住上次停在哪个入口：原生 App 的默认期待（重开还在这儿）。
     @AppStorage("selectedSection") private var storedSection: String = SidebarItem.disk.rawValue
     @State private var selection: SidebarItem? = .disk
+    @StateObject private var permissions = PermissionStore.shared
 
     var body: some View {
         NavigationSplitView {
@@ -93,6 +94,7 @@ struct RootView: View {
             }
             .onAppear {
                 StatusItemController.shared.sync()
+                permissions.refresh()
                 // 开发钩子（MACCLEANER_DEV_PLAN）要落到「软件」页，否则截图得手点一次。
                 if let path = ProcessInfo.processInfo.environment["MACCLEANER_DEV_PLAN"], !path.isEmpty {
                     selection = .software
@@ -111,16 +113,22 @@ struct RootView: View {
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
             .listStyle(.sidebar)
         } detail: {
-            Group {
-                switch selection ?? .disk {
-                case .clean: CleanView()
-                case .software: SoftwareView()
-                case .disk: DiskView()
-                case .system: SystemView()
-                case .ai: ToolsView()
+            VStack(spacing: 0) {
+                // 只在缺权限时出现，且**全 App 一条**（不再每页各弹一条）。
+                if !permissions.hasFullDiskAccess {
+                    PermissionNotice(store: permissions)
                 }
+                Group {
+                    switch selection ?? .disk {
+                    case .clean: CleanView()
+                    case .software: SoftwareView()
+                    case .disk: DiskView()
+                    case .system: SystemView()
+                        case .ai: ToolsView()
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {

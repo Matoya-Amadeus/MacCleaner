@@ -78,16 +78,24 @@ struct RecommendedView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let error {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red).padding(12)
-            }
-            if let notice {
-                Text(notice).font(.callout).foregroundStyle(.secondary).padding(.top, 8)
+                StatusBanner(level: .error, text: error)
+            } else if let notice {
+                StatusBanner(level: .info, text: notice)
             }
 
             if groups.isEmpty {
                 scanningView
             } else {
+                HStack {
+                    Spacer()
+                    if let scannedAt {
+                        Text("读取于 \(Self.clock.string(from: scannedAt))")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 6)
+
                 List {
                     ForEach(groups) { group in
                         Section {
@@ -231,7 +239,11 @@ struct RecommendedView: View {
         scanning = true
         defer { scanning = false }
         do {
-            let data = try await CoreClient.shared.request("review.payload")
+            // 没授权就**不碰**受保护目录（否则 macOS 会为每个文件夹各弹一次框）。
+            let skipProtected = !PermissionStore.shared.hasFullDiskAccess
+            let data = try await CoreClient.shared.request(
+                "review.payload", args: skipProtected ? ["skip_protected": .bool(true)] : [:]
+            )
             groups = (data["groups"]?.arrayValue ?? []).compactMap { group in
                 guard let key = group["key"]?.stringValue, let label = group["label"]?.stringValue else { return nil }
                 let items = (group["items"]?.arrayValue ?? []).compactMap { raw -> Item? in

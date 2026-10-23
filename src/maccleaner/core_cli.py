@@ -81,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     deps = _build_deps(args)
-    return serve_stdio(deps)
+    return serve_stdio(deps, home=str(args.home) if getattr(args, "home", None) else None)
 
 
 if __name__ == "__main__":  # pragma: no cover

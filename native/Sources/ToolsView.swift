@@ -47,6 +47,7 @@ struct ToolCatalogView: View {
     @State private var example = ""
     @State private var workflow: [(String, String)] = []
     @State private var safety: [String] = []
+    @State private var loadedAt: Date?
     @State private var search = ""
     @State private var error: String?
 
@@ -80,9 +81,18 @@ struct ToolCatalogView: View {
             .padding(.top, 12)
 
             if let error {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red).padding(12)
+                StatusBanner(level: .error, text: error)
             }
+
+            HStack {
+                Spacer()
+                if let loadedAt {
+                    Text("读取于 \(Self.clock.string(from: loadedAt))")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 6)
 
             List {
                 if !workflow.isEmpty {
@@ -142,6 +152,12 @@ struct ToolCatalogView: View {
         }
     }
 
+    private static let clock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
     private func row(_ entry: Entry) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(entry.name)
@@ -179,6 +195,7 @@ struct ToolCatalogView: View {
                 return (cmd, step["note"]?.stringValue ?? "")
             }
             safety = (data["safety"]?.arrayValue ?? []).compactMap { $0.stringValue }
+            loadedAt = Date()
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -226,8 +243,7 @@ struct SkillCatalogView: View {
             .padding(.top, 12)
 
             if let error {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red).padding(12)
+                StatusBanner(level: .error, text: error)
             }
 
             List {
