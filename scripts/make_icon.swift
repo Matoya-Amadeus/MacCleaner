@@ -61,8 +61,8 @@ ctx.saveGState()
 ctx.addPath(squircle)
 ctx.clip()
 let bloom = CGGradient(colorsSpace: colorSpace, colors: [
-    CGColor(red: 0.16, green: 0.47, blue: 1.0, alpha: 0.22),
-    CGColor(red: 0.16, green: 0.47, blue: 1.0, alpha: 0.0),
+    CGColor(red: 0.10, green: 0.85, blue: 0.70, alpha: 0.20),
+    CGColor(red: 0.10, green: 0.85, blue: 0.70, alpha: 0.0),
 ] as CFArray, locations: [0, 1])!
 ctx.drawRadialGradient(bloom,
                        startCenter: CGPoint(x: rect.midX, y: rect.midY + rect.height * 0.05), startRadius: 0,
@@ -71,20 +71,22 @@ ctx.drawRadialGradient(bloom,
 ctx.restoreGState()
 
 // ③ 笔画样式：渐变蓝 + 外发光
-let strokeWidth = s * 0.074
-let blueTop = CGColor(red: 0.478, green: 0.741, blue: 1.0, alpha: 1)
-let blueMid = CGColor(red: 0.259, green: 0.557, blue: 1.0, alpha: 1)
-let blueDeep = CGColor(red: 0.086, green: 0.361, blue: 0.949, alpha: 1)
+var strokeWidthValue = s * 0.074
+let strokeWidth = strokeWidthValue
+// 青绿：亮青 → 主青 → 深青（用户指定 2026-10-23）
+let blueTop = CGColor(red: 0.608, green: 0.976, blue: 0.878, alpha: 1)
+let blueMid = CGColor(red: 0.180, green: 0.847, blue: 0.702, alpha: 1)
+let blueDeep = CGColor(red: 0.043, green: 0.639, blue: 0.529, alpha: 1)
 
 func withGlow(_ draw: () -> Void) {
     // 外层：大范围、很淡
     ctx.saveGState()
-    ctx.setShadow(offset: .zero, blur: s * 0.11, color: CGColor(red: 0.12, green: 0.42, blue: 1, alpha: 0.35))
+    ctx.setShadow(offset: .zero, blur: s * 0.11, color: CGColor(red: 0.08, green: 0.80, blue: 0.66, alpha: 0.35))
     draw()
     ctx.restoreGState()
     // 内层：紧贴笔画的亮光
     ctx.saveGState()
-    ctx.setShadow(offset: .zero, blur: s * 0.045, color: CGColor(red: 0.35, green: 0.62, blue: 1, alpha: 0.55))
+    ctx.setShadow(offset: .zero, blur: s * 0.045, color: CGColor(red: 0.35, green: 0.95, blue: 0.80, alpha: 0.55))
     draw()
     ctx.restoreGState()
     draw()
@@ -93,7 +95,7 @@ func withGlow(_ draw: () -> Void) {
 func strokeGradient(_ path: CGPath) {
     ctx.saveGState()
     ctx.addPath(path)
-    ctx.setLineWidth(strokeWidth)
+    ctx.setLineWidth(strokeWidthValue)
     ctx.setLineCap(.round)
     ctx.setLineJoin(.round)
     ctx.replacePathWithStrokedPath()
@@ -112,68 +114,46 @@ func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
     CGPoint(x: rect.minX + rect.width * x, y: rect.minY + rect.height * y)
 }
 
-/// 实心磁盘：盘身用蓝色渐变，上盖缝与指示灯用背景色挖空，最后加一层高光。
+/// 磁盘（照参考图轮廓）：上圆下宽的身形 + 底部指示灯带。轮廓描边、指示条填色。
 func drawDisk() {
-    let plate = CGRect(x: rect.minX + rect.width * 0.155,
-                       y: rect.minY + rect.height * 0.255,
-                       width: rect.width * 0.72,
-                       height: rect.height * 0.42)
-    let plateRadius = rect.width * 0.115
-    let platePath = CGPath(roundedRect: plate, cornerWidth: plateRadius,
-                           cornerHeight: plateRadius, transform: nil)
+    let outline = CGMutablePath()
 
-    // ① 盘身（带发光）
-    func fillPlate() {
+    // 身形：底边平、两肩圆角、顶边略窄
+    outline.move(to: pt(0.200, 0.290))
+    outline.addLine(to: pt(0.800, 0.290))
+    outline.addQuadCurve(to: pt(0.850, 0.350), control: pt(0.850, 0.290))
+    outline.addLine(to: pt(0.850, 0.560))
+    outline.addQuadCurve(to: pt(0.715, 0.745), control: pt(0.850, 0.700))
+    outline.addLine(to: pt(0.285, 0.745))
+    outline.addQuadCurve(to: pt(0.150, 0.560), control: pt(0.150, 0.700))
+    outline.addLine(to: pt(0.150, 0.350))
+    outline.addQuadCurve(to: pt(0.200, 0.290), control: pt(0.150, 0.290))
+    outline.closeSubpath()
+
+    // 指示灯带的分隔线
+    outline.move(to: pt(0.160, 0.455))
+    outline.addLine(to: pt(0.840, 0.455))
+
+    let save = strokeWidthValue
+    strokeWidthValue = s * 0.050
+    withGlow { strokeGradient(outline) }
+    strokeWidthValue = save
+
+    // 指示灯：六个小竖条（**填色**，不描边——描边会把它们糊成一块）
+    for index in 0..<6 {
+        let x = 0.560 + Double(index) * 0.042
+        let bar = CGRect(x: rect.minX + rect.width * x,
+                         y: rect.minY + rect.height * 0.330,
+                         width: rect.width * 0.014,
+                         height: rect.height * 0.070)
+        let barPath = CGPath(roundedRect: bar, cornerWidth: rect.width * 0.007,
+                             cornerHeight: rect.width * 0.007, transform: nil)
         ctx.saveGState()
-        ctx.addPath(platePath)
-        ctx.clip()
-        let g = CGGradient(colorsSpace: colorSpace, colors: [blueTop, blueMid, blueDeep] as CFArray,
-                           locations: [0, 0.55, 1])!
-        ctx.drawLinearGradient(g,
-                               start: CGPoint(x: plate.minX, y: plate.maxY),
-                               end: CGPoint(x: plate.maxX, y: plate.minY),
-                               options: [])
+        ctx.addPath(barPath)
+        ctx.setFillColor(blueTop)
+        ctx.fillPath()
         ctx.restoreGState()
     }
-    withGlow { fillPlate() }
-
-    // ② 上盖缝：用背景色挖一条，制造"盘盖"的层次
-    let slot = CGRect(x: plate.minX + plate.width * 0.075,
-                      y: plate.maxY - plate.height * 0.235,
-                      width: plate.width * 0.85,
-                      height: plate.height * 0.115)
-    ctx.saveGState()
-    ctx.addPath(CGPath(roundedRect: slot, cornerWidth: slot.height * 0.42,
-                       cornerHeight: slot.height * 0.42, transform: nil))
-    ctx.setFillColor(CGColor(red: 0.075, green: 0.075, blue: 0.086, alpha: 1))
-    ctx.fillPath()
-    ctx.restoreGState()
-
-    // ③ 指示灯
-    let ledSize = plate.width * 0.062
-    let led = CGRect(x: plate.maxX - plate.width * 0.115 - ledSize,
-                     y: plate.minY + plate.height * 0.20,
-                     width: ledSize, height: ledSize)
-    ctx.saveGState()
-    ctx.setShadow(offset: .zero, blur: s * 0.03,
-                  color: CGColor(red: 0.6, green: 0.9, blue: 1, alpha: 0.9))
-    ctx.setFillColor(CGColor(red: 0.80, green: 0.94, blue: 1.0, alpha: 1))
-    ctx.fillEllipse(in: led)
-    ctx.restoreGState()
-
-    // ④ 盘身顶部一道高光，玻璃质感
-    ctx.saveGState()
-    ctx.addPath(platePath)
-    ctx.clip()
-    let sheen = CGGradient(colorsSpace: colorSpace, colors: [
-        CGColor(red: 1, green: 1, blue: 1, alpha: 0.28),
-        CGColor(red: 1, green: 1, blue: 1, alpha: 0.0),
-    ] as CFArray, locations: [0, 1])!
-    ctx.drawLinearGradient(sheen,
-                           start: CGPoint(x: 0, y: plate.maxY),
-                           end: CGPoint(x: 0, y: plate.midY + plate.height * 0.12),
-                           options: [])
-    ctx.restoreGState()
 }
 
 func drawMark() {
@@ -210,7 +190,7 @@ func drawMark() {
     // 细高光：沿笔画内侧描一道很淡的白，制造"玻璃管"的立体感
     ctx.saveGState()
     ctx.addPath(path)
-    ctx.setLineWidth(strokeWidth * 0.34)
+    ctx.setLineWidth(strokeWidthValue * 0.34)
     ctx.setLineCap(.round)
     ctx.setLineJoin(.round)
     ctx.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.16))
@@ -233,7 +213,7 @@ func drawSparkle(center c: CGPoint, radius r: CGFloat, alpha: CGFloat = 0.95) {
     p.addQuadCurve(to: CGPoint(x: c.x, y: c.y + r), control: CGPoint(x: c.x - r * 0.18, y: c.y + r * 0.18))
     ctx.saveGState()
     ctx.addPath(p)
-    ctx.setFillColor(CGColor(red: 0.72, green: 0.88, blue: 1.0, alpha: alpha))
+    ctx.setFillColor(CGColor(red: 0.80, green: 1.0, blue: 0.94, alpha: alpha))
     ctx.fillPath()
     ctx.restoreGState()
 }
@@ -243,7 +223,7 @@ var sparkleRadius = s * 0.042
 if variant == "drive" || variant == "disk" { sparkleCenter = pt(0.845, 0.815); sparkleRadius = s * 0.042 }
 if variant == "broom" { sparkleCenter = pt(0.74, 0.22); sparkleRadius = s * 0.05 }
 ctx.saveGState()
-ctx.setShadow(offset: .zero, blur: s * 0.05, color: CGColor(red: 0.4, green: 0.7, blue: 1, alpha: 0.8))
+ctx.setShadow(offset: .zero, blur: s * 0.05, color: CGColor(red: 0.35, green: 0.95, blue: 0.80, alpha: 0.8))
 drawSparkle(center: sparkleCenter, radius: sparkleRadius)
 ctx.restoreGState()
 
