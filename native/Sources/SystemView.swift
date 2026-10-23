@@ -70,18 +70,45 @@ struct SystemView: View {
     // MARK: - 区块
 
     private func statsGrid(_ model: Model) -> some View {
-        HStack(alignment: .top, spacing: 14) {
+        let loads = model.load.compactMap(Double.init)
+        let cores = Double(max(model.cpuCount, 1))
+        return HStack(alignment: .top, spacing: 14) {
             statCard(
                 title: "负载（1 / 5 / 15 分钟）",
                 value: model.load.joined(separator: " / "),
                 footnote: perCore(model)
-            )
+            ) {
+                LoadBars(values: loads, scale: cores)
+            }
             statCard(
                 title: "内存",
                 value: "\(ByteText.format(model.memoryUsed)) / \(ByteText.format(model.memoryTotal))",
                 footnote: memoryPercent(model)
-            )
-            statCard(title: "CPU", value: "\(model.cpuCount) 核", footnote: nil)
+            ) {
+                VStack(spacing: 4) {
+                    RingGauge(percent: memoryRatio(model) * 100, tint: memoryTint(model), size: 44)
+                }
+            }
+            statCard(
+                title: "CPU",
+                value: "\(model.cpuCount) 核",
+                footnote: perCore(model)
+            ) {
+                CoreGrid(count: model.cpuCount, columns: 5)
+            }
+        }
+    }
+
+    private func memoryRatio(_ model: Model) -> Double {
+        guard model.memoryTotal > 0 else { return 0 }
+        return Double(model.memoryUsed) / Double(model.memoryTotal)
+    }
+
+    private func memoryTint(_ model: Model) -> Color {
+        switch memoryRatio(model) {
+        case 0.85...: return .red
+        case 0.65...: return .orange
+        default: return .accentColor
         }
     }
 
@@ -97,13 +124,31 @@ struct SystemView: View {
     }
 
     private func statCard(title: String, value: String, footnote: String?) -> some View {
+        statCard(title: title, value: value, footnote: footnote) { EmptyView() }
+    }
+
+    /// 带图形的数值卡：图形只占右侧固定宽度，数字仍在左，扫视顺序不变。
+    private func statCard<Graphic: View>(
+        title: String,
+        value: String,
+        footnote: String?,
+        @ViewBuilder graphic: () -> Graphic
+    ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.title3.weight(.semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
-            if let footnote {
-                Text(footnote).font(.caption2).foregroundStyle(.tertiary)
-            } else {
-                Text(" ").font(.caption2)
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(value)
+                        .font(.title3.weight(.semibold))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Text(footnote ?? " ")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer(minLength: 4)
+                graphic()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -117,10 +162,37 @@ struct SystemView: View {
             Text("电池与节流").font(.headline)
             HStack(alignment: .top, spacing: 14) {
                 if let battery = model.battery {
-                    statCard(title: "电池", value: "\(battery.percent)%", footnote: battery.state)
-                    statCard(title: "循环 / 健康", value: "\(battery.cycles) / \(battery.health.map { "\($0)%" } ?? "—")", footnote: nil)
+                    statCard(title: "电池", value: "\(battery.percent)%", footnote: battery.state) {
+                        RingGauge(
+                            percent: Double(battery.percent),
+                            tint: battery.percent <= 20 ? .orange : .green,
+                            size: 44
+                        )
+                    }
+                    statCard(
+                        title: "循环 / 健康",
+                        value: "\(battery.cycles) 次",
+                        footnote: battery.health.map { "健康 \($0)%" } ?? "健康 —"
+                    ) {
+                        if let health = battery.health {
+                            MeterBar(
+                                ratio: Double(health) / 100,
+                                tint: health >= 80 ? .green : (health >= 60 ? .orange : .red),
+                                height: 8
+                            )
+                            .frame(width: 54)
+                        } else {
+                            Text("—").foregroundStyle(.tertiary)
+                        }
+                    }
                 }
-                statCard(title: "性能节流", value: model.throttled ? "已触发" : "正常", footnote: nil)
+                statCard(
+                    title: "性能节流",
+                    value: model.throttled ? "已触发" : "正常",
+                    footnote: model.throttled ? "系统正在限制性能" : "未检测到降频"
+                ) {
+                    StatusPill(text: model.throttled ? "降频中" : "全速", isGood: !model.throttled)
+                }
             }
         }
     }
