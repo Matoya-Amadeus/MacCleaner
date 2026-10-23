@@ -336,8 +336,14 @@ def scan_report(
 
 
 def _open_app(path: str) -> None:
-    """打开某个应用（让它的 Sparkle 更新器自己在后台检查更新）。"""
-    subprocess.run(["/usr/bin/open", "-a", path], check=False, timeout=15)
+    """打开某个应用（让它的更新器自己在后台检查更新）。
+
+    **不能写 `open -a <路径>`**：`-a` 是按**应用名**在 LaunchServices 里查，
+    传完整路径（尤其含中文名）查不到，系统就弹出"选择打开方式"面板
+    （2026-10-23 用户截图：同花顺.app — 打开，让你选程序）。
+    正确用法是 `open <路径>`。
+    """
+    subprocess.run(["/usr/bin/open", path], check=False, timeout=15)
 
 
 def _open_app_store() -> None:

@@ -332,6 +332,9 @@ struct BatchUninstallSheet: View {
     @StateObject private var timer = ElapsedTimer()
 
     private var allItems: [UninstallListView.PlanItem] { batch.plans.flatMap(\.items) }
+    /// 计划里有没有"应用本体"这一项（kind == app-bundle）。
+    private var hasAppBundle: Bool { allItems.contains { $0.kind == "app-bundle" } }
+
     private var pickedBytes: Int64 {
         allItems.filter { checked.contains($0.id) }.reduce(0) { $0 + $1.bytes }
     }
@@ -341,7 +344,11 @@ struct BatchUninstallSheet: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("卸载 \(batch.plans.count) 个应用").font(.headline)
-                    Text("残留 \(allItems.count) 项 · 共 \(ByteText.format(allItems.reduce(0) { $0 + $1.bytes }))")
+                    // 计划里**包含应用本体**，只写"残留 N 项"会让人以为只是清残留，
+                    // 于是"卸载完 app 还在"就成了 bug 观感（2026-10-23 反馈）。
+                    Text(hasAppBundle
+                         ? "含应用本体 + 残留 \(allItems.count) 项 · 共 \(ByteText.format(allItems.reduce(0) { $0 + $1.bytes }))"
+                         : "残留 \(allItems.count) 项 · 共 \(ByteText.format(allItems.reduce(0) { $0 + $1.bytes }))")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
