@@ -86,13 +86,16 @@ def app_category_label(raw: str, *, name: str = "", bundle_id: str = "") -> str:
     return label or "其它"
 
 def list_applications(
-    *, home: Path | None = None, limit: int = 60, with_sizes: bool = False
+    *, home: Path | None = None, limit: int = 500, with_sizes: bool = False
 ) -> list[dict[str, Any]]:
     """列出用户级应用目录里的 `.app`。
 
     **默认不算体积**（2026-10-19 实测：50 个 app 用 `du -sk` 要 6.3s、用 `_allocated_bytes` 要 12.3s，
     共 32 GiB；用户看到的就是"正在读取应用列表"卡住）。体积在**点开某个应用**时再算——
     单个应用实测 0.1–0.5s，而且那时才真的有用。
+
+    `limit` 默认 500：原来 60，应用多的机器会**静默截断**（Updraft 本机 122 个），
+    表现为"列表少了一半"而没有任何提示（2026-10-23 修）。
     """
     home_path = Path(home) if home is not None else Path.home()
     apps: list[dict[str, Any]] = []
@@ -460,6 +463,8 @@ def sparkle_apps(home: Path, *, limit: int = 40, system: bool = True) -> list[di
                     "name": str(data.get("CFBundleName") or app.stem),
                     "bundle_id": str(data.get("CFBundleIdentifier") or ""),
                     "version": str(data.get("CFBundleShortVersionString") or ""),
+                    # 构建号：Sparkle 判定"谁更新"的权威值（营销版本可能相同而构建号不同）。
+                    "build": str(data.get("CFBundleVersion") or ""),
                     "path": str(app),
                     "feed": str(data.get("SUFeedURL") or ""),
                 }
@@ -1323,6 +1328,60 @@ def _version_key(text: str) -> tuple[int, ...]:
     return tuple(int(value) for value in numbers[:4]) or (0,)
 
 
+def _sparkle_is_newer(*, latest_build: str, latest_short: str,
+                      installed_build: str, installed_short: str) -> bool:
+    """谁更新：优先比构建号（两边都有才算），否则比营销版本。
+
+    这是 Sparkle 自己的判定顺序；只比营销版本会在"版本号没变、构建号递增"时漏报。
+    """
+    if latest_build and installed_build:
+        left, right = _version_key(latest_build), _version_key(installed_build)
+        if left != right:
+            return left > right
+    if not installed_short:
+        return True
+    return _version_key(latest_short) > _version_key(installed_short)
+
+
+def sparkle_latest_item(appcast_xml: str) -> dict[str, str]:
+    """从 appcast 里取**构建号最高**的那一项，同时给出它的营销版本。
+
+    为什么不能只比营销版本（2026-10-23 对照 Updraft 补）：appcast 里允许
+    `shortVersionString` 相同而 `sparkle:version`（构建号）递增，只比前者会把
+    "新版" 判成 "已是最新"。
+    """
+    if not appcast_xml.strip():
+        return {}
+    try:
+        tree = ET.fromstring(appcast_xml)
+    except ET.ParseError:
+        return {}
+
+    items: list[dict[str, str]] = []
+    for element in tree.iter():
+        build = ""
+        short = ""
+        for key, value in element.attrib.items():
+            text = str(value or "").strip()
+            if not text:
+                continue
+            if key.endswith("}version"):
+                build = text
+            elif key.endswith("}shortVersionString"):
+                short = text
+        if build or short:
+            items.append({"build": build, "short": short})
+    if not items:
+        return {}
+
+    with_build = [item for item in items if item["build"]]
+    if with_build:
+        best = max(with_build, key=lambda item: _version_key(item["build"]))
+    else:
+        best = max(items, key=lambda item: _version_key(item["short"]))
+    return {"build": best["build"], "short": best["short"] or best["build"]}
+
+
 def sparkle_latest_version(appcast_xml: str) -> str:
     """从 Sparkle 的 appcast（RSS）里取**最高**版本号。
 
@@ -1352,6 +1411,89 @@ def sparkle_latest_version(appcast_xml: str) -> str:
         if candidates:
             return max(candidates, key=_version_key)
     return ""
+
+
+def appstore_apps(home: Path, *, system: bool = True) -> list[dict[str, Any]]:
+    """列出从 App Store 安装的应用（包内 `Contents/_MASReceipt` 是商店安装的凭据）。"""
+    found: list[dict[str, Any]] = []
+    for base in _app_dirs(home, system=system):
+        if not base.is_dir():
+            continue
+        for app in sorted(base.glob("*.app")):
+            if not (app / "Contents" / "_MASReceipt").exists():
+                continue
+            identity = read_app_identity(app)
+            found.append(
+                {
+                    "name": identity.get("name") or app.stem,
+                    "bundle_id": identity.get("bundle_id", ""),
+                    "version": _app_short_version(app),
+                    "path": str(app),
+                }
+            )
+    return found
+
+
+def appstore_check(
+    apps: list[dict[str, Any]] | None = None,
+    *,
+    fetcher: Callable[[str], str] | None = None,
+    timeout: float = 6.0,
+) -> list[dict[str, Any]]:
+    """用 `itunes.apple.com/lookup` 查商店最新版本。
+
+    为什么不用 `mas`（2026-10-23）：`mas` 要求已登录 App Store、且经常被系统代理拦住；
+    lookup 接口**免登录、无鉴权**。两条路互补：mas 能给"已购未装"的清单，lookup 只对已装的。
+
+    两个实测坑（Updraft 的记录，已按此实现）：
+    - 查不到时返回的是 **HTTP 200 + 空数组**，不是 404；
+    - `bundleId` 要**原样拼**（`5ZSL2CJU2T.com.dingtalk.mac` 直接命中，剥掉前缀反而 0 条）。
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    import json as _json
+    import urllib.parse
+    import urllib.request
+
+    if apps is None:
+        apps = appstore_apps(Path.home())
+
+    def fetch(url: str) -> str:
+        if fetcher is not None:
+            return fetcher(url)
+        request = urllib.request.Request(url, headers={"User-Agent": "MacCleaner"})
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            return response.read(300_000).decode("utf-8", "replace")
+
+    def inspect(app: dict[str, Any]) -> dict[str, Any]:
+        bundle_id = str(app.get("bundle_id") or "").strip()
+        if not bundle_id:
+            return {**app, "latest": "", "status": "unknown", "update_available": False,
+                    "reason": "没有 bundle id"}
+        url = ("https://itunes.apple.com/lookup?bundleId="
+               + urllib.parse.quote(bundle_id) + "&country=cn")
+        try:
+            payload = _json.loads(fetch(url))
+        except Exception as exc:  # noqa: BLE001
+            return {**app, "latest": "", "status": "unknown", "update_available": False,
+                    "reason": f"查询失败（{type(exc).__name__}）"}
+        results = payload.get("results") or []
+        if not results:
+            # 200 + 空数组：应用没在商店上架（或区域不符），如实说，不假装最新。
+            return {**app, "latest": "", "status": "unknown", "update_available": False,
+                    "reason": "商店上查不到"}
+        latest = str(results[0].get("version") or "")
+        installed = str(app.get("version") or "")
+        if not latest:
+            return {**app, "latest": "", "status": "unknown", "update_available": False,
+                    "reason": "商店条目没有版本号"}
+        newer = _version_key(latest) > _version_key(installed) if installed else True
+        return {**app, "latest": latest, "status": "ok", "update_available": bool(newer),
+                "reason": "" if newer else "已是最新"}
+
+    if not apps:
+        return []
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        return list(pool.map(inspect, apps))
 
 
 def undetectable_apps(home: Path, report: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1578,16 +1720,24 @@ def sparkle_check(
         if parsed is None or parsed.scheme not in {"http", "https"} or not parsed.hostname:
             return {**app, "status": "unknown", "reason": "没有可用的更新源", "update_available": False}
         try:
-            latest = sparkle_latest_version(fetch(feed))
+            best = sparkle_latest_item(fetch(feed))
         except Exception as exc:  # noqa: BLE001 - 网络问题不该拖垮整页
             return {**app, "status": "unknown", "reason": f"更新源不可达（{type(exc).__name__}）", "update_available": False}
+        latest = best.get("short") or best.get("build") or ""
         if not latest:
             return {**app, "status": "unknown", "reason": "更新源里没有版本信息", "update_available": False}
         installed = str(app.get("version") or "")
-        newer = _version_key(latest) > _version_key(installed) if installed else True
+        installed_build = str(app.get("build") or "")
+        newer = _sparkle_is_newer(
+            latest_build=best.get("build", ""),
+            latest_short=best.get("short", "") or latest,
+            installed_build=installed_build,
+            installed_short=installed,
+        )
         return {
             **app,
             "latest": latest,
+            "latest_build": best.get("build", ""),
             "status": "ok",
             "update_available": bool(newer),
             "reason": "" if newer else "已是最新",
@@ -2030,6 +2180,12 @@ def build_deps(
             found["electron"] = electron_check(electron_apps(home_path))
         except Exception:  # noqa: BLE001
             found.setdefault("electron", [])
+
+        # App Store（免登录通道）：mas 需要登录，这里用 itunes lookup 补上。
+        try:
+            found["appstore"] = appstore_check(appstore_apps(home_path))
+        except Exception:  # noqa: BLE001
+            found.setdefault("appstore", [])
 
         # 「无法自动检测」：装了、但四个通道都不覆盖的应用（Steam、Adobe、JetBrains…）。
         # 必须列出来并说明原因——直接消失会让人以为漏扫（用户第一反应就是"你扫描有问题"）。

@@ -180,6 +180,29 @@ def updates_view(found: dict[str, Any]) -> dict[str, Any]:
         for item in (found.get("items") or [])
         if isinstance(item, dict)
     ]
+    # App Store 兜底：`mas` 需要登录，未登录时商店更新会整段消失。
+    # 这里用免登录的 itunes lookup 结果**补**上 mas 没提到的项（同名不重复）。
+    known_names = {str(item.get("name") or "") for item in items}
+    for entry in found.get("appstore") or []:
+        if not isinstance(entry, dict) or not entry.get("update_available"):
+            continue
+        name = str(entry.get("name") or "")
+        if not name or name in known_names:
+            continue
+        known_names.add(name)
+        items.append(
+            {
+                "id": f"appstore||{name}",
+                "manager": "mas",
+                "kind": "app-store",
+                "source": "itunes-lookup",
+                "name": name,
+                "installed": str(entry.get("version") or ""),
+                "available": str(entry.get("latest") or ""),
+                "path": str(entry.get("path") or ""),
+            }
+        )
+
     buckets: dict[str, list[dict[str, Any]]] = {}
     for item in items:
         buckets.setdefault(update_group_label(item), []).append(item)
