@@ -81,7 +81,6 @@ struct PageBackground: View {
                 Color(nsColor: .windowBackgroundColor)
             }
         }
-        .ignoresSafeArea()
     }
 }
 
