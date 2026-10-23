@@ -74,9 +74,9 @@ ctx.restoreGState()
 var strokeWidthValue = s * 0.074
 let strokeWidth = strokeWidthValue
 // 青绿：亮青 → 主青 → 深青（用户指定 2026-10-23）
-let blueTop = CGColor(red: 0.608, green: 0.976, blue: 0.878, alpha: 1)
-let blueMid = CGColor(red: 0.180, green: 0.847, blue: 0.702, alpha: 1)
-let blueDeep = CGColor(red: 0.043, green: 0.639, blue: 0.529, alpha: 1)
+let blueTop = CGColor(red: 0.706, green: 1.000, blue: 0.925, alpha: 1)   // 亮青（高光侧）
+let blueMid = CGColor(red: 0.114, green: 0.804, blue: 0.663, alpha: 1)   // 主青
+let blueDeep = CGColor(red: 0.024, green: 0.522, blue: 0.427, alpha: 1)  // 深青（暗部）
 
 func withGlow(_ draw: () -> Void) {
     // 外层：大范围、很淡
@@ -134,17 +134,38 @@ func drawDisk() {
     outline.move(to: pt(0.160, 0.455))
     outline.addLine(to: pt(0.840, 0.455))
 
+    // 盘身内部：一层很淡的青（8%），让实体感出来，但不抢线稿
+    ctx.saveGState()
+    ctx.addPath(outline)
+    ctx.setFillColor(CGColor(red: 0.114, green: 0.804, blue: 0.663, alpha: 0.09))
+    ctx.fillPath()
+    ctx.restoreGState()
+
     let save = strokeWidthValue
-    strokeWidthValue = s * 0.050
+    strokeWidthValue = s * 0.045
     withGlow { strokeGradient(outline) }
     strokeWidthValue = save
 
-    // 指示灯：六个小竖条（**填色**，不描边——描边会把它们糊成一块）
-    for index in 0..<6 {
-        let x = 0.560 + Double(index) * 0.042
+    // 盘身顶部内阴影：光从上面来，内部上沿压暗一点点
+    ctx.saveGState()
+    ctx.addPath(outline)
+    ctx.clip()
+    let innerShadow = CGGradient(colorsSpace: colorSpace, colors: [
+        CGColor(red: 0, green: 0, blue: 0, alpha: 0.22),
+        CGColor(red: 0, green: 0, blue: 0, alpha: 0.0),
+    ] as CFArray, locations: [0, 1])!
+    ctx.drawLinearGradient(innerShadow,
+                           start: CGPoint(x: 0, y: rect.minY + rect.height * 0.93),
+                           end: CGPoint(x: 0, y: rect.minY + rect.height * 0.66),
+                           options: [])
+    ctx.restoreGState()
+
+    // 指示灯：八个小竖条（**填色**，不描边——描边会把它们糊成一块）
+    for index in 0..<8 {
+        let x = 0.500 + Double(index) * 0.037
         let bar = CGRect(x: rect.minX + rect.width * x,
                          y: rect.minY + rect.height * 0.330,
-                         width: rect.width * 0.014,
+                         width: rect.width * 0.013,
                          height: rect.height * 0.070)
         let barPath = CGPath(roundedRect: bar, cornerWidth: rect.width * 0.007,
                              cornerHeight: rect.width * 0.007, transform: nil)
