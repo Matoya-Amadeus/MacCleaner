@@ -71,6 +71,26 @@ struct ResultSheet: View {
                     if result.failures.count > 5 {
                         Text("另有 \(result.failures.count - 5) 项…").font(.caption2).foregroundStyle(.tertiary)
                     }
+                    // 权限类失败只报"Permission denied"没法行动——直接给一个入口。
+                    if result.failures.contains(where: {
+                        $0.reason.contains("App 管理") || $0.reason.contains("Permission")
+                            || $0.reason.contains("not permitted")
+                    }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "lock.shield").foregroundStyle(.orange)
+                            Text("修改其它 App 需要「App 管理」权限，授权后再试一次。")
+                                .font(.caption2).foregroundStyle(.secondary)
+                            Spacer(minLength: 4)
+                            Button("打开设置") {
+                                if let url = URL(string:
+                                    "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AppBundles") {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            }
+                            .controlSize(.small)
+                        }
+                        .padding(.top, 4)
+                    }
                 }
             }
 

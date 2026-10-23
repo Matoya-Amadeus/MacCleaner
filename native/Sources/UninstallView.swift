@@ -441,6 +441,28 @@ struct BatchUninstallSheet: View {
         .toggleStyle(.checkbox)
     }
 
+    /// 内核对这类错误无能为力：需要「App 管理」授权，且裸 rename 不会触发授权弹窗。
+    private func isPermissionDenied(_ reason: String) -> Bool {
+        reason.contains("Permission denied")
+            || reason.contains("Operation not permitted")
+            || reason.contains("Errno 13")
+            || reason.contains("Errno 1 ")
+    }
+
+    /// 用 Foundation 的回收站 API 移动；它会走系统授权流程。
+    private func trashViaSystemAPI(_ path: String) -> Bool {
+        var resulting: NSURL?
+        do {
+            try FileManager.default.trashItem(
+                at: URL(fileURLWithPath: path),
+                resultingItemURL: &resulting
+            )
+            return true
+        } catch {
+            return false
+        }
+    }
+
     private func apply() async {
         guard await BiometricGate.confirm(reason: "确认卸载 \(batch.plans.count) 个应用") else { return }
         applying = true
@@ -469,7 +491,26 @@ struct BatchUninstallSheet: View {
                     .filter { movedPaths.contains($0.path) }
                     .reduce(Int64(0)) { $0 + $1.bytes }
                 for item in data["failed"]?.arrayValue ?? [] {
-                    failed.append((item["path"]?.stringValue ?? "", item["reason"]?.stringValue ?? ""))
+                    let path = item["path"]?.stringValue ?? ""
+                    let reason = item["reason"]?.stringValue ?? ""
+                    // 内核用 `os.rename` 移动，被 TCC 的「App 管理」拦下时只会得到
+                    // `[Errno 13] Permission denied` / `[Errno 1] Operation not permitted`，
+                    // 而且**不会弹授权框**。
+                    // 这里改用系统回收站 API 重试一次：它走正确的授权路径
+                    // （首次会弹"MacCleaner 想要管理其他 App"），成功后计入完成。
+                    if isPermissionDenied(reason) {
+                        if trashViaSystemAPI(path) {
+                            movedTotal += 1
+                            movedBytes += plan.items.first { $0.path == path }?.bytes ?? 0
+                        } else {
+                            failed.append((
+                                path,
+                                "需要「App 管理」权限：系统设置 → 隐私与安全性 → App 管理，勾选 MacCleaner 后重试"
+                            ))
+                        }
+                        continue
+                    }
+                    failed.append((path, reason))
                 }
             }
             let outcome = OperationResult(
