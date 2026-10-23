@@ -130,6 +130,9 @@ struct RootView: View {
             .padding(.top, 10)
             .navigationSplitViewColumnWidth(min: 168, ideal: 186, max: 240)
             .onAppear {
+                // 试过"启动时预热内核"（并行 spawn 21 MB 的 PyInstaller 包）：
+                // 实测反而更慢（684–734 ms → 962–1572 ms），因为进程启动与首屏渲染抢 CPU。
+                // 已回退；详见 docs/acceptance-2026-10-23.md。
                 StatusItemController.shared.sync()
                 permissions.refresh()
                 // 授权**统一收到启动时的一次弹窗**里（用户 2026-10-23 要求）：

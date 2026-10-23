@@ -211,6 +211,24 @@ struct RecommendedView: View {
         }
         .toggleStyle(.checkbox)
         .padding(.vertical, 2)
+        // 与卸载行同一套右键：目标是一条目录时，"看一眼再决定"比盲勾更常见。
+        .contextMenu {
+            Button("在 Finder 中显示") { Task { await reveal(item.path) } }
+            Button("拷贝路径") { copy(item.path) }
+        }
+    }
+
+    private func reveal(_ path: String) async {
+        do {
+            _ = try await CoreClient.shared.request("files.reveal", args: ["path": .string(path)])
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func copy(_ path: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(path, forType: .string)
     }
 
     private func symbol(for item: Item) -> String {
@@ -451,6 +469,10 @@ struct LargeFilesView: View {
                             }
                         }
                         .toggleStyle(.checkbox)
+                        .contextMenu {
+                            Button("在 Finder 中显示") { Task { await revealFile(item.path) } }
+                            Button("拷贝路径") { copyFile(item.path) }
+                        }
                     }
                 }
                 .listStyle(.inset)
@@ -496,6 +518,19 @@ struct LargeFilesView: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    private func revealFile(_ path: String) async {
+        do {
+            _ = try await CoreClient.shared.request("files.reveal", args: ["path": .string(path)])
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func copyFile(_ path: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(path, forType: .string)
     }
 
     private func trash() async {

@@ -784,14 +784,18 @@ def orphans_clean(
     moved: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
     total_bytes = 0
-    for raw in paths:
+    for index, raw in enumerate(paths):
         if should_stop is not None and should_stop():
+            # 之前这里只交 moved/failed，**没交 remaining**——界面于是显示"还剩 0 项"，
+            # 而磁盘上还有几百个目录没动（2026-10-23 验收实测：moved=26、left=274、remaining=0）。
             return {
                 "status": "cancelled",
                 "cancelled": True,
                 "moved": moved,
                 "failed": failed,
                 "bytes": total_bytes,
+                "count": len(moved),
+                "remaining": [str(item) for item in paths[index:]],
             }
         target = Path(str(raw)).expanduser()
         try:
