@@ -110,43 +110,47 @@ struct UpdatesListView: View {
 
                 List {
                     if !sparkle.isEmpty {
-                        Section("自带更新（Sparkle）· 确认有更新的") {
-                            ForEach(sparkle) { app in
-                                HStack(spacing: 10) {
-                                    Image(systemName: "arrow.triangle.2.circlepath")
-                                        .frame(width: 20).foregroundStyle(.secondary)
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text(app.name)
-                                        Text("\(app.version) → \(app.latest)")
-                                            .font(.caption2).foregroundStyle(.secondary)
-                                    }
-                                    Spacer(minLength: 8)
-                                    Button("在应用内更新") { Task { await open(app) } }
-                                        .controlSize(.small)
-                                }
-                            }
-                        }
+                                                Text("自带更新（Sparkle）· 确认有更新的").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                            .listSectionHeaderRow()
+                                                ForEach(sparkle) { app in
+                                                    HStack(spacing: 10) {
+                                                        Image(systemName: "arrow.triangle.2.circlepath")
+                                                            .frame(width: 20).foregroundStyle(.secondary)
+                                                        VStack(alignment: .leading, spacing: 1) {
+                                                            Text(app.name)
+                                                            Text("\(app.version) → \(app.latest)")
+                                                                .font(.caption2).foregroundStyle(.secondary)
+                                                        }
+                                                        Spacer(minLength: 8)
+                                                        Button("在应用内更新") { Task { await open(app) } }
+                                                            .controlSize(.small)
+                                                    }
+                                                }
+                                            
+
                     }
                     ForEach(filteredGroups) { group in
-                        Section("\(group.label) · \(group.items.count)") {
-                            ForEach(group.items) { item in
-                                Toggle(isOn: Binding(
-                                    get: { checked.contains(item.id) },
-                                    set: { isOn in
-                                        if isOn { checked.insert(item.id) } else { checked.remove(item.id) }
-                                    }
-                                )) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "shippingbox").frame(width: 20).foregroundStyle(.secondary)
-                                        Text(item.name).lineLimit(1)
-                                        Spacer(minLength: 8)
-                                        Text("\(item.installed) → \(item.available)")
-                                            .font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                                    }
-                                }
-                                .toggleStyle(.checkbox)
-                            }
-                        }
+                                                Text("\(group.label) · \(group.items.count)").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                            .listSectionHeaderRow()
+                                                ForEach(group.items) { item in
+                                                    Toggle(isOn: Binding(
+                                                        get: { checked.contains(item.id) },
+                                                        set: { isOn in
+                                                            if isOn { checked.insert(item.id) } else { checked.remove(item.id) }
+                                                        }
+                                                    )) {
+                                                        HStack(spacing: 10) {
+                                                            Image(systemName: "shippingbox").frame(width: 20).foregroundStyle(.secondary)
+                                                            Text(item.name).lineLimit(1)
+                                                            Spacer(minLength: 8)
+                                                            Text("\(item.installed) → \(item.available)")
+                                                                .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                                                        }
+                                                    }
+                                                    .toggleStyle(.checkbox)
+                                                }
+                                            
+
                     }
                 }
                 .listStyle(.inset)
@@ -343,29 +347,31 @@ struct OrphansListView: View {
 
                 List {
                     ForEach(filteredGroups) { group in
-                        Section("\(group.label) · \(group.items.count)") {
-                            ForEach(group.items) { item in
-                                Toggle(isOn: Binding(
-                                    get: { checked.contains(item.id) },
-                                    set: { isOn in
-                                        if isOn { checked.insert(item.id) } else { checked.remove(item.id) }
-                                    }
-                                )) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "questionmark.folder").frame(width: 20).foregroundStyle(.secondary)
-                                        VStack(alignment: .leading, spacing: 1) {
-                                            Text(item.name).lineLimit(1)
-                                            Text(displayPath(item.path))
-                                                .font(.caption2).foregroundStyle(.tertiary)
-                                                .lineLimit(1).truncationMode(.middle)
-                                        }
-                                        Spacer(minLength: 8)
-                                        Text(ByteText.format(item.bytes)).monospacedDigit().foregroundStyle(.secondary)
-                                    }
-                                }
-                                .toggleStyle(.checkbox)
-                            }
-                        }
+                                                Text("\(group.label) · \(group.items.count)").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                            .listSectionHeaderRow()
+                                                ForEach(group.items) { item in
+                                                    Toggle(isOn: Binding(
+                                                        get: { checked.contains(item.id) },
+                                                        set: { isOn in
+                                                            if isOn { checked.insert(item.id) } else { checked.remove(item.id) }
+                                                        }
+                                                    )) {
+                                                        HStack(spacing: 10) {
+                                                            Image(systemName: "questionmark.folder").frame(width: 20).foregroundStyle(.secondary)
+                                                            VStack(alignment: .leading, spacing: 1) {
+                                                                Text(item.name).lineLimit(1)
+                                                                Text(displayPath(item.path))
+                                                                    .font(.caption2).foregroundStyle(.tertiary)
+                                                                    .lineLimit(1).truncationMode(.middle)
+                                                            }
+                                                            Spacer(minLength: 8)
+                                                            Text(ByteText.format(item.bytes)).monospacedDigit().foregroundStyle(.secondary)
+                                                        }
+                                                    }
+                                                    .toggleStyle(.checkbox)
+                                                }
+                                            
+
                     }
                 }
                 .listStyle(.inset)

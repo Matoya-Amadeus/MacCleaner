@@ -66,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", action="store_true", help="打印版本与协议版本")
     parser.add_argument("--list-commands", action="store_true", help="列出命令")
     sub = parser.add_subparsers(dest="command")
+    sub.add_parser("mcp", help="以 stdio 起 MCP 服务（给 agent 直接调用）")
     serve = sub.add_parser("serve", help="起服务")
     serve.add_argument("--stdio", action="store_true", help="用标准输入输出通信（唯一支持的传输）")
     args = parser.parse_args(argv)
@@ -76,6 +77,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.list_commands:
         print(json.dumps(COMMAND_HELP, ensure_ascii=False, indent=2))
         return 0
+    if args.command == "mcp":
+        # 安装包自带这条路径：以前只能 `pipx install "maccleaner[mcp]"`，用户装不上就用不了。
+        from .mcp_server import main as mcp_main
+
+        return mcp_main()
+
     if args.command != "serve" or not args.stdio:
         parser.print_help(sys.stderr)
         return 2

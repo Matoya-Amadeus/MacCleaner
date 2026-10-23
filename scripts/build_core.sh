@@ -23,6 +23,12 @@ if [[ ! -x "$VENV/bin/pyinstaller" ]]; then
   "$VENV/bin/pip" install -q --disable-pip-version-check pyinstaller
 fi
 
+# MCP 要**打进安装包**，不能让用户再 `pipx install "maccleaner[mcp]"`（2026-10-23 用户要求）。
+if ! "$VENV/bin/python" -c "import mcp" >/dev/null 2>&1; then
+  echo "安装 MCP 依赖（打进包体）"
+  "$VENV/bin/pip" install -q --disable-pip-version-check "mcp>=1,<2"
+fi
+
 # 只清自己的产物：`build/native` 是 build_native.sh 的目录，以前这里 `rm -rf build`
 # 会把它一起删掉（2026-10-22 踩到：打完内核，原生 app 不见了）。
 rm -rf build/pyinstaller dist maccleaner-core.spec
@@ -31,6 +37,13 @@ rm -rf build/pyinstaller dist maccleaner-core.spec
   --paths src \
   --noupx \
   --workpath build/pyinstaller \
+  --collect-submodules mcp.server \
+  --collect-submodules mcp.shared \
+  --collect-data mcp \
+  --copy-metadata mcp \
+  --hidden-import mcp \
+  --hidden-import mcp.server.fastmcp \
+  --hidden-import maccleaner.mcp_server \
   --log-level WARN \
   scripts/core_entry.py
 

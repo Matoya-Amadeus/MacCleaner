@@ -96,11 +96,11 @@ struct RecommendedView: View {
 
                 List {
                     ForEach(filteredGroups) { group in
-                        Section {
-                            ForEach(group.items) { item in row(item) }
-                        } header: {
-                            sectionHeader(group)
-                        }
+                        // 表头当普通行，不用 Section：Section 的表头会**吸顶**，
+                        // 多行表头（标题+占比条+提示）会把首行盖住（2026-10-23 用户截图）。
+                        sectionHeader(group)
+                            .listSectionHeaderRow()
+                        ForEach(group.items) { item in row(item) }
                     }
                 }
                 .listStyle(.inset)

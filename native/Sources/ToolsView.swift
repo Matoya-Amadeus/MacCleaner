@@ -112,70 +112,82 @@ struct ToolCatalogView: View {
 
             List {
                 if !workflow.isEmpty, sectionFilter == nil || sectionFilter == "推荐调用顺序" {
-                    Section("推荐调用顺序 · 先列清单，等用户确认再执行") {
-                        ForEach(Array(workflow.enumerated()), id: \.offset) { index, step in
-                            HStack(alignment: .top, spacing: 8) {
-                                Text("\(index + 1)")
-                                    .font(.caption.weight(.semibold)).monospacedDigit()
-                                    .frame(width: 16, height: 16)
-                                    .background(Color.accentColor.opacity(0.15), in: Circle())
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(step.0).font(.system(.body, design: .monospaced))
-                                    Text(step.1).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                            .padding(.vertical, 2)
-                        }
-                    }
+                                        Text("推荐调用顺序 · 先列清单，等用户确认再执行").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                        .listSectionHeaderRow()
+                                        ForEach(Array(workflow.enumerated()), id: \.offset) { index, step in
+                                            HStack(alignment: .top, spacing: 8) {
+                                                Text("\(index + 1)")
+                                                    .font(.caption.weight(.semibold)).monospacedDigit()
+                                                    .frame(width: 16, height: 16)
+                                                    .background(Color.accentColor.opacity(0.15), in: Circle())
+                                                VStack(alignment: .leading, spacing: 2) {
+                                                    Text(step.0).font(.system(.body, design: .monospaced))
+                                                    Text(step.1).font(.caption).foregroundStyle(.secondary)
+                                                }
+                                            }
+                                            .padding(.vertical, 2)
+                                        }
+                                    
+
                 }
                 if !launch.isEmpty, sectionFilter == nil || sectionFilter == "怎么接上" {
-                    Section("怎么接上") {
-                        ForEach(launch, id: \.command) { item in
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 6) {
-                                    Text(item.kind)
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .padding(.horizontal, 5).padding(.vertical, 1)
-                                        .background(Theme.accent.opacity(0.18), in: Capsule())
-                                    Text(item.command)
-                                        .font(.system(.body, design: .monospaced))
-                                }
-                                Text(item.note).font(.caption2).foregroundStyle(.tertiary)
-                            }
-                            .padding(.vertical, 2)
-                        }
-                    }
+                                        Text("怎么接上").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                        .listSectionHeaderRow()
+                                        ForEach(launch, id: \.command) { item in
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                HStack(spacing: 6) {
+                                                    Text(item.kind)
+                                                        .font(.system(size: 10, weight: .semibold))
+                                                        .padding(.horizontal, 5).padding(.vertical, 1)
+                                                        .background(Theme.accent.opacity(0.18), in: Capsule())
+                                                    Text(item.command)
+                                                        .font(.system(.body, design: .monospaced))
+                                                }
+                                                Text(item.note).font(.caption2).foregroundStyle(.tertiary)
+                                            }
+                                            .padding(.vertical, 2)
+                                        }
+                                    
+
                 }
 
                 if !safety.isEmpty, sectionFilter == nil || sectionFilter == "安全边界" {
-                    Section("安全边界") {
-                        ForEach(safety, id: \.self) { line in
-                            Label(line, systemImage: "checkmark.shield")
-                                .font(.caption)
-                                .labelStyle(.titleAndIcon)
-                        }
-                    }
+                                        Text("安全边界").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                        .listSectionHeaderRow()
+                                        ForEach(safety, id: \.self) { line in
+                                            Label(line, systemImage: "checkmark.shield")
+                                                .font(.caption)
+                                                .labelStyle(.titleAndIcon)
+                                        }
+                                    
+
                 }
 
                 let mcps = sectionFilter == nil || sectionFilter == "MCP 工具" ? filtered(mcp) : []
                 if !mcps.isEmpty {
-                    Section("MCP 工具 · \(mcps.count) 个（agent 直接调用）") {
-                        ForEach(mcps) { entry in row(entry) }
-                    }
+                                        Text("MCP 工具 · \(mcps.count) 个（agent 直接调用）").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                        .listSectionHeaderRow()
+                                        ForEach(mcps) { entry in row(entry) }
+                                    
+
                 }
                 let cmds = sectionFilter == nil || sectionFilter == "stdio 命令" ? filtered(commands) : []
                 if !cmds.isEmpty {
-                    Section("stdio 命令 · \(cmds.count) 个（脚本 / 其它前端）") {
-                        ForEach(cmds) { entry in row(entry) }
-                    }
+                                        Text("stdio 命令 · \(cmds.count) 个（脚本 / 其它前端）").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                        .listSectionHeaderRow()
+                                        ForEach(cmds) { entry in row(entry) }
+                                    
+
                 }
                 if !example.isEmpty {
-                    Section("调用示例") {
-                        Text(example)
-                            .font(.system(.caption, design: .monospaced))
-                            .textSelection(.enabled)
-                            .padding(.vertical, 2)
-                    }
+                                        Text("调用示例").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                        .listSectionHeaderRow()
+                                        Text(example)
+                                            .font(.system(.caption, design: .monospaced))
+                                            .textSelection(.enabled)
+                                            .padding(.vertical, 2)
+                                    
+
                 }
             }
             .listStyle(.inset)
@@ -290,16 +302,18 @@ struct SkillCatalogView: View {
 
             List {
                 ForEach(groups, id: \.label) { group in
-                    Section("\(group.label) · \(group.items.count)") {
-                        ForEach(group.items) { skill in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(skill.name).lineLimit(1)
-                                Text(skill.description)
-                                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                            }
-                            .padding(.vertical, 2)
-                        }
-                    }
+                                        Text("\(group.label) · \(group.items.count)").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                        .listSectionHeaderRow()
+                                        ForEach(group.items) { skill in
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(skill.name).lineLimit(1)
+                                                Text(skill.description)
+                                                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                            }
+                                            .padding(.vertical, 2)
+                                        }
+                                    
+
                 }
             }
             .listStyle(.inset)

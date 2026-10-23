@@ -46,9 +46,14 @@ class McpEntryPointTests(unittest.TestCase):
 class McpTransportTests(unittest.TestCase):
     def test_stdio_server_advertises_only_the_public_tool_contract(self) -> None:
         async def check() -> list[str]:
+            # 子进程不会继承 cwd 之外的导入路径，必须显式给 PYTHONPATH，
+            # 否则 `-m maccleaner.mcp_server` 直接 ModuleNotFoundError（2026-10-23 装上 mcp 后暴露）。
+            env = dict(os.environ)
+            env["PYTHONPATH"] = str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
             parameters = StdioServerParameters(
                 command=sys.executable,
                 args=["-m", "maccleaner.mcp_server"],
+                env=env,
             )
             async with stdio_client(parameters) as (read_stream, write_stream):
                 async with ClientSession(read_stream, write_stream) as session:

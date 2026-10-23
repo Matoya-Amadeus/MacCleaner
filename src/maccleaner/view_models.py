@@ -389,12 +389,14 @@ def tools_view(command_help: dict[str, str]) -> dict[str, Any]:
 
     两个入口分开列：MCP（agent 直接调）与 stdio 命令（脚本/别的前端用）。
     """
-    import importlib.util
+    # MCP 依赖 `mcp` 包。现在**打包进内核**（core_cli 的 `mcp` 子命令），
+    # 所以正常安装即有；这里仍做检测，用于自建/裁剪包时如实提示。
+    try:
+        import mcp  # noqa: F401
 
-    # MCP server 依赖可选包 `mcp`（pip install "maccleaner[mcp]"）。
-    # 没装时列表照样有，但要**如实标出来**，否则界面等于画了一张不能用的图
-    # （2026-10-23 实测：`maccleaner mcp` 直接报缺依赖）。
-    mcp_available = importlib.util.find_spec("mcp") is not None
+        mcp_available = True
+    except Exception:
+        mcp_available = False
     return {
         "mcp_available": mcp_available,
         "mcp_install_hint": "" if mcp_available else 'pipx install "maccleaner[mcp]"',
@@ -411,8 +413,9 @@ def tools_view(command_help: dict[str, str]) -> dict[str, Any]:
         ],
         # 界面上列了工具却不说怎么启动，等于只给了半张说明书（2026-10-23 补）。
         "launch": [
-            {"kind": "MCP", "command": "maccleaner mcp",
-             "note": "在 agent 的 MCP 配置里指向这条命令（stdio，无需端口）"},
+            # 安装包内的内核自带 mcp（33 MB 里含依赖），不用另外 pip 安装。
+            {"kind": "MCP", "command": "maccleaner-core mcp",
+             "note": "在 agent 的 MCP 配置里指向这条命令（stdio，无需端口；已随 App 安装）"},
             {"kind": "stdio", "command": "maccleaner-core serve --stdio",
              "note": "脚本或其它前端：一行 JSON 一次请求，事件逐行返回"},
         ],

@@ -174,3 +174,15 @@ struct ChipPicker<Value: Hashable>: View {
         .padding(.horizontal, Theme.Space.page)
     }
 }
+
+extension View {
+    /// 在 `List` 里把任意视图当"分组表头"用：不吸顶、不画分隔线、留出上间距。
+    ///
+    /// 存在的理由：macOS 的 `Section` 表头默认吸顶，自定义的多行表头会盖住第一行。
+    func listSectionHeaderRow() -> some View {
+        self
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 14, leading: 12, bottom: 4, trailing: 12))
+    }
+}
