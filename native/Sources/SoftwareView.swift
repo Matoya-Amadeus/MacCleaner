@@ -51,6 +51,7 @@ struct SoftwareView: View {
 struct UpdatesListView: View {
     @State private var groups: [Group] = []
     @State private var sparkle: [Sparkle] = []
+    @State private var sparkleRest: [SparkleRest] = []
     @State private var checked: Set<String> = []
     @State private var loading = false
     @State private var applying = false
@@ -91,6 +92,16 @@ struct UpdatesListView: View {
         let latest: String
     }
 
+    /// 检查过但没有更新的 Sparkle 应用（含"没有更新源""更新源不可达"）。
+    /// 单独展示的理由：整段消失会让人以为"这个功能没做"，而不是"查过了，确实没有"。
+    struct SparkleRest: Identifiable {
+        var id: String { path }
+        let name: String
+        let path: String
+        let version: String
+        let reason: String
+    }
+
     private var allItems: [Item] { groups.flatMap(\.items) }
 
     var body: some View {
@@ -104,7 +115,7 @@ struct UpdatesListView: View {
             if loading {
                 ProgressView("检查更新…（brew outdated 可能要几秒）")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if groups.isEmpty && sparkle.isEmpty {
+            } else if groups.isEmpty && sparkle.isEmpty && sparkleRest.isEmpty {
                 Text("全部是最新的").foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -169,6 +180,28 @@ struct UpdatesListView: View {
                                                 }
                                             
 
+                    }
+
+                    if !sparkleRest.isEmpty {
+                        Text("App 更新检查 · \(sparkleRest.count)")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .listSectionHeaderRow()
+                        ForEach(sparkleRest) { item in
+                            HStack(spacing: 10) {
+                                Image(systemName: "checkmark.seal")
+                                    .frame(width: 20)
+                                    .foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(item.name).lineLimit(1)
+                                    Text("\(item.version) · \(item.reason)")
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                        .lineLimit(1)
+                                }
+                                Spacer(minLength: 8)
+                            }
+                        }
                     }
                 }
                 .listStyle(.inset)
@@ -237,6 +270,17 @@ struct UpdatesListView: View {
                 return Sparkle(name: name, path: path,
                                version: raw["version"]?.stringValue ?? "",
                                latest: raw["latest"]?.stringValue ?? "")
+            }
+
+            sparkleRest = (data["sparkle_rest"]?.arrayValue ?? []).compactMap { raw in
+                guard let path = raw["path"]?.stringValue,
+                      let name = raw["name"]?.stringValue else { return nil }
+                return SparkleRest(
+                    name: name,
+                    path: path,
+                    version: raw["version"]?.stringValue ?? "",
+                    reason: raw["reason"]?.stringValue ?? "已是最新"
+                )
             }
 
             // 版本表要包含**全部** Sparkle 应用（含"已是最新"的）：
