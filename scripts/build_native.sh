@@ -40,6 +40,7 @@ cp "$OUT/MacCleaner" "$APP/Contents/MacOS/MacCleaner"
 cp native/Resources/Info.plist "$APP/Contents/Info.plist"
 
 echo "— 嵌入内核（onedir）—"
+cp native/Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp -R "$CORE" "$APP/Contents/Resources/core"
 
 # 开发期内核走仓库构建产物时可用：MACCLEANER_CORE_BINARY=... open ...
