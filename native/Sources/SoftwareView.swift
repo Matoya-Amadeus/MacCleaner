@@ -20,15 +20,10 @@ struct SoftwareView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("", selection: $tab) {
-                ForEach(Tab.allCases) { item in Text(item.title).tag(item) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            PageHeader(title: "软件", subtitle: "卸载残留、检查更新、清理孤儿文件")
 
-            Divider()
+            ChipPicker(options: Tab.allCases.map { ($0, $0.title) }, selection: $tab)
+                .padding(.bottom, 10)
 
             switch tab {
             case .uninstall:

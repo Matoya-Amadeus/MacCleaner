@@ -31,19 +31,20 @@ struct SystemView: View {
     }
 
     var body: some View {
-        ScrollView {
+        VStack(spacing: 0) {
+            PageHeader(title: "系统", subtitle: "负载、内存、电池与进程") {
+                if let sampledAt {
+                    Text("采样于 \(Self.clock.string(from: sampledAt))")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+
+            ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 if let error {
                     StatusBanner(level: .error, text: error)
                 }
                 if let model {
-                    HStack {
-                        Spacer()
-                        if let sampledAt {
-                            Text("采样于 \(Self.clock.string(from: sampledAt))")
-                                .font(.caption2).foregroundStyle(.tertiary)
-                        }
-                    }
                     statsGrid(model)
                     batteryBlock(model)
                     processList(model)
@@ -51,9 +52,11 @@ struct SystemView: View {
                     ProgressView("读取系统状态…").padding(.top, 60)
                 }
             }
-            .padding(28)
+            .padding(.horizontal, Theme.Space.page)
+            .padding(.bottom, Theme.Space.page)
             .frame(maxWidth: 880, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .task { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .mcReload)) { _ in
@@ -108,7 +111,7 @@ struct SystemView: View {
         switch memoryRatio(model) {
         case 0.85...: return .red
         case 0.65...: return .orange
-        default: return .accentColor
+        default: return Theme.accent
         }
     }
 
@@ -152,8 +155,11 @@ struct SystemView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+        .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.card)
+                .strokeBorder(Theme.cardStroke, lineWidth: 1)
+        )
     }
 
     @ViewBuilder
@@ -221,7 +227,7 @@ struct SystemView: View {
                             }
                             // 基准取"最高的那个进程"与 100% 的较大者，条长度才有可比性。
                             MiniBar(ratio: item.cpu / peak,
-                                    tint: item.cpu >= 100 ? .orange : .accentColor)
+                                    tint: item.cpu >= 100 ? .orange : Theme.accent)
                                 .padding(.leading, 30)
                         }
                         .padding(.vertical, 7)

@@ -17,15 +17,10 @@ struct CleanView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("", selection: $tab) {
-                ForEach(Tab.allCases) { item in Text(item.title).tag(item) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            PageHeader(title: "清理", subtitle: "缓存、日志与开发工具；只读扫描，删除前会确认")
 
-            Divider()
+            ChipPicker(options: Tab.allCases.map { ($0, $0.title) }, selection: $tab)
+                .padding(.bottom, 10)
 
             switch tab {
             case .recommended: RecommendedView()

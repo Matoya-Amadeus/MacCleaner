@@ -8,7 +8,7 @@ import SwiftUI
 /// 横向计量条：`ratio` 是 0…1 的占比。
 struct MeterBar: View {
     let ratio: Double
-    var tint: Color = .accentColor
+    var tint: Color = Theme.accent
     var height: CGFloat = 6
 
     private var clamped: Double { min(max(ratio, 0), 1) }
@@ -43,7 +43,7 @@ struct LoadBars: View {
         let perCore = scale > 0 ? value / scale : 0
         if perCore >= 1.0 { return .red }
         if perCore >= 0.7 { return .orange }
-        return .accentColor
+        return Theme.accent
     }
 
     var body: some View {
@@ -76,7 +76,7 @@ struct LoadBars: View {
 /// 环形计量：中间写百分比。
 struct RingGauge: View {
     let percent: Double
-    var tint: Color = .accentColor
+    var tint: Color = Theme.accent
     var size: CGFloat = 46
     var caption: String?
 
@@ -152,7 +152,7 @@ struct CoreGrid: View {
 /// 用在"目录清单""进程列表"这类**同一基准可比较**的地方；不可比较时不要加。
 struct MiniBar: View {
     let ratio: Double
-    var tint: Color = .accentColor
+    var tint: Color = Theme.accent
 
     private var clamped: Double { min(max(ratio, 0), 1) }
 

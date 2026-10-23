@@ -57,7 +57,8 @@ struct MacCleanerApp: App {
     var body: some Scene {
         WindowGroup("Mac Cleaner") {
             RootView()
-                .frame(minWidth: 760, minHeight: 520)   // 1080×729 这类小屏上 920 宽会顶出屏幕
+                .frame(minWidth: 760, minHeight: 520)
+                .tint(Theme.accent)   // 1080×729 这类小屏上 920 宽会顶出屏幕
         }
         .windowToolbarStyle(.unified)
 
@@ -91,14 +92,21 @@ struct RootView: View {
     var body: some View {
         NavigationSplitView {
             List(SidebarItem.allCases, selection: $selection) { item in
-                Label(item.title, systemImage: item.symbol).tag(item)
+                Label(item.title, systemImage: item.symbol)
+                    .tag(item)
             }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
             .onAppear {
                 StatusItemController.shared.sync()
                 permissions.refresh()
                 // 授权**统一收到启动时的一次弹窗**里（用户 2026-10-23 要求）：
                 // 不授权也照常能用——我们只是跳过受保护目录，不在清理过程中反复弹系统框。
-                if !permissions.canScanProtected {
+                // 只**首次**弹一次：每次都弹等于骚扰（用户反馈过授权框太多）。
+                // 之后想授权，点工具栏那个盾牌即可。
+                if !permissions.canScanProtected,
+                   !UserDefaults.standard.bool(forKey: "permissionAsked") {
+                    UserDefaults.standard.set(true, forKey: "permissionAsked")
                     showPermissions = true
                 }
                 // 开发钩子：MACCLEANER_DEV_PERM=1 强制弹出（截图/验收用）。
@@ -136,6 +144,7 @@ struct RootView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(PageBackground())
             .toolbar {
                 if !permissions.canScanProtected {
                     ToolbarItem(placement: .primaryAction) {

@@ -41,7 +41,15 @@ struct DiskView: View {
     }
 
     var body: some View {
-        ScrollView {
+        VStack(spacing: 0) {
+            PageHeader(title: "磁盘", subtitle: "整机容量、目录构成与系统级占用") {
+                if let loadedAt {
+                    Text("读取于 \(Self.clock.string(from: loadedAt))")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+
+            ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 if let error {
                     StatusBanner(level: .error, text: error)
@@ -56,9 +64,11 @@ struct DiskView: View {
 
                 systemSection
             }
-            .padding(28)
+            .padding(.horizontal, Theme.Space.page)
+            .padding(.bottom, Theme.Space.page)
             .frame(maxWidth: 880, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .task { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .mcReload)) { _ in
@@ -83,13 +93,6 @@ struct DiskView: View {
                 Text("已用 \(ByteText.format(report.used))，可用 \(ByteText.format(report.free))（共 \(ByteText.format(report.total))）")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                if let loadedAt {
-                    // 不加【刷新】按钮（前面已删），改成把"什么时候读的"写出来：
-                    // 数字看起来不再像实时监控，用户自己决定要不要切走再回来。
-                    Text("读取于 \(Self.clock.string(from: loadedAt))")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
             }
 
             // 只有这一条条：整机占比。目录行不再画条（同一根条两种基准会被误读）。

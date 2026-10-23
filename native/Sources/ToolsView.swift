@@ -21,15 +21,10 @@ struct ToolsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("", selection: $tab) {
-                ForEach(Tab.allCases) { item in Text(item.title).tag(item) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            PageHeader(title: "AI 能力", subtitle: "agent 可直接调用的工具：MCP 与 stdio 命令")
 
-            Divider()
+            ChipPicker(options: Tab.allCases.map { ($0, $0.title) }, selection: $tab)
+                .padding(.bottom, 10)
 
             switch tab {
             case .tools: ToolCatalogView()
