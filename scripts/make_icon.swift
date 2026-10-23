@@ -61,7 +61,7 @@ ctx.saveGState()
 ctx.addPath(squircle)
 ctx.clip()
 let bloom = CGGradient(colorsSpace: colorSpace, colors: [
-    CGColor(red: 0.10, green: 0.85, blue: 0.70, alpha: 0.20),
+    CGColor(red: 0.10, green: 0.85, blue: 0.70, alpha: 0.09),
     CGColor(red: 0.10, green: 0.85, blue: 0.70, alpha: 0.0),
 ] as CFArray, locations: [0, 1])!
 ctx.drawRadialGradient(bloom,
@@ -81,12 +81,12 @@ let blueDeep = CGColor(red: 0.024, green: 0.522, blue: 0.427, alpha: 1)  // 深�
 func withGlow(_ draw: () -> Void) {
     // 外层：大范围、很淡
     ctx.saveGState()
-    ctx.setShadow(offset: .zero, blur: s * 0.11, color: CGColor(red: 0.08, green: 0.80, blue: 0.66, alpha: 0.35))
+    ctx.setShadow(offset: .zero, blur: s * 0.11, color: CGColor(red: 0.08, green: 0.80, blue: 0.66, alpha: 0.16))
     draw()
     ctx.restoreGState()
     // 内层：紧贴笔画的亮光
     ctx.saveGState()
-    ctx.setShadow(offset: .zero, blur: s * 0.045, color: CGColor(red: 0.35, green: 0.95, blue: 0.80, alpha: 0.55))
+    ctx.setShadow(offset: .zero, blur: s * 0.045, color: CGColor(red: 0.35, green: 0.95, blue: 0.80, alpha: 0.26))
     draw()
     ctx.restoreGState()
     draw()
@@ -214,27 +214,26 @@ func drawDisk(withFace: Bool = false) {
 
 /// 磁盘（照参考图轮廓）：上圆下宽的身形 + 底部指示灯带。轮廓描边、指示条填色。
 
-/// 拟人版：五官长在盘体上（眼睛＝圆形接口，嘴＝带描边的散热槽），
-/// 右下伸出一只小手握扫帚。构图刻意留白：脸在左中，扫帚收在右下，互不抢。
+/// 拟人版（v3）：磁盘 + "> <" 闭眼 + 斜靠在右侧的扫帚。没有手，减光。
 func drawBuddy() {
-    let body = CGRect(x: rect.minX + rect.width * 0.105,
-                      y: rect.minY + rect.height * 0.320,
-                      width: rect.width * 0.615,
-                      height: rect.height * 0.385)
+    let body = CGRect(x: rect.minX + rect.width * 0.100,
+                      y: rect.minY + rect.height * 0.330,
+                      width: rect.width * 0.575,
+                      height: rect.height * 0.360)
 
     // ── 盘体 ──
     let outline = CGMutablePath()
     outline.move(to: CGPoint(x: body.minX + rect.width * 0.045, y: body.minY))
     outline.addLine(to: CGPoint(x: body.maxX - rect.width * 0.045, y: body.minY))
-    outline.addQuadCurve(to: CGPoint(x: body.maxX, y: body.minY + rect.height * 0.060),
+    outline.addQuadCurve(to: CGPoint(x: body.maxX, y: body.minY + rect.height * 0.055),
                          control: CGPoint(x: body.maxX, y: body.minY))
-    outline.addLine(to: CGPoint(x: body.maxX, y: body.maxY - rect.height * 0.165))
-    outline.addQuadCurve(to: CGPoint(x: body.maxX - rect.width * 0.120, y: body.maxY),
-                         control: CGPoint(x: body.maxX, y: body.maxY - rect.height * 0.050))
-    outline.addLine(to: CGPoint(x: body.minX + rect.width * 0.120, y: body.maxY))
-    outline.addQuadCurve(to: CGPoint(x: body.minX, y: body.maxY - rect.height * 0.165),
-                         control: CGPoint(x: body.minX, y: body.maxY - rect.height * 0.050))
-    outline.addLine(to: CGPoint(x: body.minX, y: body.minY + rect.height * 0.060))
+    outline.addLine(to: CGPoint(x: body.maxX, y: body.maxY - rect.height * 0.150))
+    outline.addQuadCurve(to: CGPoint(x: body.maxX - rect.width * 0.110, y: body.maxY),
+                         control: CGPoint(x: body.maxX, y: body.maxY - rect.height * 0.045))
+    outline.addLine(to: CGPoint(x: body.minX + rect.width * 0.110, y: body.maxY))
+    outline.addQuadCurve(to: CGPoint(x: body.minX, y: body.maxY - rect.height * 0.150),
+                         control: CGPoint(x: body.minX, y: body.maxY - rect.height * 0.045))
+    outline.addLine(to: CGPoint(x: body.minX, y: body.minY + rect.height * 0.055))
     outline.addQuadCurve(to: CGPoint(x: body.minX + rect.width * 0.045, y: body.minY),
                          control: CGPoint(x: body.minX, y: body.minY))
 
@@ -244,155 +243,103 @@ func drawBuddy() {
     ctx.fillPath()
     ctx.restoreGState()
 
-    let save = strokeWidthValue
     strokeWidthValue = s * 0.045
     withGlow { strokeGradient(outline) }
-    strokeWidthValue = save
 
-    // ── 表情：一只闭眼（wink）+ 一只圆形接口，不画嘴 ──
-    // 左眼：闭眼的弧线（读作"眨眼"，比画笑脸克制得多）
-    let winkY = body.minY + body.height * 0.650
-    let wink = CGMutablePath()
-    wink.move(to: CGPoint(x: body.minX + body.width * 0.245, y: winkY))
-    wink.addQuadCurve(to: CGPoint(x: body.minX + body.width * 0.365, y: winkY),
-                      control: CGPoint(x: body.minX + body.width * 0.305, y: winkY + rect.height * 0.040))
+    // ── 眼睛：">" 与 "<"（两只都是闭眼笑），笔触比轮廓细一档 ──
+    let eyeY = body.minY + body.height * 0.560
+    let eyeW = body.width * 0.105
+    let eyeH = body.height * 0.150
+
+    // 左眼 ">"：从左上折到中右再折到左下
+    let leftEye = CGMutablePath()
+    leftEye.move(to: CGPoint(x: body.minX + body.width * 0.250, y: eyeY + eyeH))
+    leftEye.addLine(to: CGPoint(x: body.minX + body.width * 0.250 + eyeW, y: eyeY))
+    leftEye.addLine(to: CGPoint(x: body.minX + body.width * 0.250, y: eyeY - eyeH))
+
+    // 右眼 "<"：镜像
+    let rightEyeX = body.minX + body.width * 0.640
+    let rightEye = CGMutablePath()
+    rightEye.move(to: CGPoint(x: rightEyeX, y: eyeY + eyeH))
+    rightEye.addLine(to: CGPoint(x: rightEyeX - eyeW, y: eyeY))
+    rightEye.addLine(to: CGPoint(x: rightEyeX, y: eyeY - eyeH))
+
     ctx.saveGState()
-    ctx.addPath(wink)
-    ctx.setLineWidth(s * 0.023)
+    for eye in [leftEye, rightEye] {
+        ctx.addPath(eye)
+    }
+    ctx.setLineWidth(s * 0.036)
     ctx.setLineCap(.round)
+    ctx.setLineJoin(.round)
     ctx.setStrokeColor(blueTop)
     ctx.strokePath()
     ctx.restoreGState()
 
-    // 右眼：圆形接口（外环 + 挖空 + 中心灯）
-    let eyeCenter = CGPoint(x: body.minX + body.width * 0.585, y: winkY + rect.height * 0.004)
-    let outer = rect.width * 0.050
-
-    ctx.saveGState()
-    ctx.addEllipse(in: CGRect(x: eyeCenter.x - outer, y: eyeCenter.y - outer,
-                              width: outer * 2, height: outer * 2))
-    ctx.setLineWidth(s * 0.021)
-    ctx.setStrokeColor(blueMid)
-    ctx.strokePath()
-    ctx.restoreGState()
-
-    ctx.saveGState()
-    let inner = outer - s * 0.015
-    ctx.addEllipse(in: CGRect(x: eyeCenter.x - inner, y: eyeCenter.y - inner,
-                              width: inner * 2, height: inner * 2))
-    ctx.setFillColor(CGColor(red: 0.050, green: 0.165, blue: 0.145, alpha: 1))
-    ctx.fillPath()
-    ctx.restoreGState()
-
-    ctx.saveGState()
-    let pupil = outer * 0.42
-    ctx.setShadow(offset: .zero, blur: s * 0.020,
-                  color: CGColor(red: 0.35, green: 0.95, blue: 0.80, alpha: 0.75))
-    ctx.addEllipse(in: CGRect(x: eyeCenter.x - pupil, y: eyeCenter.y - pupil,
-                              width: pupil * 2, height: pupil * 2))
-    ctx.setFillColor(blueTop)
-    ctx.fillPath()
-    ctx.restoreGState()
-
-    // ── 指示灯：右下五条 ──
-    for index in 0..<5 {
-        let bar = CGRect(x: body.minX + body.width * (0.470 + CGFloat(index) * 0.062),
-                         y: body.minY + body.height * 0.150,
-                         width: rect.width * 0.013, height: rect.height * 0.062)
+    // ── 指示灯：底部三条（更少，别抢眼睛）──
+    for index in 0..<3 {
+        let bar = CGRect(x: body.minX + body.width * (0.560 + CGFloat(index) * 0.070),
+                         y: body.minY + body.height * 0.135,
+                         width: rect.width * 0.013, height: rect.height * 0.055)
         ctx.saveGState()
-        ctx.addPath(CGPath(roundedRect: bar, cornerWidth: rect.width * 0.0065,
-                           cornerHeight: rect.width * 0.0065, transform: nil))
+        ctx.addPath(CGPath(roundedRect: bar, cornerWidth: rect.width * 0.006,
+                           cornerHeight: rect.width * 0.006, transform: nil))
         ctx.setFillColor(blueTop)
         ctx.fillPath()
         ctx.restoreGState()
     }
 
-    // ── 小手 + 扫帚（收在右下，不越过盘顶）──
-    let handCenter = CGPoint(x: body.maxX + rect.width * 0.058,
-                             y: body.minY + body.height * 0.470)
-    let handRadius = rect.width * 0.040
+    // ── 扫帚：像 🧹 那样斜靠在右侧，刷头在下方 ──
+    let brushTip = CGPoint(x: body.maxX + rect.width * 0.105, y: body.minY - rect.height * 0.055)
+    let handleTop = CGPoint(x: body.maxX + rect.width * 0.205, y: body.maxY + rect.height * 0.085)
 
-    // 手臂：从盘体侧壁连到手
-    let arm = CGMutablePath()
-    arm.move(to: CGPoint(x: body.maxX - rect.width * 0.030, y: body.minY + body.height * 0.415))
-    arm.addLine(to: handCenter)
+    // 柄
     ctx.saveGState()
-    ctx.addPath(arm)
-    ctx.setLineWidth(s * 0.040)
-    ctx.setLineCap(.round)
-    ctx.setStrokeColor(blueMid)
-    ctx.strokePath()
-    ctx.restoreGState()
-
-    // 扫帚柄：穿过手掌，向下右延伸
-    let handleTop = CGPoint(x: handCenter.x + rect.width * 0.010, y: handCenter.y + rect.height * 0.170)
-    let handleBottom = CGPoint(x: handCenter.x + rect.width * 0.075, y: handCenter.y - rect.height * 0.175)
-    ctx.saveGState()
-    let handle = CGMutablePath()
-    handle.move(to: handleTop)
-    handle.addLine(to: handleBottom)
-    ctx.addPath(handle)
+    let stick = CGMutablePath()
+    stick.move(to: brushTip)
+    stick.addLine(to: handleTop)
+    ctx.addPath(stick)
     ctx.setLineWidth(s * 0.016)
     ctx.setLineCap(.round)
     ctx.setStrokeColor(blueTop)
     ctx.strokePath()
     ctx.restoreGState()
 
-    // 刷毛：从柄下端散开（朝右下扫）
-    for index in 0..<5 {
-        let t = CGFloat(index) / 4
-        let angle = CGFloat.pi * (-0.58 + 0.62 * t)          // 右下扇面（扫地方向）
-        let length = rect.width * (0.105 + 0.020 * (1 - abs(t - 0.5) * 2))
-        let tip = CGPoint(x: handleBottom.x + cos(angle) * length * 0.55 - rect.width * 0.020,
-                          y: handleBottom.y + sin(angle) * length)
+    // 刷头：一个上窄下宽的梯形束（像 emoji 的毛刷），朝左下散开
+    let brush = CGMutablePath()
+    let brushW = rect.width * 0.075
+    let brushH = rect.height * 0.115
+    brush.move(to: CGPoint(x: brushTip.x - brushW * 0.55, y: brushTip.y - brushH))
+    brush.addLine(to: CGPoint(x: brushTip.x + brushW * 0.55, y: brushTip.y - brushH * 0.86))
+    brush.addLine(to: CGPoint(x: brushTip.x + brushW * 0.20, y: brushTip.y + brushH * 0.16))
+    brush.addLine(to: CGPoint(x: brushTip.x - brushW * 0.20, y: brushTip.y + brushH * 0.16))
+    brush.closeSubpath()
+    ctx.saveGState()
+    ctx.addPath(brush)
+    ctx.setFillColor(blueMid)
+    ctx.fillPath()
+    ctx.restoreGState()
+
+    // 刷毛纹理：两道细线
+    for offset in [-0.28, 0.0, 0.28] {
         let hair = CGMutablePath()
-        hair.move(to: handleBottom)
-        hair.addLine(to: tip)
+        hair.move(to: CGPoint(x: brushTip.x + brushW * CGFloat(offset), y: brushTip.y - brushH * 0.80))
+        hair.addLine(to: CGPoint(x: brushTip.x + brushW * CGFloat(offset) * 0.55, y: brushTip.y + brushH * 0.08))
         ctx.saveGState()
         ctx.addPath(hair)
-        ctx.setLineWidth(s * 0.021)
+        ctx.setLineWidth(s * 0.010)
         ctx.setLineCap(.round)
-        ctx.setStrokeColor(blueTop)
+        ctx.setStrokeColor(CGColor(red: 0.05, green: 0.25, blue: 0.21, alpha: 0.55))
         ctx.strokePath()
         ctx.restoreGState()
     }
 
-    // 刷箍：刷毛根部一小段横向短条
+    // 刷箍：柄与刷头交界的一小段
     ctx.saveGState()
-    ctx.addPath(CGPath(roundedRect: CGRect(x: handleBottom.x - rect.width * 0.022,
-                                           y: handleBottom.y - rect.height * 0.012,
-                                           width: rect.width * 0.044,
-                                           height: rect.height * 0.030),
-                       cornerWidth: rect.width * 0.014, cornerHeight: rect.width * 0.014,
-                       transform: nil))
-    ctx.setFillColor(blueMid)
-    ctx.fillPath()
-    ctx.restoreGState()
-
-    // 手掌：连指手套（圆角矩形 + 拇指），盖在柄上，才有"握住"的层次
-    ctx.saveGState()
-    let glove = CGRect(x: handCenter.x - handRadius * 0.95,
-                       y: handCenter.y - handRadius * 1.25,
-                       width: handRadius * 1.75,
-                       height: handRadius * 2.30)
-    let glovePath = CGPath(roundedRect: glove,
-                           cornerWidth: glove.width * 0.46,
-                           cornerHeight: glove.width * 0.46,
-                           transform: nil)
-    ctx.addPath(glovePath)
-    ctx.setFillColor(blueMid)
-    ctx.fillPath()
-    ctx.restoreGState()
-
-    // 拇指：贴在手套左上侧，指向盘体
-    ctx.saveGState()
-    let thumb = CGRect(x: glove.minX - handRadius * 0.42,
-                       y: glove.maxY - handRadius * 0.86,
-                       width: handRadius * 0.86,
-                       height: handRadius * 0.66)
-    ctx.addPath(CGPath(roundedRect: thumb,
-                       cornerWidth: thumb.height * 0.5,
-                       cornerHeight: thumb.height * 0.5,
+    ctx.addPath(CGPath(roundedRect: CGRect(x: brushTip.x - brushW * 0.26,
+                                           y: brushTip.y + brushH * 0.10,
+                                           width: brushW * 0.52,
+                                           height: brushH * 0.22),
+                       cornerWidth: brushW * 0.12, cornerHeight: brushW * 0.12,
                        transform: nil))
     ctx.setFillColor(blueMid)
     ctx.fillPath()
@@ -462,12 +409,12 @@ func drawSparkle(center c: CGPoint, radius r: CGFloat, alpha: CGFloat = 0.95) {
     ctx.restoreGState()
 }
 
-var sparkleCenter = pt(0.845, 0.815)
+var sparkleCenter = pt(0.185, 0.822)
 var sparkleRadius = s * 0.042
 if variant == "drive" || variant == "disk" { sparkleCenter = pt(0.845, 0.815); sparkleRadius = s * 0.042 }
 if variant == "broom" { sparkleCenter = pt(0.74, 0.22); sparkleRadius = s * 0.05 }
 ctx.saveGState()
-ctx.setShadow(offset: .zero, blur: s * 0.05, color: CGColor(red: 0.35, green: 0.95, blue: 0.80, alpha: 0.8))
+ctx.setShadow(offset: .zero, blur: s * 0.05, color: CGColor(red: 0.35, green: 0.95, blue: 0.80, alpha: 0.35))
 drawSparkle(center: sparkleCenter, radius: sparkleRadius)
 ctx.restoreGState()
 
