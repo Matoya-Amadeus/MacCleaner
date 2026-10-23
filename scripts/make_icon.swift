@@ -249,61 +249,55 @@ func drawBuddy() {
     withGlow { strokeGradient(outline) }
     strokeWidthValue = save
 
-    // ── 眼睛：圆形接口（外环 + 挖空 + 中心状态灯）──
-    for fraction in [0.300, 0.520] {
-        let center = CGPoint(x: body.minX + body.width * CGFloat(fraction),
-                             y: body.minY + body.height * 0.720)
-        let outer = rect.width * 0.047
+    // ── 表情：一只闭眼（wink）+ 一只圆形接口，不画嘴 ──
+    // 左眼：闭眼的弧线（读作"眨眼"，比画笑脸克制得多）
+    let winkY = body.minY + body.height * 0.650
+    let wink = CGMutablePath()
+    wink.move(to: CGPoint(x: body.minX + body.width * 0.245, y: winkY))
+    wink.addQuadCurve(to: CGPoint(x: body.minX + body.width * 0.365, y: winkY),
+                      control: CGPoint(x: body.minX + body.width * 0.305, y: winkY + rect.height * 0.040))
+    ctx.saveGState()
+    ctx.addPath(wink)
+    ctx.setLineWidth(s * 0.023)
+    ctx.setLineCap(.round)
+    ctx.setStrokeColor(blueTop)
+    ctx.strokePath()
+    ctx.restoreGState()
 
-        ctx.saveGState()
-        ctx.addEllipse(in: CGRect(x: center.x - outer, y: center.y - outer,
-                                  width: outer * 2, height: outer * 2))
-        ctx.setLineWidth(s * 0.021)
-        ctx.setStrokeColor(blueMid)
-        ctx.strokePath()
-        ctx.restoreGState()
+    // 右眼：圆形接口（外环 + 挖空 + 中心灯）
+    let eyeCenter = CGPoint(x: body.minX + body.width * 0.585, y: winkY + rect.height * 0.004)
+    let outer = rect.width * 0.050
 
-        ctx.saveGState()
-        let inner = outer - s * 0.016
-        ctx.addEllipse(in: CGRect(x: center.x - inner, y: center.y - inner,
-                                  width: inner * 2, height: inner * 2))
-        ctx.setFillColor(CGColor(red: 0.050, green: 0.165, blue: 0.145, alpha: 1))
-        ctx.fillPath()
-        ctx.restoreGState()
+    ctx.saveGState()
+    ctx.addEllipse(in: CGRect(x: eyeCenter.x - outer, y: eyeCenter.y - outer,
+                              width: outer * 2, height: outer * 2))
+    ctx.setLineWidth(s * 0.021)
+    ctx.setStrokeColor(blueMid)
+    ctx.strokePath()
+    ctx.restoreGState()
 
-        ctx.saveGState()
-        let pupil = outer * 0.44
-        ctx.setShadow(offset: .zero, blur: s * 0.020,
-                      color: CGColor(red: 0.35, green: 0.95, blue: 0.80, alpha: 0.75))
-        ctx.addEllipse(in: CGRect(x: center.x - pupil, y: center.y - pupil,
-                                  width: pupil * 2, height: pupil * 2))
-        ctx.setFillColor(blueTop)
-        ctx.fillPath()
-        ctx.restoreGState()
-    }
+    ctx.saveGState()
+    let inner = outer - s * 0.015
+    ctx.addEllipse(in: CGRect(x: eyeCenter.x - inner, y: eyeCenter.y - inner,
+                              width: inner * 2, height: inner * 2))
+    ctx.setFillColor(CGColor(red: 0.050, green: 0.165, blue: 0.145, alpha: 1))
+    ctx.fillPath()
+    ctx.restoreGState()
 
-    // ── 嘴：散热槽（青描边 + 暗槽）──
-    let mouth = CGMutablePath()
-    let mouthY = body.minY + body.height * 0.505
-    mouth.move(to: CGPoint(x: body.minX + body.width * 0.325, y: mouthY))
-    mouth.addQuadCurve(to: CGPoint(x: body.minX + body.width * 0.495, y: mouthY),
-                       control: CGPoint(x: body.midX - rect.width * 0.008, y: mouthY - rect.height * 0.062))
-
-    for (width, color) in [(s * 0.032, blueMid),
-                           (s * 0.017, CGColor(red: 0.050, green: 0.165, blue: 0.145, alpha: 1))] {
-        ctx.saveGState()
-        ctx.addPath(mouth)
-        ctx.setLineWidth(width)
-        ctx.setLineCap(.round)
-        ctx.setStrokeColor(color)
-        ctx.strokePath()
-        ctx.restoreGState()
-    }
+    ctx.saveGState()
+    let pupil = outer * 0.42
+    ctx.setShadow(offset: .zero, blur: s * 0.020,
+                  color: CGColor(red: 0.35, green: 0.95, blue: 0.80, alpha: 0.75))
+    ctx.addEllipse(in: CGRect(x: eyeCenter.x - pupil, y: eyeCenter.y - pupil,
+                              width: pupil * 2, height: pupil * 2))
+    ctx.setFillColor(blueTop)
+    ctx.fillPath()
+    ctx.restoreGState()
 
     // ── 指示灯：右下五条 ──
     for index in 0..<5 {
-        let bar = CGRect(x: body.minX + body.width * (0.600 + CGFloat(index) * 0.058),
-                         y: body.minY + body.height * 0.095,
+        let bar = CGRect(x: body.minX + body.width * (0.470 + CGFloat(index) * 0.062),
+                         y: body.minY + body.height * 0.150,
                          width: rect.width * 0.013, height: rect.height * 0.062)
         ctx.saveGState()
         ctx.addPath(CGPath(roundedRect: bar, cornerWidth: rect.width * 0.0065,
