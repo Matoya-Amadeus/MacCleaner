@@ -12,7 +12,7 @@ cd "$REPO"
 
 xcrun swiftc -O -o /tmp/mc_make_icon scripts/make_icon.swift \
   -framework AppKit -framework CoreGraphics
-/tmp/mc_make_icon disk native/Resources/AppIcon-1024.png 1024
+/tmp/mc_make_icon buddy native/Resources/AppIcon-1024.png 1024
 
 ICONSET="$(mktemp -d)/AppIcon.iconset"
 mkdir -p "$ICONSET"

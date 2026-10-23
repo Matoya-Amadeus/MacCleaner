@@ -115,7 +115,7 @@ func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
 }
 
 /// 磁盘（照参考图轮廓）：上圆下宽的身形 + 底部指示灯带。轮廓描边、指示条填色。
-func drawDisk() {
+func drawDisk(withFace: Bool = false) {
     let outline = CGMutablePath()
 
     // 身形：底边平、两肩圆角、顶边略窄
@@ -131,8 +131,8 @@ func drawDisk() {
     outline.closeSubpath()
 
     // 指示灯带的分隔线
-    outline.move(to: pt(0.160, 0.455))
-    outline.addLine(to: pt(0.840, 0.455))
+    outline.move(to: pt(0.160, 0.420))
+    outline.addLine(to: pt(0.840, 0.420))
 
     // 盘身内部：一层很淡的青（8%），让实体感出来，但不抢线稿
     ctx.saveGState()
@@ -164,9 +164,9 @@ func drawDisk() {
     for index in 0..<8 {
         let x = 0.500 + Double(index) * 0.037
         let bar = CGRect(x: rect.minX + rect.width * x,
-                         y: rect.minY + rect.height * 0.330,
+                         y: rect.minY + rect.height * 0.305,
                          width: rect.width * 0.013,
-                         height: rect.height * 0.070)
+                         height: rect.height * 0.062)
         let barPath = CGPath(roundedRect: bar, cornerWidth: rect.width * 0.007,
                              cornerHeight: rect.width * 0.007, transform: nil)
         ctx.saveGState()
@@ -175,10 +175,49 @@ func drawDisk() {
         ctx.fillPath()
         ctx.restoreGState()
     }
+
+    guard withFace else { return }
+
+    // 两只圆眼（带一点上高光）
+    for centerX in [0.405, 0.595] {
+        let radius = rect.width * 0.036
+        let center = pt(CGFloat(centerX), 0.590)
+        ctx.saveGState()
+        ctx.setShadow(offset: .zero, blur: s * 0.02,
+                      color: CGColor(red: 0.35, green: 0.95, blue: 0.80, alpha: 0.65))
+        ctx.setFillColor(blueTop)
+        ctx.fillEllipse(in: CGRect(x: center.x - radius, y: center.y - radius,
+                                   width: radius * 2, height: radius * 2))
+        ctx.restoreGState()
+
+        // 瞳孔上方一点深色，眼睛才有"看的方向"
+        ctx.saveGState()
+        ctx.setFillColor(CGColor(red: 0.04, green: 0.30, blue: 0.26, alpha: 0.55))
+        ctx.fillEllipse(in: CGRect(x: center.x - radius * 0.42,
+                                   y: center.y - radius * 0.30,
+                                   width: radius * 0.84, height: radius * 0.84))
+        ctx.restoreGState()
+    }
+
+    // 小笑弧：从左眼下方轻轻荡到右眼下方
+    let smile = CGMutablePath()
+    smile.move(to: pt(0.452, 0.512))
+    smile.addQuadCurve(to: pt(0.548, 0.512), control: pt(0.500, 0.462))
+    ctx.saveGState()
+    ctx.addPath(smile)
+    ctx.setLineWidth(s * 0.026)
+    ctx.setLineCap(.round)
+    ctx.setStrokeColor(blueTop)
+    ctx.strokePath()
+    ctx.restoreGState()
 }
+
+/// 磁盘（照参考图轮廓）：上圆下宽的身形 + 底部指示灯带。轮廓描边、指示条填色。
 
 func drawMark() {
     let path = CGMutablePath()
+    if variant == "buddy" { drawDisk(withFace: true); return }
+
     switch variant {
     case "m":
         // 字母 M：两竖 + 中间 V（与 App Store 的 A 同一套"粗笔画 + 圆头"语言）
@@ -202,8 +241,7 @@ func drawMark() {
         path.move(to: pt(0.54, 0.62))
         path.addLine(to: pt(0.54, 0.82))
     default:
-        // 磁盘：实心盘身 + 挖空的上盖缝 + 指示灯（线条版在 512px 下会糊成一团）
-        drawDisk()
+        drawDisk(withFace: false)
         return
     }
     withGlow { strokeGradient(path) }
