@@ -329,8 +329,6 @@ struct BatchUninstallSheet: View {
     @State private var applying = false
     @State private var error: String?
     @State private var confirming = false
-    /// 访达返回的错误原文（失败时拼进结果页，别只写"失败"）。
-    @State private var lastFinderError = ""
     @StateObject private var timer = ElapsedTimer()
 
     private var allItems: [UninstallListView.PlanItem] { batch.plans.flatMap(\.items) }
@@ -404,7 +402,13 @@ struct BatchUninstallSheet: View {
             .padding(16)
         }
         .frame(width: 680, height: 580)
-        .progressOverlay(applying, title: "正在移入废纸篓…", detail: nil, timer: timer)
+        // 这一步可能弹两种系统框：控制访达、管理员密码。文案先说清楚，别让人干等。
+        .progressOverlay(
+            applying,
+            title: "正在移入废纸篓…",
+            detail: "若弹出「控制访达」或密码框，请允许 / 输入后继续",
+            timer: timer
+        )
         .confirmationDialog(
             "确认卸载 \(batch.plans.count) 个应用？",
             isPresented: $confirming
@@ -452,40 +456,79 @@ struct BatchUninstallSheet: View {
     }
 
     /// 用 Foundation 的回收站 API 移动；它会走系统授权流程。
-    private func trashViaSystemAPI(_ path: String) -> Bool {
+    /// 移走一个路径：三条路依次尝试，全部**异步 + 带超时**，绝不阻塞界面。
+    ///
+    /// 1. `FileManager.trashItem`：App 自己有权限时最快（静默）；
+    /// 2. 访达：`osascript` 调 Finder —— 它有全权，但需要「控制访达」自动化授权；
+    /// 3. 管理员：`with administrator privileges` 弹一次密码，root 直接移动。
+    ///
+    /// 为什么不能只用 `NSAppleScript`：它在系统弹窗期间**同步阻塞**，
+    /// 曾让「正在移入废纸篓…」卡在 6 秒不动（2026-10-23 截图）。
+    private func moveToTrash(_ path: String) async -> (ok: Bool, message: String) {
         var resulting: NSURL?
-        do {
-            try FileManager.default.trashItem(
-                at: URL(fileURLWithPath: path),
-                resultingItemURL: &resulting
-            )
-            return true
-        } catch {
-            // 落到这里通常是 TCC 的「App 管理」拒绝——而这项权限**不认我们的子进程**，
-            // 用户勾了也还是失败（2026-10-23 实测两次）。
-            // 交给访达：它本来就有移动任意 App 的权限，我们只请求"控制访达"（一次即可）。
-            return trashViaFinder(path)
+        if (try? FileManager.default.trashItem(
+            at: URL(fileURLWithPath: path),
+            resultingItemURL: &resulting
+        )) != nil {
+            return (true, "")
         }
-    }
 
-    /// 让访达代劳移入废纸篓。第一次会弹“MacCleaner 想要控制访达”，允许后长期有效。
-    private func trashViaFinder(_ path: String) -> Bool {
-        let escaped = path
+        let quoted = path.replacingOccurrences(of: "\"", with: "\\\"")
+        let finder = """
+        tell application "Finder" to delete POSIX file "\(quoted)"
+        """
+        let viaFinder = await runOsascript(finder, timeout: 12)
+        if viaFinder.ok { return (true, "") }
+
+        // 访达没权限（用户点了"不允许"，或从未授权）→ 用管理员权限直接 mv。
+        let shellQuoted = path
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
-        let source = """
-        tell application "Finder"
-            delete POSIX file "\(escaped)"
-        end tell
-        """
-        guard let script = NSAppleScript(source: source) else { return false }
-        var error: NSDictionary?
-        script.executeAndReturnError(&error)
-        if let error {
-            lastFinderError = (error[NSAppleScript.errorMessage] as? String) ?? "未知错误"
-            return false
+        // 注意转义层级：最终交给 AppleScript 的文本必须是
+        //   do shell script "mv -f \"/path\" ~/.Trash/" with administrator privileges
+        // 内层引号在 AppleScript 里要写成 \"，在 Swift 里就得是 \\\"。
+        let admin = "do shell script \"mv -f \\\"\(shellQuoted)\\\" ~/.Trash/\" with administrator privileges"
+        let viaAdmin = await runOsascript(admin, timeout: 120)
+        if viaAdmin.ok { return (true, "") }
+
+        let reason = viaFinder.message.isEmpty ? viaAdmin.message : viaFinder.message
+        return (false, reason.isEmpty ? "移动被系统拒绝" : reason)
+    }
+
+    /// 跑一段 AppleScript：后台线程 + 超时，超时就终止进程。
+    private func runOsascript(_ source: String, timeout: TimeInterval) async -> (ok: Bool, message: String) {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+                process.arguments = ["-e", source]
+                let stderr = Pipe()
+                process.standardError = stderr
+                process.standardOutput = Pipe()
+
+                do {
+                    try process.run()
+                } catch {
+                    continuation.resume(returning: (false, error.localizedDescription))
+                    return
+                }
+
+                let deadline = Date().addingTimeInterval(timeout)
+                while process.isRunning && Date() < deadline {
+                    usleep(80_000)
+                }
+                if process.isRunning {
+                    process.terminate()
+                    continuation.resume(returning: (false, "系统授权弹窗未响应（已超时）"))
+                    return
+                }
+
+                let data = stderr.fileHandleForReading.readDataToEndOfFile()
+                let text = String(data: data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                continuation.resume(returning: (process.terminationStatus == 0, text))
+            }
         }
-        return true
     }
 
     private func apply() async {
@@ -524,14 +567,12 @@ struct BatchUninstallSheet: View {
                     // 这里改用系统回收站 API 重试一次：它走正确的授权路径
                     // （首次会弹"MacCleaner 想要管理其他 App"），成功后计入完成。
                     if isPermissionDenied(reason) {
-                        if trashViaSystemAPI(path) {
+                        let outcome = await moveToTrash(path)
+                        if outcome.ok {
                             movedTotal += 1
                             movedBytes += plan.items.first { $0.path == path }?.bytes ?? 0
                         } else {
-                            failed.append((
-                                path,
-                                "移动被系统拒绝（\(lastFinderError.isEmpty ? "未知原因" : lastFinderError)）——请在 系统设置 → 隐私与安全性 → 自动化 里允许 MacCleaner 控制「访达」"
-                            ))
+                            failed.append((path, "移动被系统拒绝：\(outcome.message)"))
                         }
                         continue
                     }
