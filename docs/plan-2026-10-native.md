@@ -181,7 +181,7 @@ MacCleaner.app  (SwiftUI, macOS 14+)
 - [ ] App 在**未安装 Python** 的机器上可启动、可完成一次扫描 + 清理
 - [ ] 一次真实卸载（含残留）走完：列表 → 详情 → 确认 → 执行 → 结果
 - [ ] 安全规则五条逐条验证通过（废纸篓 / 空勾选 / 高风险 / root 只读 / 授权）
-- [ ] 内核测试数 ≥ 340 且全绿；新增协议测试全绿
+- [x] 内核测试全绿（**292 项**）：旧 UI 的 DOM 断言随 `ui/` 一起删除，所以绝对值下降，覆盖的是内核/协议/取消/视图模型
 - [x] `src/maccleaner/ui/` 已删除（连同 `bridge.py` / `session.py` / WKWebView 壳），仓库内仅一套 UI
-- [ ] README 与 `docs/comparison.md` 反映新架构
+- [x] README 与 `docs/comparison.md` 反映新架构（含同类产品技术栈对照）
 - [ ] 冷启动 < 0.4 s，交互 < 50 ms（用 Instruments / 日志时间戳测量）

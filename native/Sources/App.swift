@@ -59,10 +59,9 @@ struct MacCleanerApp: App {
             RootView()
                 .frame(minWidth: 760, minHeight: 520)
                 .tint(Theme.accent)
-                // 开发/验收：MACCLEANER_DEV_LIGHT=1 强制亮色，用来检查浅色底下的卡片与图形。
-                .preferredColorScheme(
-                    ProcessInfo.processInfo.environment["MACCLEANER_DEV_LIGHT"] != nil ? .light : nil
-                )   // 1080×729 这类小屏上 920 宽会顶出屏幕
+                // 只做深色：这套视觉（青绿辉光、半透明卡片）是按深色底设计的，
+                // 亮色下即使调过对比度也不如深色成立，索性固定（用户 2026-10-23 决定）。
+                .preferredColorScheme(.dark)   // 1080×729 这类小屏上 920 宽会顶出屏幕
         }
         .windowToolbarStyle(.unified)
 
