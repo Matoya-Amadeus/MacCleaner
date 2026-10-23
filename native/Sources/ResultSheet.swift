@@ -82,6 +82,8 @@ struct ResultSheet: View {
                                 .font(.caption2).foregroundStyle(.secondary)
                             Spacer(minLength: 4)
                             Button("打开设置") {
+                                // 勾选完回到 App 时自动重启（见 App.swift 的 didBecomeActive）
+                                UserDefaults.standard.set(true, forKey: "needsRestartAfterPermission")
                                 if let url = URL(string:
                                     "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AppBundles") {
                                     NSWorkspace.shared.open(url)

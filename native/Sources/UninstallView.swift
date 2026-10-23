@@ -329,6 +329,8 @@ struct BatchUninstallSheet: View {
     @State private var applying = false
     @State private var error: String?
     @State private var confirming = false
+    /// 访达返回的错误原文（失败时拼进结果页，别只写"失败"）。
+    @State private var lastFinderError = ""
     @StateObject private var timer = ElapsedTimer()
 
     private var allItems: [UninstallListView.PlanItem] { batch.plans.flatMap(\.items) }
@@ -459,8 +461,31 @@ struct BatchUninstallSheet: View {
             )
             return true
         } catch {
+            // 落到这里通常是 TCC 的「App 管理」拒绝——而这项权限**不认我们的子进程**，
+            // 用户勾了也还是失败（2026-10-23 实测两次）。
+            // 交给访达：它本来就有移动任意 App 的权限，我们只请求"控制访达"（一次即可）。
+            return trashViaFinder(path)
+        }
+    }
+
+    /// 让访达代劳移入废纸篓。第一次会弹“MacCleaner 想要控制访达”，允许后长期有效。
+    private func trashViaFinder(_ path: String) -> Bool {
+        let escaped = path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let source = """
+        tell application "Finder"
+            delete POSIX file "\(escaped)"
+        end tell
+        """
+        guard let script = NSAppleScript(source: source) else { return false }
+        var error: NSDictionary?
+        script.executeAndReturnError(&error)
+        if let error {
+            lastFinderError = (error[NSAppleScript.errorMessage] as? String) ?? "未知错误"
             return false
         }
+        return true
     }
 
     private func apply() async {
@@ -505,7 +530,7 @@ struct BatchUninstallSheet: View {
                         } else {
                             failed.append((
                                 path,
-                                "需要「App 管理」权限：系统设置 → 隐私与安全性 → App 管理，勾选 MacCleaner 后重试"
+                                "移动被系统拒绝（\(lastFinderError.isEmpty ? "未知原因" : lastFinderError)）——请在 系统设置 → 隐私与安全性 → 自动化 里允许 MacCleaner 控制「访达」"
                             ))
                         }
                         continue

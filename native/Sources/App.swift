@@ -128,6 +128,14 @@ struct RootView: View {
         .sheet(isPresented: $showPermissions) {
             PermissionSheet(store: permissions) { showPermissions = false }
         }
+        // 去系统设置授权后回到 App：TCC 的变更对**已运行进程**不生效，系统要求重启。
+        // 用户不该被要求手动关开——这里自动重启一次（只一次，标记即刻清掉，避免循环）。
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            if UserDefaults.standard.bool(forKey: "needsRestartAfterPermission") {
+                UserDefaults.standard.set(false, forKey: "needsRestartAfterPermission")
+                AppRelaunch.once()
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .mcSelectSection)) { note in
             if let raw = note.object as? String, let item = SidebarItem(rawValue: raw) {
                 selection = item
@@ -220,5 +228,18 @@ struct PlaceholderView: View {
             Text(detail).font(.callout).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// 自动重启：授权后 TCC 只在**新进程**里生效。
+enum AppRelaunch {
+    static func once() {
+        let opener = Process()
+        opener.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        opener.arguments = ["-n", Bundle.main.bundleURL.path]
+        try? opener.run()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            NSApp.terminate(nil)
+        }
     }
 }

@@ -22,6 +22,8 @@
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>把应用与残留移入废纸篓时，交给「访达」执行（它拥有修改应用程序目录的权限）。</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Mac Cleaner</string>
 </dict>
