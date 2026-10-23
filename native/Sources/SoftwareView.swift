@@ -200,6 +200,8 @@ struct UpdatesListView: View {
                                                         }
                                                     }
                                                     .toggleStyle(.checkbox)
+                                                    // App Store 项只能去商店点更新，勾选等于骗人。
+                                                    .disabled(item.id.hasPrefix("mas|"))
                                                 }
                                             
 
@@ -207,7 +209,7 @@ struct UpdatesListView: View {
 
                     }
 
-                    if !sparkleRest.isEmpty {
+                    if !sparkleRest.isEmpty, category == nil || category == "App 更新检查" {
                         Text("App 更新检查 · \(sparkleRest.count)")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
@@ -228,7 +230,7 @@ struct UpdatesListView: View {
                             }
                         }
                     }
-                    if !electronUpdates.isEmpty {
+                    if !electronUpdates.isEmpty, category == nil || category == "Electron 应用" {
                         Text("Electron 应用 · \(electronUpdates.count)")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
@@ -246,7 +248,7 @@ struct UpdatesListView: View {
                         }
                     }
 
-                    if !undetectable.isEmpty {
+                    if !undetectable.isEmpty, category == nil || category == "无法自动检测" {
                         Text("无法自动检测 · \(undetectable.count)")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
@@ -263,6 +265,10 @@ struct UpdatesListView: View {
                                 Text(item.name).lineLimit(1)
                                 Spacer(minLength: 8)
                                 Text(item.reason).font(.caption2).foregroundStyle(.tertiary)
+                                // 查不到版本不等于帮不上忙：这些应用都自带更新器，
+                                // 打开它就能触发"检查更新"（AppSweep / Greypaint 的做法）。
+                                Button("打开") { Task { await openSelfUpdating(item) } }
+                                    .controlSize(.small)
                             }
                         }
                     }
@@ -272,7 +278,13 @@ struct UpdatesListView: View {
 
             Divider()
             HStack {
-                Text("已选 \(checked.count) 项 · 共 \(allItems.count) 项"
+                // 79 项里混着 App Store 项（我们只能打开商店，不能替你点"更新"）。
+                // 单独说出来，避免"说 79 项可更新、其实有 1 项做不到"（2026-10-23 反馈）。
+                let autoItems = allItems.filter { !$0.id.hasPrefix("mas|") }
+                let manualCount = allItems.count - autoItems.count
+                let autoChecked = checked.filter { id in autoItems.contains { $0.id == id } }.count
+                Text("已选 \(autoChecked) / \(autoItems.count) 项可自动更新"
+                     + (manualCount > 0 ? " · 另有 \(manualCount) 项需在 App Store 更新" : "")
                      + (checkedAt.map { " · 检查于 \(Self.clock.string(from: $0))" } ?? ""))
                     .font(.callout.weight(.medium)).monospacedDigit()
                 Spacer()
@@ -310,7 +322,13 @@ struct UpdatesListView: View {
     }
 
     private var categories: [(label: String, count: Int)] {
-        groups.map { (label: $0.label, count: $0.items.count) }
+        var out = groups.map { (label: $0.label, count: $0.items.count) }
+        // 新加的三组也要能被筛选——否则选"Homebrew formula"时它们仍留在列表里，
+        // 用户会以为筛选没生效（2026-10-23 反馈）。
+        if !sparkleRest.isEmpty { out.append((label: "App 更新检查", count: sparkleRest.count)) }
+        if !electronUpdates.isEmpty { out.append((label: "Electron 应用", count: electronUpdates.count)) }
+        if !undetectable.isEmpty { out.append((label: "无法自动检测", count: undetectable.count)) }
+        return out
     }
 
     private func load() async {
@@ -386,7 +404,9 @@ struct UpdatesListView: View {
                     pendingSparkle.removeValue(forKey: path)
                 }
             }
-            checked = Set(groups.flatMap(\.items).map(\.id))   // 更新默认为全选
+            // 默认全选，但**排除 App Store 项**：它们只能去商店点更新，
+            // 勾上会让底部按钮显示一个做不到的数量（2026-10-23 反馈）。
+            checked = Set(groups.flatMap(\.items).filter { !$0.id.hasPrefix("mas|") }.map(\.id))
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -415,6 +435,16 @@ struct UpdatesListView: View {
             }
             checked = []
             await load()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// 打开"自己做更新"的应用：它是唯一能安全升级自己的主体。
+    private func openSelfUpdating(_ item: Undetectable) async {
+        do {
+            _ = try await CoreClient.shared.request("app.open", args: ["path": .string(item.path)])
+            notice = "已打开 \(item.name)；在它的菜单里点“检查更新”即可（这类应用由自己管理更新）"
         } catch {
             self.error = error.localizedDescription
         }
