@@ -406,8 +406,230 @@ func drawBuddy() {
     }
 }
 
+/// 小扫帚（候选用）：紧凑的实心剪影，尺寸只有磁盘的 1/3，压在右下角外侧。
+func drawSmallBroom(anchorPoint: CGPoint, scale: CGFloat) {
+    let white = CGColor(red: 1, green: 1, blue: 1, alpha: 0.97)
+    let halo = CGColor(red: 0.078, green: 0.078, blue: 0.090, alpha: 1)
+    let w = rect.width * scale
+    let angle = CGFloat.pi * 0.25      // 45°：柄朝右上
+
+    ctx.saveGState()
+    ctx.translateBy(x: anchorPoint.x, y: anchorPoint.y)
+    ctx.rotate(by: angle)
+
+    let head = CGMutablePath()
+    head.move(to: CGPoint(x: w * 0.05, y: w * 0.11))
+    head.addLine(to: CGPoint(x: -w * 0.58, y: w * 0.18))
+    head.addLine(to: CGPoint(x: -w * 0.78, y: w * 0.02))
+    head.addLine(to: CGPoint(x: -w * 0.50, y: -w * 0.04))
+    head.addLine(to: CGPoint(x: -w * 0.70, y: -w * 0.16))
+    head.addLine(to: CGPoint(x: -w * 0.38, y: -w * 0.22))
+    head.addQuadCurve(to: CGPoint(x: w * 0.05, y: -w * 0.12),
+                      control: CGPoint(x: -w * 0.10, y: -w * 0.22))
+    head.closeSubpath()
+
+    let ferrule = CGMutablePath()
+    ferrule.move(to: CGPoint(x: w * 0.05, y: w * 0.12))
+    ferrule.addLine(to: CGPoint(x: w * 0.16, y: w * 0.09))
+    ferrule.addLine(to: CGPoint(x: w * 0.16, y: -w * 0.09))
+    ferrule.addLine(to: CGPoint(x: w * 0.05, y: -w * 0.12))
+    ferrule.closeSubpath()
+
+    let handle = CGMutablePath()
+    handle.move(to: CGPoint(x: w * 0.14, y: 0))
+    handle.addLine(to: CGPoint(x: w * 1.55, y: 0))
+
+    // 背景色描边（与磁盘分离）
+    ctx.saveGState()
+    ctx.addPath(head)
+    ctx.setLineWidth(w * 0.06)
+    ctx.setLineJoin(.round)
+    ctx.setStrokeColor(halo)
+    ctx.strokePath()
+    ctx.addPath(ferrule)
+    ctx.setStrokeColor(halo)
+    ctx.strokePath()
+    ctx.addPath(handle)
+    ctx.setLineWidth(w * 0.30 + w * 0.10)
+    ctx.setLineCap(.round)
+    ctx.setStrokeColor(halo)
+    ctx.strokePath()
+    ctx.restoreGState()
+
+    // 白色本体
+    ctx.saveGState()
+    ctx.addPath(head)
+    ctx.setFillColor(white)
+    ctx.fillPath()
+    ctx.addPath(ferrule)
+    ctx.setFillColor(white)
+    ctx.fillPath()
+    ctx.addPath(handle)
+    ctx.setLineWidth(w * 0.30)
+    ctx.setLineCap(.round)
+    ctx.setStrokeColor(white)
+    ctx.strokePath()
+    ctx.restoreGState()
+
+    ctx.restoreGState()
+}
+
+/// 线稿扫帚（候选 D）：细白柄 + 四根分开的刷毛，小尺寸下比实心剪影更清楚。
+func drawLineBroom(tip: CGPoint, top: CGPoint) {
+    let white = CGColor(red: 1, green: 1, blue: 1, alpha: 0.95)
+    let halo = CGColor(red: 0.078, green: 0.078, blue: 0.090, alpha: 1)
+    let angle = atan2(top.y - tip.y, top.x - tip.x)
+    let w = rect.width
+
+    ctx.saveGState()
+    ctx.translateBy(x: tip.x, y: tip.y)
+    ctx.rotate(by: angle)
+
+    let stick = CGMutablePath()
+    stick.move(to: CGPoint(x: w * 0.020, y: 0))
+    stick.addLine(to: CGPoint(x: w * 0.300, y: 0))
+
+    var hairs: [CGPath] = []
+    for index in 0..<4 {
+        let t = CGFloat(index) / 3
+        let a = CGFloat.pi * (1.18 + 0.13 * t)
+        let length = w * 0.085
+        let hair = CGMutablePath()
+        hair.move(to: CGPoint(x: -w * 0.004, y: 0))
+        hair.addLine(to: CGPoint(x: -w * 0.004 + cos(a) * length, y: sin(a) * length))
+        hairs.append(hair)
+    }
+
+    ctx.saveGState()
+    ctx.addPath(stick)
+    ctx.setLineWidth(w * 0.026 + w * 0.020)
+    ctx.setLineCap(.round)
+    ctx.setStrokeColor(halo)
+    ctx.strokePath()
+    for hair in hairs { ctx.addPath(hair) }
+    ctx.setLineWidth(w * 0.020 + w * 0.020)
+    ctx.setLineCap(.round)
+    ctx.setStrokeColor(halo)
+    ctx.strokePath()
+    ctx.restoreGState()
+
+    ctx.saveGState()
+    ctx.addPath(stick)
+    ctx.setLineWidth(w * 0.026)
+    ctx.setLineCap(.round)
+    ctx.setStrokeColor(white)
+    ctx.strokePath()
+    for hair in hairs { ctx.addPath(hair) }
+    ctx.setLineWidth(w * 0.020)
+    ctx.setLineCap(.round)
+    ctx.setStrokeColor(white)
+    ctx.strokePath()
+    ctx.restoreGState()
+
+    // 扎口：一小段横条
+    let band = CGRect(x: -w * 0.012, y: -w * 0.020, width: w * 0.030, height: w * 0.040)
+    ctx.saveGState()
+    ctx.addPath(CGPath(roundedRect: band.insetBy(dx: -w * 0.008, dy: -w * 0.008),
+                       cornerWidth: w * 0.012, cornerHeight: w * 0.012, transform: nil))
+    ctx.setFillColor(halo)
+    ctx.fillPath()
+    ctx.addPath(CGPath(roundedRect: band, cornerWidth: w * 0.010,
+                       cornerHeight: w * 0.010, transform: nil))
+    ctx.setFillColor(white)
+    ctx.fillPath()
+    ctx.restoreGState()
+
+    ctx.restoreGState()
+}
+
+/// 四角星
+func drawStar(center: CGPoint, radius: CGFloat, color: CGColor) {
+    let waist = radius * 0.22
+    let path = CGMutablePath()
+    path.move(to: CGPoint(x: center.x, y: center.y + radius))
+    path.addQuadCurve(to: CGPoint(x: center.x + radius, y: center.y),
+                      control: CGPoint(x: center.x + waist, y: center.y + waist))
+    path.addQuadCurve(to: CGPoint(x: center.x, y: center.y - radius),
+                      control: CGPoint(x: center.x + waist, y: center.y - waist))
+    path.addQuadCurve(to: CGPoint(x: center.x - radius, y: center.y),
+                      control: CGPoint(x: center.x - waist, y: center.y - waist))
+    path.addQuadCurve(to: CGPoint(x: center.x, y: center.y + radius),
+                      control: CGPoint(x: center.x - waist, y: center.y + waist))
+    ctx.saveGState()
+    ctx.addPath(path)
+    ctx.setFillColor(color)
+    ctx.fillPath()
+    ctx.restoreGState()
+}
+
 func drawMark() {
     let path = CGMutablePath()
+    if variant.hasPrefix("a") || variant.hasPrefix("b") || variant.hasPrefix("c") {
+        drawDisk(withFace: false)
+        let white = CGColor(red: 1, green: 1, blue: 1, alpha: 0.93)
+        // 基线那颗星：右上
+        drawStar(center: CGPoint(x: rect.minX + rect.width * 0.845,
+                                 y: rect.minY + rect.height * 0.815),
+                 radius: rect.width * 0.042, color: white)
+        if variant != "a" {
+            // 小扫帚：只压右下角外侧，不盖点阵
+            drawSmallBroom(anchorPoint: CGPoint(x: rect.minX + rect.width * 0.815,
+                                                y: rect.minY + rect.height * 0.235),
+                           scale: 0.27)
+        }
+        if variant == "c" {
+            drawStar(center: CGPoint(x: rect.minX + rect.width * 0.700,
+                                     y: rect.minY + rect.height * 0.870),
+                     radius: rect.width * 0.028, color: white)
+            drawStar(center: CGPoint(x: rect.minX + rect.width * 0.560,
+                                     y: rect.minY + rect.height * 0.235),
+                     radius: rect.width * 0.020, color: white)
+        }
+        if variant == "a" { return }
+        return
+    }
+
+    if variant == "d" {
+        drawDisk(withFace: false)
+        let white = CGColor(red: 1, green: 1, blue: 1, alpha: 0.93)
+        drawStar(center: CGPoint(x: rect.minX + rect.width * 0.845,
+                                 y: rect.minY + rect.height * 0.815),
+                 radius: rect.width * 0.042, color: white)
+        drawLineBroom(tip: CGPoint(x: rect.minX + rect.width * 0.760,
+                                   y: rect.minY + rect.height * 0.255),
+                      top: CGPoint(x: rect.minX + rect.width * 0.905,
+                                   y: rect.minY + rect.height * 0.520))
+        return
+    }
+
+    if variant == "e" {
+        // 扫帚为主：不画磁盘，扫帚占满画面（接近参考图）
+        let white = CGColor(red: 1, green: 1, blue: 1, alpha: 0.95)
+        drawSmallBroom(anchorPoint: CGPoint(x: rect.minX + rect.width * 0.560,
+                                            y: rect.minY + rect.height * 0.420),
+                       scale: 0.62)
+        drawStar(center: CGPoint(x: rect.minX + rect.width * 0.300,
+                                 y: rect.minY + rect.height * 0.820),
+                 radius: rect.width * 0.058, color: white)
+        drawStar(center: CGPoint(x: rect.minX + rect.width * 0.470,
+                                 y: rect.minY + rect.height * 0.745),
+                 radius: rect.width * 0.038, color: white)
+        drawStar(center: CGPoint(x: rect.minX + rect.width * 0.205,
+                                 y: rect.minY + rect.height * 0.725),
+                 radius: rect.width * 0.026, color: white)
+        for (xp, yp, rp) in [(0.215, 0.240, 0.024), (0.300, 0.205, 0.017),
+                             (0.370, 0.245, 0.022), (0.440, 0.215, 0.013)] {
+            let radius = rect.width * CGFloat(rp)
+            ctx.saveGState()
+            ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.85))
+            ctx.fillEllipse(in: CGRect(x: rect.minX + rect.width * CGFloat(xp) - radius,
+                                       y: rect.minY + rect.height * CGFloat(yp) - radius,
+                                       width: radius * 2, height: radius * 2))
+            ctx.restoreGState()
+        }
+        return
+    }
+
     if variant == "buddy" { drawBuddy(); return }
 
     switch variant {
@@ -473,7 +695,7 @@ var sparkleCenter = pt(0.205, 0.790)
 var sparkleRadius = s * 0.030
 if variant == "drive" || variant == "disk" { sparkleCenter = pt(0.845, 0.815); sparkleRadius = s * 0.042 }
 if variant == "broom" { sparkleCenter = pt(0.74, 0.22); sparkleRadius = s * 0.05 }
-if variant != "buddy" {
+if variant != "buddy" && !["a", "b", "c", "d", "e"].contains(variant) {
     ctx.saveGState()
     ctx.setShadow(offset: .zero, blur: s * 0.05, color: CGColor(red: 0.35, green: 0.95, blue: 0.80, alpha: 0.35))
     drawSparkle(center: sparkleCenter, radius: sparkleRadius)
