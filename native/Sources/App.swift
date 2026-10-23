@@ -58,7 +58,11 @@ struct MacCleanerApp: App {
         WindowGroup("Mac Cleaner") {
             RootView()
                 .frame(minWidth: 760, minHeight: 520)
-                .tint(Theme.accent)   // 1080×729 这类小屏上 920 宽会顶出屏幕
+                .tint(Theme.accent)
+                // 开发/验收：MACCLEANER_DEV_LIGHT=1 强制亮色，用来检查浅色底下的卡片与图形。
+                .preferredColorScheme(
+                    ProcessInfo.processInfo.environment["MACCLEANER_DEV_LIGHT"] != nil ? .light : nil
+                )   // 1080×729 这类小屏上 920 宽会顶出屏幕
         }
         .windowToolbarStyle(.unified)
 
@@ -88,15 +92,44 @@ struct RootView: View {
     @State private var selection: SidebarItem? = .disk
     @StateObject private var permissions = PermissionStore.shared
     @State private var showPermissions = false
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         NavigationSplitView {
-            List(SidebarItem.allCases, selection: $selection) { item in
-                Label(item.title, systemImage: item.symbol)
-                    .tag(item)
+            // 自绘侧栏：系统侧栏的选中色跟随「系统强调色」（这台机器是蓝色），
+            // 与我们的青绿主色不一致。自绘能保证"品牌色只出现在选中项上"，
+            // 代价是要自己写键盘/无障碍——两点都已补。
+            VStack(spacing: 2) {
+                ForEach(SidebarItem.allCases, id: \.self) { item in
+                    Button {
+                        selection = item
+                    } label: {
+                        HStack(spacing: 9) {
+                            Image(systemName: item.symbol)
+                                .frame(width: 18)
+                                .foregroundStyle(selection == item ? Theme.accentText(scheme) : .secondary)
+                            Text(item.title)
+                                .font(.system(size: 13, weight: selection == item ? .semibold : .regular))
+                                .foregroundStyle(selection == item ? Theme.accentText(scheme) : .primary)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 9)
+                        .background(
+                            selection == item ? Theme.accentFill(scheme) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 7)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 7))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selection == item ? [.isSelected] : [])
+                    .accessibilityLabel(item.title)
+                }
+                Spacer(minLength: 0)
             }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
+            .padding(.horizontal, 8)
+            .padding(.top, 10)
+            .navigationSplitViewColumnWidth(min: 168, ideal: 186, max: 240)
             .onAppear {
                 StatusItemController.shared.sync()
                 permissions.refresh()

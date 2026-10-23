@@ -155,11 +155,7 @@ struct SystemView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.card)
-                .strokeBorder(Theme.cardStroke, lineWidth: 1)
-        )
+        .modifier(CardBackground(padding: 14))
     }
 
     @ViewBuilder

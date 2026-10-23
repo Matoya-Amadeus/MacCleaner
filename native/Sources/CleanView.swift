@@ -99,12 +99,7 @@ struct RecommendedView: View {
                         Section {
                             ForEach(group.items) { item in row(item) }
                         } header: {
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text("\(group.label) · \(group.items.count)").font(.caption)
-                                if !group.hint.isEmpty {
-                                    Text(group.hint).font(.caption2).foregroundStyle(.tertiary)
-                                }
-                            }
+                            sectionHeader(group)
                         }
                     }
                 }
@@ -231,6 +226,32 @@ struct RecommendedView: View {
     private func displayPath(_ path: String) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
+    }
+
+    /// 分组标题：名称 · 项数 / 本组合计 / 占可清理总量的比例 + 一条相对条。
+    /// 目的是回答"清哪组最划算"——只看单项大小时，用户要在几屏之间心算。
+    private func sectionHeader(_ group: Group) -> some View {
+        let groupBytes = group.items.reduce(Int64(0)) { $0 + $1.bytes }
+        let totalBytes = groups.reduce(Int64(0)) { sum, item in
+            sum + item.items.reduce(Int64(0)) { $0 + $1.bytes }
+        }
+        let ratio = totalBytes > 0 ? Double(groupBytes) / Double(totalBytes) : 0
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text("\(group.label) · \(group.items.count)").font(.caption)
+                Spacer()
+                Text(ByteText.format(groupBytes))
+                    .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+                Text("\(Int((ratio * 100).rounded()))%")
+                    .font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
+            }
+            MiniBar(ratio: ratio)
+                .padding(.trailing, 4)
+            if !group.hint.isEmpty {
+                Text(group.hint).font(.caption2).foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.top, 2)
     }
 
     private var filteredGroups: [Group] {

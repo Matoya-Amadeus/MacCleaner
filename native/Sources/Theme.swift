@@ -16,9 +16,25 @@ enum Theme {
     static let warn = Color(red: 1.0, green: 0.62, blue: 0.24)
     static let danger = Color(red: 1.0, green: 0.36, blue: 0.36)
 
-    /// 卡片底：比页面底亮一档（图底关系），并带 1px 描边固定边界。
-    static let cardFill = Color.white.opacity(0.045)
-    static let cardStroke = Color.white.opacity(0.075)
+    /// 卡片底：比页面底亮一档（图底关系）。**亮色模式必须换成深色低透明度**——
+    /// 白 4.5% 铺在浅底上等于没画，卡片会"消失"。
+    static func cardFill(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color.white.opacity(0.045) : Color.black.opacity(0.035)
+    }
+
+    static func cardStroke(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color.white.opacity(0.075) : Color.black.opacity(0.07)
+    }
+
+    /// 选中项的文字色：亮色底上 #2ED8B3 太浅，用深青才够对比。
+    static func accentText(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? accent : accentDeep
+    }
+
+    /// 选中项的底色：亮色下要略重一点，否则"选中"几乎看不出来。
+    static func accentFill(_ scheme: ColorScheme) -> Color {
+        accent.opacity(scheme == .dark ? 0.16 : 0.22)
+    }
     static let pageTop = Color(red: 0.086, green: 0.090, blue: 0.102)
     static let pageBottom = Color(red: 0.052, green: 0.055, blue: 0.063)
 
@@ -73,14 +89,15 @@ struct PageBackground: View {
 
 struct CardBackground: ViewModifier {
     var padding: CGFloat = Theme.Space.l
+    @Environment(\.colorScheme) private var scheme
 
     func body(content: Content) -> some View {
         content
             .padding(padding)
-            .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+            .background(Theme.cardFill(scheme), in: RoundedRectangle(cornerRadius: Theme.Radius.card))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.card)
-                    .strokeBorder(Theme.cardStroke, lineWidth: 1)
+                    .strokeBorder(Theme.cardStroke(scheme), lineWidth: 1)
             )
     }
 }
@@ -128,6 +145,7 @@ extension PageHeader where Trailing == EmptyView {
 struct ChipPicker<Value: Hashable>: View {
     let options: [(value: Value, label: String)]
     @Binding var selection: Value
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         HStack(spacing: Theme.Space.s) {
@@ -138,11 +156,11 @@ struct ChipPicker<Value: Hashable>: View {
                 } label: {
                     Text(option.label)
                         .font(.system(size: 12.5, weight: isOn ? .semibold : .regular))
-                        .foregroundStyle(isOn ? Theme.accent : Color.secondary)
+                        .foregroundStyle(isOn ? Theme.accentText(scheme) : Color.secondary)
                         .padding(.horizontal, 11)
                         .padding(.vertical, 5)
                         .background(
-                            isOn ? Theme.accent.opacity(0.16) : Color.white.opacity(0.05),
+                            isOn ? Theme.accentFill(scheme) : Theme.cardFill(scheme),
                             in: RoundedRectangle(cornerRadius: Theme.Radius.chip)
                         )
                         .overlay(
