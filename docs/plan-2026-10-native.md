@@ -184,4 +184,7 @@ MacCleaner.app  (SwiftUI, macOS 14+)
 - [x] 内核测试全绿（**292 项**）：旧 UI 的 DOM 断言随 `ui/` 一起删除，所以绝对值下降，覆盖的是内核/协议/取消/视图模型
 - [x] `src/maccleaner/ui/` 已删除（连同 `bridge.py` / `session.py` / WKWebView 壳），仓库内仅一套 UI
 - [x] README 与 `docs/comparison.md` 反映新架构（含同类产品技术栈对照）
-- [ ] 冷启动 < 0.4 s，交互 < 50 ms（用 Instruments / 日志时间戳测量）
+- [~] 冷启动目标 **0.4 s 未达成**：实测中位 0.98 s（详见 `docs/acceptance-2026-10-23.md`）。
+      拆解：进程出现 50–80 ms + 外壳（NavigationSplitView）~230 ms + 页面 ~200 ms + 框架基线 ~300 ms。
+      已排除的原因：TCC 探针/状态栏项、页面挂载时机、内核预热（三者均实测无收益或更慢）。
+      交互（内核往返）实测 0.3 ms–1 ms，**达标**。
