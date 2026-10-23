@@ -450,6 +450,9 @@ struct BatchUninstallSheet: View {
             timer.stop()
         }
         var movedTotal = 0
+        // 体积要按**实际移走**的项算：之前用 pickedBytes（勾选总大小），
+        // 结果"完成 0 项、体积 93.8 MB"——数字自相矛盾（2026-10-23 截图）。
+        var movedBytes: Int64 = 0
         var failed: [(String, String)] = []
         do {
             for plan in batch.plans {
@@ -461,6 +464,10 @@ struct BatchUninstallSheet: View {
                            "item_ids": .array(ids.map { .string($0) })]
                 )
                 movedTotal += Int(data["moved_count"]?.intValue ?? 0)
+                let movedPaths = Set((data["moved"]?.arrayValue ?? []).compactMap { $0["path"]?.stringValue })
+                movedBytes += plan.items
+                    .filter { movedPaths.contains($0.path) }
+                    .reduce(Int64(0)) { $0 + $1.bytes }
                 for item in data["failed"]?.arrayValue ?? [] {
                     failed.append((item["path"]?.stringValue ?? "", item["reason"]?.stringValue ?? ""))
                 }
@@ -468,7 +475,7 @@ struct BatchUninstallSheet: View {
             let outcome = OperationResult(
                 title: "卸载完成",
                 count: movedTotal,
-                bytes: pickedBytes,
+                bytes: movedBytes,
                 failures: failed,
                 cancelled: false,
                 canOpenTrash: true

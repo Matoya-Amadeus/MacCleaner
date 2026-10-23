@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import hashlib
+import errno
 import os
 import plistlib
 import shlex
@@ -257,6 +258,18 @@ def _move_to_trash(path: Path, trash: Path) -> Path:
     while target.exists() or target.is_symlink():
         target = trash / f"{base}-{counter}"
         counter += 1
+    # **同卷 rename 优先**：只要求"父目录可写"，不需要读包内文件。
+    # `shutil.move` 在同卷时会先试 rename，失败后退化成 copytree+rmtree；
+    # 对 `/Applications` 里 root 拥有的包，rename 本该成功，但 shutil 的退化路径
+    # 会去读/删包内 root 文件 → `PermissionError: Cannot move the non-empty directory`
+    # （2026-10-23 用户截图：同花顺卸载"完成 0 项、失败 2 项"）。
+    try:
+        os.rename(path, target)
+        return target
+    except OSError as exc:
+        if exc.errno != errno.EXDEV:
+            raise
+    # 真的跨卷（EXDEV）才复制——这时无法避免读内容。
     shutil.move(str(path), str(target))
     return target
 
