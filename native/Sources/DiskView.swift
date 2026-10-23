@@ -100,7 +100,7 @@ struct DiskView: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.secondary.opacity(0.15))
                     Capsule()
-                        .fill(Color.accentColor)
+                        .fill(Theme.accent)      // 系统 accent 是蓝色，和品牌青绿不一致
                         .frame(width: max(4, geometry.size.width * min(1, report.percent / 100)))
                 }
             }

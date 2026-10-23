@@ -83,7 +83,18 @@ struct RecommendedView: View {
             if groups.isEmpty {
                 scanningView
             } else {
-                HStack {
+                HStack(spacing: 12) {
+                    SelectAllToggle(
+                        isOn: !filteredGroups.isEmpty
+                            && filteredGroups.flatMap { $0.items.map(\.id) }.allSatisfy(checked.contains),
+                        count: (
+                            selected: filteredGroups.flatMap { $0.items.map(\.id) }.filter(checked.contains).count,
+                            total: filteredGroups.flatMap { $0.items.map(\.id) }.count
+                        )
+                    ) { on in
+                        let ids = filteredGroups.flatMap { $0.items.map(\.id) }
+                        if on { checked.formUnion(ids) } else { checked.subtract(ids) }
+                    }
                     FilterBar(status: $filter, category: $category, categories: categories)
                     Spacer()
                     if let scannedAt {

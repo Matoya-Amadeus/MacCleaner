@@ -34,6 +34,13 @@ struct SoftwareView: View {
                 OrphansListView()
             }
         }
+        .onAppear {
+            // 开发钩子：MACCLEANER_DEV_TAB=updates|orphans 直接落到对应分段（截图/验收用）。
+            if let raw = ProcessInfo.processInfo.environment["MACCLEANER_DEV_TAB"],
+               let target = Tab(rawValue: raw) {
+                tab = target
+            }
+        }
     }
 }
 
@@ -101,7 +108,18 @@ struct UpdatesListView: View {
                 Text("全部是最新的").foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                HStack {
+                HStack(spacing: 12) {
+                    SelectAllToggle(
+                        isOn: !filteredGroups.isEmpty
+                            && filteredGroups.flatMap { $0.items.map(\.id) }.allSatisfy(checked.contains),
+                        count: (
+                            selected: filteredGroups.flatMap { $0.items.map(\.id) }.filter(checked.contains).count,
+                            total: filteredGroups.flatMap { $0.items.map(\.id) }.count
+                        )
+                    ) { on in
+                        let ids = filteredGroups.flatMap { $0.items.map(\.id) }
+                        if on { checked.formUnion(ids) } else { checked.subtract(ids) }
+                    }
                     FilterBar(status: $filter, category: $category, categories: categories)
                     Spacer()
                 }
@@ -338,7 +356,18 @@ struct OrphansListView: View {
                 Text("没有发现残留").foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                HStack {
+                HStack(spacing: 12) {
+                    SelectAllToggle(
+                        isOn: !filteredGroups.isEmpty
+                            && filteredGroups.flatMap { $0.items.map(\.id) }.allSatisfy(checked.contains),
+                        count: (
+                            selected: filteredGroups.flatMap { $0.items.map(\.id) }.filter(checked.contains).count,
+                            total: filteredGroups.flatMap { $0.items.map(\.id) }.count
+                        )
+                    ) { on in
+                        let ids = filteredGroups.flatMap { $0.items.map(\.id) }
+                        if on { checked.formUnion(ids) } else { checked.subtract(ids) }
+                    }
                     FilterBar(status: $filter, category: $category, categories: categories)
                     Spacer()
                 }

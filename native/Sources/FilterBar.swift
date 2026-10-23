@@ -86,3 +86,28 @@ struct FilterBar: View {
         return status == .all ? "筛选" : status.title
     }
 }
+
+/// 「全选」勾选框：**统一放在筛选左边**（用户 2026-10-23 要求：先决定整体勾不勾，再看这批是哪几条）。
+/// 只勾"当前可见"的项——筛选成"未选"时点全选，不该把看不见的也勾上。
+struct SelectAllToggle: View {
+    let isOn: Bool
+    /// 已选 / 总数：部分选中时（比如 7/8）在标签里显示出来，
+    /// 否则空心的勾选框会让人以为"一个都没选"。
+    var count: (selected: Int, total: Int)?
+    let action: (Bool) -> Void
+
+    private var label: String {
+        if let count, count.selected > 0, count.selected < count.total {
+            return "全选（\(count.selected)/\(count.total)）"
+        }
+        return "全选"
+    }
+
+    var body: some View {
+        Toggle(isOn: Binding(get: { isOn }, set: { action($0) })) {
+            Text(label).font(.callout).monospacedDigit()
+        }
+        .toggleStyle(.checkbox)
+        .accessibilityLabel(label)
+    }
+}

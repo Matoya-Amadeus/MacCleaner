@@ -106,13 +106,14 @@ struct UninstallListView: View {
             } else {
                 List {
                     ForEach(filtered) { group in
-                        Section {
-                            ForEach(group.apps) { app in
-                                row(app)
-                            }
-                        } header: {
-                            Text("\(group.label) · \(group.apps.count)")
-                                .font(.caption).foregroundStyle(.secondary)
+                        // 表头当普通行：Section 的表头会吸顶，把首组前两行盖住
+                        // （2026-10-23 用户截图：浏览器 · 2 下面是空的）。
+                        Text("\(group.label) · \(group.apps.count)")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .listSectionHeaderRow()
+                        ForEach(group.apps) { app in
+                            row(app)
                         }
                     }
                 }
