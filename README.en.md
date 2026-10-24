@@ -2,7 +2,7 @@
 
 # For humans
 
-![Mac Cleaner review page](assets/screenshot.png)
+![Mac Cleaner review page](assets/screenshot-en.png)
 
 EMM... just an ordinary cleanup tool — tell your AI "use mac cleaner to clean up" and it can call it directly.
 
@@ -98,7 +98,9 @@ python3 -m unittest discover -s tests -v
 GUI acceptance scripts (manual): `bash tests/acceptance_native_app.sh`,
 `bash tests/acceptance_portability.sh`, `python3 tests/acceptance_recovery_smoke.py`.
 The latest real-click acceptance run is recorded in
-[docs/acceptance-2026-10-24.md](docs/acceptance-2026-10-24.md).
+[docs/acceptance-2026-10-24.md](docs/acceptance-2026-10-24.md); how the verification itself was
+audited is in [docs/acceptance-method-review.md](docs/acceptance-method-review.md); the UI
+(gestalt) review is [docs/ux-review-2026-10.md](docs/ux-review-2026-10.md).
 
 ## Safety and privacy
 

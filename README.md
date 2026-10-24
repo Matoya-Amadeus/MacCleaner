@@ -105,7 +105,9 @@ python3 -m unittest discover -s tests -v
 
 真机验收（需要 GUI，人工跑）：`bash tests/acceptance_native_app.sh`、
 `bash tests/acceptance_portability.sh`、`python3 tests/acceptance_recovery_smoke.py`。
-本轮的真实点击验收记录见 [docs/acceptance-2026-10-24.md](docs/acceptance-2026-10-24.md)。
+本轮的真实点击验收记录见 [docs/acceptance-2026-10-24.md](docs/acceptance-2026-10-24.md)，
+验收手法本身的自检见 [docs/acceptance-method-review.md](docs/acceptance-method-review.md)，
+界面问题的格式塔体检见 [docs/ux-review-2026-10.md](docs/ux-review-2026-10.md)。
 
 ## 安全与隐私
 
