@@ -4,15 +4,15 @@
 
 ![Mac Cleaner review page](assets/screenshot.png)
 
-EMM... just a plain cleanup tool, and AI can call it directly.
+EMM... just an ordinary cleanup tool — tell your AI "use mac cleaner to clean up" and it can call it directly.
 
 # For AI
 
 A macOS cleanup / uninstall / update tool. Three entry points, one kernel:
 **scanning is read-only, every deletion goes to the Trash**.
 
-- CLI: `maccleaner audit | plan | clean | uninstall | updates | trace | ui`
-- MCP: `maccleaner-mcp` (7 tools, stdio)
+- CLI: `maccleaner audit | plan | clean | uninstall | updates | trace | ui | mcp`
+- MCP: `maccleaner-core mcp` (7 tools, stdio) — bundled with the kernel, nothing extra to install
 - Native UI: `bash scripts/build_native.sh --run` (SwiftUI; `maccleaner ui` opens it)
 
 Plan first, then apply: `plan_storage` returns a `plan_id`; `apply_storage_plan` requires
@@ -22,7 +22,8 @@ login data never show up in the list.
 
 <h1 id="installation">Install</h1>
 
-macOS + Python 3.10+. The core CLI has no third-party dependencies.
+The native app **does not need Python** — the kernel is bundled inside the `.app` (33 MB, self-contained).
+Python 3.10+ is only needed for the CLI, which has no third-party dependencies.
 
 ```bash
 pipx install maccleaner
@@ -34,9 +35,10 @@ Not on PyPI yet — install from source:
 pipx install "git+https://github.com/Matoya-Amadeus/MacCleaner.git"
 ```
 
-For AI clients (MCP): `pipx install "maccleaner[mcp]"`
+For AI clients (MCP): the installed app already provides `maccleaner-core mcp` — no Python package needed.
 
-Native window instead of a browser tab: `bash scripts/install_launcher.sh` → `~/Applications/MacCleaner.app`
+Build and install the native window: `bash scripts/install_app.sh` → `/Applications/MacCleaner.app`
+(falls back to `~/Applications` when not writable)
 
 Build offline artifacts yourself:
 
@@ -50,19 +52,18 @@ python3 -m build --no-isolation
 
 ## The window
 
-Open `~/Applications/MacCleaner.app`, or run `maccleaner ui` (opens the native app). Four entries:
+Open `/Applications/MacCleaner.app`, or run `maccleaner ui`. Five entries in the sidebar:
 
-- **Mac Cleanup**: scan → tick items → confirm → done; includes installers (.dmg/.pkg) and iOS backups
-- **Uninstall**: inspect leftovers one by one, or batch-uninstall
-- **Updates**: grouped by source; Sparkle apps update themselves first (version can be verified)
-- **Orphans**: leftovers whose app is gone (caches/logs/containers), unchecked by default
-- **Disk**: capacity + **treemap** (area = size); system folders can be measured once with admin (read-only)
-- **Large files**: anything over 500 MB in Downloads / Desktop / Documents / Movies, unchecked by default
-- **System**: load, memory, top CPU processes
-- **Skills**: agent skills installed here
+- **Clean**: recommended cleanup (caches / logs / dev tools / containers / your files) + large files
+- **Apps**: uninstall (single or batch), updates (grouped by source), orphan leftovers
+- **Disk**: capacity, folder breakdown, system-level folders (read-only, one admin prompt)
+- **System**: load, memory, battery and throttling, top processes
+- **AI**: the catalogue agents can call — 7 MCP tools + stdio commands, and how to wire them up
 
-`⌘A` select all, `Shift+click` range select, `Enter` primary action,
-right-click to copy the path or reveal it in Finder.
+`⌘1`–`⌘5` switch sections, `⌘R` reloads the page; right-click a row to reveal it in Finder,
+copy its path, or uninstall. Dropping a `.app` on the window starts an uninstall.
+
+`⌘A` select all, `Shift+click` range select, `Enter` primary action.
 
 ## CLI
 
@@ -94,13 +95,14 @@ Client configuration: [docs/mcp.md](docs/mcp.md).
 python3 -m unittest discover -s tests -v
 ```
 
-GUI acceptance scripts (manual): `bash tests/acceptance_native_smoke.sh` (11 steps incl. a real cleanup),
-`tests/acceptance_uninstall_batch.py`, `tests/acceptance_quit.sh`, `tests/acceptance_portability.sh`,
-`tests/acceptance_package.sh`.
+GUI acceptance scripts (manual): `bash tests/acceptance_native_app.sh`,
+`bash tests/acceptance_portability.sh`, `python3 tests/acceptance_recovery_smoke.py`.
+The latest real-click acceptance run is recorded in
+[docs/acceptance-2026-10-24.md](docs/acceptance-2026-10-24.md).
 
 ## Safety and privacy
 
-No telemetry. The UI binds to `127.0.0.1` only, behind a one-time entry link. See [PRIVACY.md](PRIVACY.md).
+No telemetry. The native UI and the kernel talk over stdio only — **no ports, no local server**. See [PRIVACY.md](PRIVACY.md).
 
 ---
 
