@@ -35,7 +35,9 @@ maccleaner audit --profile generic --markdown
 maccleaner trace --profile repo-evidence --path <target-path> --keyword <word>
 ```
 
-For a source checkout, `python3 scripts/mac_storage_manager.py ...` and the shell wrappers remain compatible. Install the optional local stdio MCP adapter with `pipx install "maccleaner[mcp]"`; it starts as `maccleaner-mcp`.
+For a source checkout, `python3 scripts/mac_storage_manager.py ...` and the shell wrappers remain compatible.
+The MCP server ships **inside** the packaged core (`maccleaner-core mcp`, stdio) — no extra install step.
+The Python package also exposes it as `maccleaner mcp` / `maccleaner-mcp` when installed via pip.
 
 ## Required reference routing
 
@@ -65,12 +67,22 @@ Four surfaces share one set of protection rules (protected paths stay blocked; n
 - **Updates** — `maccleaner updates` lists third-party updates (Homebrew formulae/casks + App Store via
   `mas`) and never touches macOS system updates. Default is read-only; `--apply [--only a,b]` upgrades the
   named items only, and each executable group reports its own exit code.
-- **Local UI** — `maccleaner ui` serves a temporary page on `127.0.0.1` and prints a one-time
-  `/bootstrap/<secret>` link (invalid after first use). Every action needs a cookie + header credential
-  pair plus an Origin check; only one session may run at a time (flock).
+- **Native UI** — `maccleaner ui` opens the packaged macOS app (SwiftUI shell + the same Python core over
+  stdio). There is no loopback page any more: the app talks to `maccleaner-core serve --stdio`, so there is
+  no port, no token, and nothing listening on the network.
 - **MCP** — `uninstall_plan`, `updates_check`, `updates_apply` join the existing tools. `apply_storage_plan`
   accepts `plan_digest`; a mismatch between the approved plan and the plan being applied is refused before
   anything is touched.
+
+## Read-only inspection (beyond cleanup)
+
+These are stdio commands (one JSON line per request via `maccleaner-core serve --stdio`); they never mutate:
+
+- `disk.summary` — volume capacity only (statfs, no directory walks).
+- `system` — load, memory, battery health/cycles, top processes by CPU/RSS.
+- `large.list` — files above a size threshold under the scan root.
+- `review.payload` — the cleanup candidates (`target_id`, bytes, risk) used by `plan`.
+- `tools.list` — the canonical catalogue of MCP tools + stdio commands (single source of truth for agents).
 
 ## Confirmation semantics
 
