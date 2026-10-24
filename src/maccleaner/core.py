@@ -1253,8 +1253,6 @@ class StorageManager:
                     self.context.root / "README.md",
                     self.context.root / "agents" / "openai.yaml",
                     self.context.root / "references" / "README.md",
-                    self.context.root / "tests" / "test_mac_storage_manager.py",
-                    self.context.root / "tests" / "mac_storage_open_source_contract_test.py",
                 ],
                 "repo_reference",
                 "repo-reference",

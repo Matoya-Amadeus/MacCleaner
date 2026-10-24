@@ -35,8 +35,9 @@ maccleaner audit --profile generic --markdown
 maccleaner trace --profile repo-evidence --path <target-path> --keyword <word>
 ```
 
-For a source checkout, `python3 scripts/mac_storage_manager.py ...` and the shell wrappers remain compatible.
 The MCP server ships **inside** the packaged core (`maccleaner-core mcp`, stdio) — no extra install step.
+The old `scripts/mac_storage_manager.py` facade and its shell wrappers were **removed** (2026-10-24);
+`maccleaner` and `maccleaner-core` are the only entry points.
 The Python package also exposes it as `maccleaner mcp` / `maccleaner-mcp` when installed via pip.
 
 ## Required reference routing
@@ -53,7 +54,7 @@ The Python package also exposes it as `maccleaner mcp` / `maccleaner-mcp` when i
 3. Run `maccleaner audit --markdown` for read-only audit or `maccleaner plan --markdown` for an exact cleanup plan.
 4. List each cleanup candidate with `target_id`, `source_layer`, protection level, rollback strategy, blocked items, and explicit out-of-scope items.
 5. Build and echo the exact approved target list before apply.
-6. Apply only through `maccleaner clean --apply --yes --require-explicit-plan --approved-targets <ids> ...`; `scripts/safe_clean.sh` is a deprecated compatibility shim.
+6. Apply only through `maccleaner clean --apply --yes --require-explicit-plan --approved-targets <ids> ...`.
 7. Re-audit after apply and use `--require-zero-hit <pattern>` when the task was keyword/path based.
 
 ## Capabilities beyond cleanup

@@ -115,6 +115,15 @@ python3 -m unittest discover -s tests -v
 
 与 Mole / Pearcleaner 的功能与安全模型差异，见 [docs/comparison.md](docs/comparison.md)。
 
+## 许可
+
+**Apache-2.0**。可以自由使用、修改、分发（含商用），条件是：保留版权声明与 [NOTICE](NOTICE)、
+标注你改了哪些文件、且**不获得商标授权**（不能拿 "Mac Cleaner" 的名义分发你的改版）。
+完整条款见 [LICENSE](LICENSE)。
+
+> 选择它而不是 MIT 的原因：清理工具会删文件，需要完整的免责与责任上限条款；
+> 另外专利授权与商标条款对一个会被企业/agent 集成的工具更稳妥。
+
 ---
 
 由 **AI·Maho** 和 **人类·Matoya** 共同维护

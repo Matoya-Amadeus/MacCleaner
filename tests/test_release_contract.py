@@ -14,7 +14,7 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertIn('maccleaner = "maccleaner.cli:main"', text)
         self.assertIn('maccleaner-mcp = "maccleaner.mcp_server:main"', text)
         self.assertIn('mcp = ["mcp>=1,<2"]', text)
-        self.assertIn('license = "MIT"', text)
+        self.assertIn('license = { text = "Apache-2.0" }', text)
         self.assertIn('license-files = ["LICENSE"]', text)
         self.assertNotIn("License :: OSI Approved :: MIT License", text)
 
@@ -22,9 +22,9 @@ class ReleaseContractTests(unittest.TestCase):
         for name in ("README.md", "README.en.md"):
             text = (ROOT / name).read_text(encoding="utf-8")
             self.assertIn("pipx install maccleaner", text)
-            self.assertIn('pipx install "maccleaner[mcp]"', text)
             self.assertIn("git+https://github.com/Matoya-Amadeus/MacCleaner.git", text)
-            self.assertIn("maccleaner-mcp", text)
+            # MCP 已内嵌进内核（2026-10-24），入口是 maccleaner-core mcp，不再有独立包
+            self.assertIn("maccleaner-core mcp", text)
             self.assertIn("plan_id", text)
             self.assertIn("audit_storage", text)
             self.assertIn("apply_storage_plan", text)
@@ -57,8 +57,8 @@ class ReleaseContractTests(unittest.TestCase):
 
         self.assertIn("# For humans", english)
         self.assertIn("# For AI", english)
-        self.assertLess(english.index("# For humans"), english.index("assets/screenshot.png"))
-        self.assertLess(english.index("assets/screenshot.png"), english.index("# For AI"))
+        self.assertLess(english.index("# For humans"), english.index("assets/screenshot"))
+        self.assertLess(english.index("assets/screenshot"), english.index("# For AI"))
         self.assertLess(english.index("# For AI"), english.index('id="installation"'))
 
     def test_readmes_carry_one_real_screenshot_and_one_plain_sentence(self) -> None:
@@ -67,14 +67,16 @@ class ReleaseContractTests(unittest.TestCase):
         english = (ROOT / "README.en.md").read_text(encoding="utf-8")
 
         self.assertIn("![Mac Cleaner 审阅页](assets/screenshot.png)", chinese)
-        self.assertIn("EMM...就一般清理工具，AI能直接调用", chinese)
-        self.assertIn("![Mac Cleaner review page](assets/screenshot.png)", english)
+        self.assertIn("EMM...就一般清理工具，跟 AI 说用 mac cleaner 清理，能直接调用", chinese)
+        self.assertIn("![Mac Cleaner review page](assets/screenshot-en.png)", english)
 
-        # 只留一张真实截图，不再有 SVG 头图/流程图
+        # 只留真实截图，不再有 SVG 头图/流程图；中英各一张（各自语言的界面）
         for text in (chinese, english):
             self.assertNotIn(".svg", text)
-            self.assertEqual(text.count("assets/screenshot.png"), 1)
-        self.assertTrue((ROOT / "assets" / "screenshot.png").is_file(), "截图文件必须在仓库里")
+        self.assertEqual(chinese.count("assets/screenshot.png"), 1)
+        self.assertEqual(english.count("assets/screenshot-en.png"), 1)
+        self.assertTrue((ROOT / "assets" / "screenshot.png").is_file(), "中文截图必须在仓库里")
+        self.assertTrue((ROOT / "assets" / "screenshot-en.png").is_file(), "英文截图必须在仓库里")
 
     def test_readmes_show_only_their_selected_language_in_the_footer(self) -> None:
         chinese = (ROOT / "README.md").read_text(encoding="utf-8")

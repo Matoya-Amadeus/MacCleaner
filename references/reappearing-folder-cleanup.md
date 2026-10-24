@@ -5,7 +5,7 @@ Use this reference when a folder, old app workspace, container, or cache returns
 ## Required sequence
 
 1. Treat the path as a symptom, not the root cause.
-2. Run `mac_storage_manager.py trace --path <target-path> --keyword <keyword>`.
+2. Run `maccleaner trace <plan_id>` (or the `trace_storage` MCP tool).
 3. Classify every finding by `source_layer`:
    - `active_trigger`: LaunchAgents/Daemons, Docker containers, shell startup, scheduled launchers.
    - `runtime_artifact`: the folder/cache/container data itself.

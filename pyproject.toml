@@ -8,11 +8,13 @@ version = "0.1.0"
 description = "Safe, staged macOS storage audit and cleanup CLI"
 readme = { file = "README.en.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
-# 兼容写法：`license = "MIT"` + `license-files` 属于 PEP 639，需要 setuptools>=77，
+# 兼容写法：`license = "Apache-2.0"` + `license-files` 属于 PEP 639，需要 setuptools>=77，
 # 而本文件声明的最低版本是 >=61 —— 那会让旧环境（如 setuptools 63）直接构建失败
 # （2026-10-19 实测：`ValueError: invalid pyproject.toml config: project.license`）。
 # 表格式 `{ text = ... }` 从 PEP 621 起就支持，全版本可用。
-license = { text = "MIT" }
+# Apache-2.0：比 MIT 多出专利授权、商标条款、修改声明与更完整的免责
+# （清理工具会删文件，免责与责任上限必须写清楚）。
+license = { text = "Apache-2.0" }
 authors = [{ name = "MacCleaner contributors" }]
 classifiers = [
   "Development Status :: 3 - Alpha",

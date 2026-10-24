@@ -106,6 +106,17 @@ audited is in [docs/acceptance-method-review.md](docs/acceptance-method-review.m
 
 No telemetry. The native UI and the kernel talk over stdio only — **no ports, no local server**. See [PRIVACY.md](PRIVACY.md).
 
+## License
+
+**Apache-2.0**. Free to use, modify and redistribute, including commercially, provided you keep
+the copyright notice and [NOTICE](NOTICE), state which files you changed, and note that
+**no trademark rights are granted** (you may not ship a fork under the "Mac Cleaner" name).
+Full text: [LICENSE](LICENSE).
+
+> Why not MIT: a cleanup tool deletes files, so it needs a complete warranty disclaimer and
+> liability cap; the patent grant and trademark clause also matter for something that gets
+> embedded by companies and agents.
+
 ---
 
 Maintained jointly by **AI·Maho** and **Human·Matoya**
