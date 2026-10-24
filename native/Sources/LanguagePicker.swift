@@ -7,7 +7,6 @@ struct LanguagePicker: View {
     @Environment(\.appLanguage) private var current
     @State private var hovering = false
     @State private var showMenu = false
-    @State private var closeWorkItem: DispatchWorkItem?
 
     private var label: String { L10n.t("nav.language", current) }
     private var endonym: String {
@@ -36,14 +35,12 @@ struct LanguagePicker: View {
         .contentShape(RoundedRectangle(cornerRadius: 7))
         .onHover { inside in
             hovering = inside
-            closeWorkItem?.cancel()
-            if inside {
+            // 只在"进入"时展开；**不做移出自动关闭**——
+            // 鼠标从触发区移到 popover 里的瞬间会先触发 exit，0.35s 后把菜单关掉，
+            // 点击就落空了（2026-10-24 用户报"切不回中文"）。
+            // 关闭交给 popover 自己：点条目或点外部。
+            if inside, !showMenu {
                 showMenu = true
-            } else {
-                // 移出后略等一会儿再关，避免鼠标划过的瞬间闪烁。
-                let work = DispatchWorkItem { showMenu = false }
-                closeWorkItem = work
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
             }
         }
         .onTapGesture { showMenu.toggle() }
