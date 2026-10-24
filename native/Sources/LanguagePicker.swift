@@ -20,20 +20,21 @@ struct LanguagePicker: View {
     }
 
     var body: some View {
-        // 三件挨在一起、整体居中：之前 Spacer 把箭头推到最右，视觉上"散开"
-        // （2026-10-24 用户指出要紧凑并居中）。
-        HStack(spacing: 5) {
+        // 与上方侧栏项**同一套排版**（2026-10-24 用户要求：照 AI 那行的 icon 与文本调）：
+        // 图标列宽 17、字号 13、间距 9、左对齐；箭头贴右但用 tertiary 弱化，不抢视觉。
+        HStack(spacing: 9) {
             Image(systemName: "globe")
+                .frame(width: 17)
                 .font(.system(size: 12, weight: .medium))
-            Text(endonym).font(.system(size: 12))
+            Text(endonym).font(.system(size: 13))
+            Spacer(minLength: 0)
             Image(systemName: "chevron.up.chevron.down")
                 .font(.system(size: 8, weight: .semibold))
                 .foregroundStyle(.quaternary)
         }
-        .frame(maxWidth: .infinity, alignment: .center)
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
         .background(
             hovering || isOpen ? Theme.accentFill(.dark) : Color.clear,
             in: RoundedRectangle(cornerRadius: 7)
