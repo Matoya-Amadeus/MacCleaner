@@ -121,6 +121,7 @@ struct UninstallListView: View {
                     }
                 }
                 .listStyle(.inset)
+                .scrollIndicators(.never)
             }
 
             Divider()

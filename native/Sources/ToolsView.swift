@@ -200,6 +200,7 @@ struct ToolCatalogView: View {
                 }
             }
             .listStyle(.inset)
+            .scrollIndicators(.never)
             .id("tool-catalog")   // 数据载入后不要跳到中间（行内 selectable 文本会把焦点带走）
         }
         .task { await load() }
@@ -326,6 +327,7 @@ struct SkillCatalogView: View {
                 }
             }
             .listStyle(.inset)
+            .scrollIndicators(.never)
         }
         .task { if skills.isEmpty { await load() } }
     }

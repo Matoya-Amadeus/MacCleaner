@@ -54,6 +54,7 @@ struct SystemView: View {
                     ProgressView("读取系统状态…").padding(.top, 60)
                 }
             }
+            .scrollIndicators(.never)
             .padding(.horizontal, Theme.Space.page)
             .padding(.bottom, Theme.Space.page)
             .frame(maxWidth: 880, alignment: .leading)

@@ -195,6 +195,11 @@ struct RootView: View {
         }
         .onChange(of: selection) { _, newValue in
             if let newValue { storedSection = newValue.rawValue }
+            // 切页后新 List 才创建，需要重新把滚动条设成 overlay，
+            // 否则又回到系统那条浅灰粗条（2026-10-24 用户截图：软件页/AI 页仍在）。
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                MainWindow.makeScrollersOverlay()
+            }
         }
         .sheet(isPresented: $showPermissions) {
             PermissionSheet(store: permissions) { showPermissions = false }
