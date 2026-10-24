@@ -15,14 +15,16 @@ struct LanguagePicker: View {
     }
 
     var body: some View {
+        // 侧栏只有 158pt：塞「Language  English」会折行（实测 "Langua/ge"）。
+        // 图标本身已经表达"语言"，只留当前语言名；完整说明放 tooltip。
         HStack(spacing: 6) {
             Image(systemName: "globe")
                 .font(.system(size: 12, weight: .medium))
-            Text(label).font(.system(size: 12))
-            Spacer(minLength: 4)
-            Text(endonym)
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
+            Text(endonym).font(.system(size: 12))
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(.quaternary)
         }
         .foregroundStyle(.secondary)
         .padding(.horizontal, 9)
@@ -69,6 +71,7 @@ struct LanguagePicker: View {
             .padding(6)
             .frame(width: 150)
         }
+        .help(label)
         .accessibilityLabel(label)
     }
 }

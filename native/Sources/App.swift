@@ -106,7 +106,11 @@ struct RootView: View {
         // 内容整体上移、顶部被标题栏裁掉（2026-10-23 反复出现，自愈也压不住）。
         // 固定两栏没有这个状态，代价只是自己管宽度与分隔线。
         HStack(spacing: 0) {
+            // 宽度约束放在**容器**这一层：`List` 自带最小宽度，直接给它 `.frame(width:)`
+            // 会被忽略（实测仍是 ~490pt）。这里从外面卡死 + 裁剪。
             sidebar
+                .frame(width: 158)
+                .clipped()
             Divider()
             detail
         }
@@ -161,7 +165,7 @@ struct RootView: View {
                 } label: {
                     HStack(spacing: 9) {
                         Image(systemName: item.symbol)
-                            .frame(width: 18)
+                            .frame(width: 17)
                             .foregroundStyle(selection == item ? Theme.accentText(scheme) : .secondary)
                         L(item.titleKey)
                             .font(.system(size: 13, weight: selection == item ? .semibold : .regular))
@@ -173,7 +177,7 @@ struct RootView: View {
                     .contentShape(RoundedRectangle(cornerRadius: 7))
                 }
                 .buttonStyle(.plain)
-                .listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
+                .listRowInsets(EdgeInsets(top: 1, leading: 2, bottom: 1, trailing: 6))
                 .listRowBackground(
                     RoundedRectangle(cornerRadius: 7)
                         .fill(selection == item ? Theme.accentFill(scheme) : Color.clear)
@@ -186,7 +190,8 @@ struct RootView: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
-        .frame(width: 186)
+        // 宽度按**最长可见内容**定：`Language  English` 那行约 130pt，加两侧内边距取 158。
+        // 原来 186 是为中文标签留的，切到英文后右侧空出 130pt，选中块被拉得很长。
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 Divider().opacity(0.4)
