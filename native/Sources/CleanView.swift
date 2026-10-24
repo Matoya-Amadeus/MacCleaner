@@ -125,6 +125,9 @@ struct RecommendedView: View {
                     }
                 }
                 .listStyle(.inset)
+                // 顶部留一点，表头不至于顶着筛选栏；底部留一点，最后一行不被底栏压住。
+                .contentMargins(.top, 6, for: .scrollContent)
+                .contentMargins(.bottom, 14, for: .scrollContent)
             }
 
             Divider()
@@ -287,6 +290,7 @@ struct RecommendedView: View {
                     .font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
             }
             MiniBar(ratio: ratio)
+                .padding(.top, 2)
                 .padding(.trailing, 4)
             if !group.hint.isEmpty {
                 Text(group.hint).font(.caption2).foregroundStyle(.tertiary)

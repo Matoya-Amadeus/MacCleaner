@@ -188,9 +188,13 @@ struct RootView: View {
         .scrollContentBackground(.hidden)
         .frame(width: 186)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            LanguagePicker()
-                .padding(.horizontal, 8)
-                .padding(.bottom, 8)
+            VStack(spacing: 0) {
+                Divider().opacity(0.4)
+                LanguagePicker()
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+            }
+            .background(.regularMaterial)
         }
     }
 

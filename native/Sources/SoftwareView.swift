@@ -284,6 +284,8 @@ struct UpdatesListView: View {
                     }
                 }
                 .listStyle(.inset)
+                .contentMargins(.top, 6, for: .scrollContent)
+                .contentMargins(.bottom, 14, for: .scrollContent)
             }
 
             Divider()
@@ -568,6 +570,8 @@ struct OrphansListView: View {
                     }
                 }
                 .listStyle(.inset)
+                .contentMargins(.top, 6, for: .scrollContent)
+                .contentMargins(.bottom, 14, for: .scrollContent)
             }
 
             Divider()
