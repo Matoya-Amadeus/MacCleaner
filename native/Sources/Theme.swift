@@ -73,11 +73,25 @@ struct PageBackground: View {
                 )
                 // 顶部辉光往下铺得更长一点，页面顶部不至于"一刀切"到纯黑
                 // （2026-10-24 用户要求：绿色背景底再往下拉）。
+                // 绿色只在**头部区域**：顶部最亮，筛选栏下方再延伸一小段后自然渐隐。
+                // 之前用 endRadius 820 的径向渐变，等于整页都泛绿（用户："我没让你都变成纯绿底"）。
+                // 现在用竖直分段：0% 亮 → 14% → 32%（约 224pt）收干。
+                LinearGradient(
+                    stops: [
+                        .init(color: Theme.accent.opacity(0.13), location: 0.00),
+                        .init(color: Theme.accent.opacity(0.09), location: 0.13),
+                        .init(color: Theme.accent.opacity(0.03), location: 0.24),
+                        .init(color: .clear, location: 0.34),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                // 左上角保留一小片柔光，避免顶部看起来是"一条平涂"。
                 RadialGradient(
-                    colors: [Theme.accent.opacity(0.12), .clear],
-                    center: UnitPoint(x: 0.12, y: 0.02),
+                    colors: [Theme.accent.opacity(0.10), .clear],
+                    center: UnitPoint(x: 0.10, y: -0.02),
                     startRadius: 0,
-                    endRadius: 820
+                    endRadius: 420
                 )
             } else {
                 Color(nsColor: .windowBackgroundColor)
