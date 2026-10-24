@@ -43,6 +43,8 @@ struct CleanView: View {
 
 struct RecommendedView: View {
     @Environment(\.appLanguage) private var language
+    /// 当前悬停的行 id（行用函数渲染，不能各自持有 @State）。
+    @State private var hoveringId: String?
     @State private var groups: [Group] = []
     @State private var checked: Set<String> = []
     @State private var loading = false
@@ -241,6 +243,15 @@ struct RecommendedView: View {
         .toggleStyle(.checkbox)
         // 格式塔·接近性：组**内**要明显紧于组间，所以行内竖向留白收到 1。
         .padding(.vertical, 1)
+        // 组内不再画分隔线：同组是一整块，线会把"紧凑"切成一条条。
+        // 代价是行边界变弱 → 用悬停高亮补回来（也让"整行可点"更明显）。
+        .listRowSeparator(.hidden)
+        .listRowBackground(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(hoveringId == item.id ? Color.white.opacity(0.045) : Color.clear)
+                .padding(.horizontal, 6)
+        )
+        .onHover { inside in hoveringId = inside ? item.id : nil }
         // 与卸载行同一套右键：目标是一条目录时，"看一眼再决定"比盲勾更常见。
         .contextMenu {
             Button("在 Finder 中显示") { Task { await reveal(item.path) } }
@@ -284,22 +295,36 @@ struct RecommendedView: View {
             sum + item.items.reduce(Int64(0)) { $0 + $1.bytes }
         }
         let ratio = totalBytes > 0 ? Double(groupBytes) / Double(totalBytes) : 0
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Text("\(group.label) · \(group.items.count)").font(.caption)
-                Spacer()
+        // 排版：左侧组名，右侧把「条 + 金额 + 百分比」收成**一个视觉单元**。
+        // 之前条单独占一行、数字在另一行右端，眼睛要在两行之间来回找对应关系；
+        // 现在条紧贴数字左侧，垂直居中，读作「▬▬ 2.33 GB · 58%」一句话。
+        // 排版：把「组名 + 说明」和「条 + 金额 + 百分比」当成**两个块**，
+        // 左右并排、垂直居中对齐。之前数据块只跟标题那一行对齐，
+        // 说明文字孤零零挂在下面，看着像两块错位的东西（用户 2026-10-24 截图）。
+        return HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(group.label) · \(group.items.count)")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.primary)
+                if !group.hint.isEmpty {
+                    Text(group.hint)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 12)
+            HStack(spacing: 6) {
+                MiniBar(ratio: ratio, width: 54, height: 4)
+                    .frame(width: 54, height: 4)
                 Text(ByteText.format(groupBytes))
-                    .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+                    .font(.caption2).monospacedDigit()
+                    .foregroundStyle(.secondary)
                 Text("\(Int((ratio * 100).rounded()))%")
-                    .font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
+                    .font(.caption2).monospacedDigit()
+                    .foregroundStyle(.tertiary)
             }
-            // 固定 96pt：只作为"这组占多大"的轻提示，不再横贯整行抢视线。
-            MiniBar(ratio: ratio, width: 96, height: 3)
-                .frame(height: 3)
-                .padding(.top, 1)
-            if !group.hint.isEmpty {
-                Text(group.hint).font(.caption2).foregroundStyle(.tertiary)
-            }
+            .fixedSize()
         }
         .padding(.top, 2)
     }

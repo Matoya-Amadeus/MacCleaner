@@ -248,6 +248,8 @@ struct RootView: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+        // 侧栏的滚动条同样是深色底上的浅灰粗条，一并隐藏。
+        .scrollIndicators(.never)
         // 宽度按**最长可见内容**定：`Language  English` 那行约 130pt，加两侧内边距取 158。
         // 原来 186 是为中文标签留的，切到英文后右侧空出 130pt，选中块被拉得很长。
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -255,8 +257,11 @@ struct RootView: View {
                 Divider().opacity(0.4)
                 LanguagePicker(isOpen: $showLanguageMenu)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
+                    .frame(maxHeight: .infinity)   // 在固定高度里垂直居中
             }
+            // 与右侧底部条同高：右边是 padding 16 + callout（≈49pt），
+            // 左边原来是内容自适应（≈41pt），两块底边对不齐（2026-10-24 用户截图）。
+            .frame(height: 49)
             .background(.regularMaterial)
         }
     }
