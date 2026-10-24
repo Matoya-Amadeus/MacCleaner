@@ -79,19 +79,20 @@ struct PageBackground: View {
                 LinearGradient(
                     stops: [
                         .init(color: Theme.accent.opacity(0.13), location: 0.00),
-                        .init(color: Theme.accent.opacity(0.09), location: 0.13),
-                        .init(color: Theme.accent.opacity(0.03), location: 0.24),
-                        .init(color: .clear, location: 0.34),
+                        .init(color: Theme.accent.opacity(0.08), location: 0.10),
+                        .init(color: Theme.accent.opacity(0.02), location: 0.18),
+                        .init(color: .clear, location: 0.24),
                     ],
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                // 左上角保留一小片柔光，避免顶部看起来是"一条平涂"。
+                // 左上角柔光：半径也要跟着收，否则它单独把绿拖到 400pt 以下
+                // （2026-10-24 实测：linear 已收干，y=250pt 处 G-R 仍 +3，来源就是这里）。
                 RadialGradient(
-                    colors: [Theme.accent.opacity(0.10), .clear],
+                    colors: [Theme.accent.opacity(0.09), .clear],
                     center: UnitPoint(x: 0.10, y: -0.02),
                     startRadius: 0,
-                    endRadius: 420
+                    endRadius: 200
                 )
             } else {
                 Color(nsColor: .windowBackgroundColor)
