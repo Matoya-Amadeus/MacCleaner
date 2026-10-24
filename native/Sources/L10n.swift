@@ -55,6 +55,10 @@ enum L10n {
         "tab.updates": ("更新", "Updates"),
         "tab.orphans": ("残留", "Leftovers"),
         "tab.catalog": ("可调用", "Callable"),
+        "ugroup.electron": ("Electron 应用", "Electron apps"),
+        "ugroup.undetectable": ("无法自动检测", "Cannot be checked"),
+        "ugroup.sparkleChecks": ("App 更新检查", "App update checks"),
+        "ugroup.sparkleHasUpdate": ("App 更新可用", "App updates available"),
         "tab.skills": ("软件 Skill", "App skills"),
 
         // 常用控件

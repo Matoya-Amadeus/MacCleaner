@@ -6,6 +6,7 @@ import SwiftUI
 /// 2026-10-23 改版：之前每行右端一个【卸载】按钮，21 行就有 21 个主操作在抢注意力，
 /// 而且要瞄准小按钮。现在整行是勾选框，动作集中在底部一个按钮里。
 struct UninstallListView: View {
+    @Environment(\.appLanguage) private var language
     @State private var groups: [Category] = []
     @State private var loading = false
     @State private var error: String?
@@ -191,7 +192,9 @@ struct UninstallListView: View {
 
     private var footer: some View {
         HStack {
-            Text("已选 \(selected.count) 个 · 共 \(groups.flatMap(\.apps).count) 个")
+            Text(language == "en"
+                 ? "Selected \(selected.count) of \(groups.flatMap(\.apps).count)"
+                 : "已选 \(selected.count) 个 · 共 \(groups.flatMap(\.apps).count) 个")
                 .font(.callout.weight(.medium))
                 .monospacedDigit()
             Spacer()
@@ -320,6 +323,7 @@ struct UninstallListView: View {
 // MARK: - 批量残留清单（一次确认）
 
 struct BatchUninstallSheet: View {
+    @Environment(\.appLanguage) private var language
     let batch: UninstallListView.BatchPlan
     /// (一行提示, 结果页数据)
     let onDone: (String, OperationResult?) -> Void
@@ -387,14 +391,20 @@ struct BatchUninstallSheet: View {
 
             Divider()
             HStack {
-                Text("已选 \(checked.count) 项 · \(ByteText.format(pickedBytes))")
+                Text(language == "en"
+                     ? "Selected \(checked.count) · \(ByteText.format(pickedBytes))"
+                     : "已选 \(checked.count) 项 · \(ByteText.format(pickedBytes))")
                     .font(.callout.weight(.medium)).monospacedDigit()
                 Spacer()
                 Button {
                     confirming = true
                 } label: {
                     if applying { ProgressView().controlSize(.small) }
-                    else { Text(checked.isEmpty ? "移入废纸篓" : "移入废纸篓 \(checked.count) 项") }
+                    else {
+                        Text(checked.isEmpty
+                             ? L10n.t("action.trash", language)
+                             : (language == "en" ? "Move \(checked.count) to Trash" : "移入废纸篓 \(checked.count) 项"))
+                    }
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(checked.isEmpty || applying)

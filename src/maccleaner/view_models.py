@@ -10,6 +10,12 @@
 
 from __future__ import annotations
 
+from .i18n import (
+    localize_groups,
+    localize_items,
+    localize_updates_group,
+)
+
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -80,8 +86,11 @@ def review_candidates(report: dict[str, Any]) -> list[dict[str, Any]]:
     return candidates
 
 
-def review_view(report: dict[str, Any]) -> dict[str, Any]:
-    """审阅页数据：候选 + **已分好组**（界面不需要知道分类规则）。"""
+def review_view(report: dict[str, Any], lang: str = "zh") -> dict[str, Any]:
+    """审阅页数据：候选 + **已分好组**（界面不需要知道分类规则）。
+
+    `lang` 只影响给人看的 label/hint/name（见 `i18n.py`）；id、path、字节数不动。
+    """
     candidates = review_candidates(report)
     buckets: dict[str, list[dict[str, Any]]] = {key: [] for key, *_rest in REVIEW_GROUPS}
     for candidate in candidates:
@@ -102,6 +111,12 @@ def review_view(report: dict[str, Any]) -> dict[str, Any]:
                 "items": items,
             }
         )
+    # 翻译在**最后**做：分组与候选共用同一批对象，先算完再统一改文案。
+    localize_groups(groups, lang)
+    localize_items(candidates, lang)
+    for group in groups:
+        localize_items(group.get("items") or [], lang)
+
     return {
         "candidates": candidates,
         "groups": groups,
@@ -172,7 +187,7 @@ def update_group_label(item: dict[str, Any]) -> str:
     return UPDATE_GROUP_LABELS.get((manager, kind), f"{manager}/{kind}".strip("/"))
 
 
-def updates_view(found: dict[str, Any]) -> dict[str, Any]:
+def updates_view(found: dict[str, Any], lang: str = "zh") -> dict[str, Any]:
     """更新清单：按来源分组 + Sparkle **只保留确认有更新**的（其余单列）。"""
     # 给每一项补一个**稳定 id**（manager|kind|name）：界面按分组渲染后回传时不会错位。
     items = [
@@ -217,6 +232,9 @@ def updates_view(found: dict[str, Any]) -> dict[str, Any]:
         {"label": label, "count": len(buckets[label]), "items": buckets[label]}
         for label in sorted(buckets, key=rank)
     ]
+    # 只翻"来源名"，不动 manager/kind（它们是回传给执行层的 key）。
+    for group in groups:
+        group["label"] = localize_updates_group(str(group.get("label") or ""), lang)
 
     sparkle = [item for item in (found.get("sparkle") or []) if isinstance(item, dict)]
     sparkle_updates = [item for item in sparkle if item.get("update_available")]

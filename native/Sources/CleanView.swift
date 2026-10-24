@@ -324,7 +324,10 @@ struct RecommendedView: View {
             // 没授权就**不碰**受保护目录（否则 macOS 会为每个文件夹各弹一次框）。
             let skipProtected = !PermissionStore.shared.canScanProtected
             let data = try await CoreClient.shared.request(
-                "review.payload", args: skipProtected ? ["skip_protected": .bool(true)] : [:]
+                "review.payload",
+                args: skipProtected
+                    ? ["skip_protected": .bool(true), "lang": .string(language)]
+                    : ["lang": .string(language)]
             )
             groups = (data["groups"]?.arrayValue ?? []).compactMap { group in
                 guard let key = group["key"]?.stringValue, let label = group["label"]?.stringValue else { return nil }

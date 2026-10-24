@@ -259,7 +259,7 @@ class CoreService:
         report = self._call("audit", default={}) or {}
         if bool(args.get("skip_protected")):
             report = self.drop_protected(report)
-        view = review_view(report)
+        view = review_view(report, lang=str(args.get("lang") or "zh"))
         view["skipped_protected"] = int(report.get("skipped_protected") or 0)
         return view
 
@@ -407,7 +407,10 @@ class CoreService:
     def _updates_list(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
         """检查并给出**分组好的更新清单**（Sparkle 只保留确认有更新的）。"""
         emit({"id": request_id, "event": "started", "op": "updates.list"})
-        return updates_view(self._call("updates_check", default={}) or {})
+        return updates_view(
+            self._call("updates_check", default={}) or {},
+            lang=str(args.get("lang") or "zh"),
+        )
 
     # ---------- 更新 ----------
 

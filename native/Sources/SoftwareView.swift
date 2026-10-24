@@ -59,6 +59,7 @@ struct SoftwareView: View {
 // MARK: - 更新
 
 struct UpdatesListView: View {
+    @Environment(\.appLanguage) private var language
     @State private var groups: [Group] = []
     @State private var sparkle: [Sparkle] = []
     @State private var sparkleRest: [SparkleRest] = []
@@ -220,7 +221,7 @@ struct UpdatesListView: View {
                     }
 
                     if !sparkleRest.isEmpty, category == nil || category == "App 更新检查" {
-                        Text("App 更新检查 · \(sparkleRest.count)")
+                        Text("\(L10n.t("ugroup.sparkleChecks", language)) · \(sparkleRest.count)")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
                             .listSectionHeaderRow()
@@ -241,7 +242,7 @@ struct UpdatesListView: View {
                         }
                     }
                     if !electronUpdates.isEmpty, category == nil || category == "Electron 应用" {
-                        Text("Electron 应用 · \(electronUpdates.count)")
+                        Text("\(L10n.t("ugroup.electron", language)) · \(electronUpdates.count)")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
                             .listSectionHeaderRow()
@@ -259,7 +260,7 @@ struct UpdatesListView: View {
                     }
 
                     if !undetectable.isEmpty, category == nil || category == "无法自动检测" {
-                        Text("无法自动检测 · \(undetectable.count)")
+                        Text("\(L10n.t("ugroup.undetectable", language)) · \(undetectable.count)")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
                             .listSectionHeaderRow()
@@ -295,16 +296,24 @@ struct UpdatesListView: View {
                 let autoItems = allItems.filter { !$0.id.hasPrefix("mas|") }
                 let manualCount = allItems.count - autoItems.count
                 let autoChecked = checked.filter { id in autoItems.contains { $0.id == id } }.count
-                Text("已选 \(autoChecked) / \(autoItems.count) 项可自动更新"
-                     + (manualCount > 0 ? " · 另有 \(manualCount) 项需在 App Store 更新" : "")
-                     + (checkedAt.map { " · 检查于 \(Self.clock.string(from: $0))" } ?? ""))
+                Text(language == "en"
+                     ? "Selected \(autoChecked) / \(autoItems.count) updatable"
+                       + (manualCount > 0 ? " · \(manualCount) need App Store" : "")
+                       + (checkedAt.map { " · checked \(Self.clock.string(from: $0))" } ?? "")
+                     : "已选 \(autoChecked) / \(autoItems.count) 项可自动更新"
+                       + (manualCount > 0 ? " · 另有 \(manualCount) 项需在 App Store 更新" : "")
+                       + (checkedAt.map { " · 检查于 \(Self.clock.string(from: $0))" } ?? ""))
                     .font(.callout.weight(.medium)).monospacedDigit()
                 Spacer()
                 Button {
                     Task { await apply() }
                 } label: {
                     if applying { ProgressView().controlSize(.small) }
-                    else { Text(checked.isEmpty ? "更新" : "更新 \(checked.count) 项") }
+                    else {
+                        Text(checked.isEmpty
+                             ? L10n.t("action.update", language)
+                             : (language == "en" ? "Update \(checked.count)" : "更新 \(checked.count) 项"))
+                    }
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(checked.isEmpty || applying)
@@ -347,7 +356,9 @@ struct UpdatesListView: View {
         loading = true
         defer { loading = false }
         do {
-            let data = try await CoreClient.shared.request("updates.list")
+            let data = try await CoreClient.shared.request(
+                "updates.list", args: ["lang": .string(language)]
+            )
             groups = (data["groups"]?.arrayValue ?? []).compactMap { group in
                 guard let label = group["label"]?.stringValue else { return nil }
                 let items = (group["items"]?.arrayValue ?? []).compactMap { raw -> Item? in
@@ -477,6 +488,7 @@ struct UpdatesListView: View {
 // MARK: - 残留
 
 struct OrphansListView: View {
+    @Environment(\.appLanguage) private var language
     @State private var groups: [Group] = []
     @State private var checked: Set<String> = []
     @State private var loading = false
@@ -576,7 +588,9 @@ struct OrphansListView: View {
 
             Divider()
             HStack {
-                Text("已选 \(checked.count) 项 · \(ByteText.format(checkedBytes))"
+                Text(language == "en"
+                     ? "Selected \(checked.count) · \(ByteText.format(checkedBytes))"
+                     : "已选 \(checked.count) 项 · \(ByteText.format(checkedBytes))"
                      + (scannedAt.map { " · 读取于 \(Self.clock.string(from: $0))" } ?? ""))
                     .font(.callout.weight(.medium)).monospacedDigit()
                 Spacer()
@@ -584,7 +598,11 @@ struct OrphansListView: View {
                     Task { await apply() }
                 } label: {
                     if applying { ProgressView().controlSize(.small) }
-                    else { Text(checked.isEmpty ? "移入废纸篓" : "移入废纸篓 \(checked.count) 项") }
+                    else {
+                        Text(checked.isEmpty
+                             ? L10n.t("action.trash", language)
+                             : (language == "en" ? "Move \(checked.count) to Trash" : "移入废纸篓 \(checked.count) 项"))
+                    }
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(checked.isEmpty || applying)
