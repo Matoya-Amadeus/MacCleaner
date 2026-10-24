@@ -214,29 +214,35 @@ def _sha256_for_file(path: Path) -> str:
 def _protected_session_reason(path: Path) -> str:
     parts = [part.lower() for part in path.parts]
     lower = path.as_posix().lower()
-    auth_markers = {
-        "cookies.sqlite",
-        "logins.json",
-        "key4.db",
-        "sessionstore-backups",
-        "session storage",
-        "local storage",
-        "login data",
-        "cookies",
-        "storage/default",
-    }
     if ".ssh" in parts:
         return "ssh identity material is protected"
     if "keychains" in parts or "keychain" in lower:
         return "keychain material is protected"
-    if "firefox" in parts and any(marker in lower for marker in auth_markers):
-        return "Firefox browser identity/session data is protected"
-    if any(browser in lower for browser in ("google/chrome", "brave browser", "microsoft edge", "safari")):
-        if any(marker in lower for marker in auth_markers) and ("openai" in lower or "chatgpt" in lower):
-            return "browser OpenAI/ChatGPT session data is protected"
-    if ("openai" in lower or "chatgpt" in lower) and any(marker in lower for marker in auth_markers):
-        return "OpenAI/ChatGPT session data is protected"
-    if "application support" in lower and ("token" in lower or "session" in lower) and ("openai" in lower or "chatgpt" in lower):
+
+    # **通用规则**：不按浏览器品牌判断。
+    # 之前只护 Firefox 与 OpenAI/ChatGPT，Chrome / Safari / Edge / 各 App 内嵌 WebView
+    # 的 Cookies、Login Data、Local Storage、WebsiteData 全部漏网
+    # （2026-10-24 审计：`~/Library/Safari/LocalStorage`、`.../Containers/*/Data/Library/Cookies`
+    #   `_protected_session_reason` 都返回空）。
+    session_markers = (
+        "cookies",              # Cookies 目录 / *.binarycookies / Cookies.sqlite
+        "logins.json",
+        "key4.db",
+        "login data",
+        "session storage",
+        "local storage",
+        "localstorage",          # Safari/LocalStorage（无空格）
+        "session storage",
+        "sessionstorage",
+        "sessionstore-backups",
+        "storage/default",
+        "websitedata",
+        "safari/databases",
+        "history.db",
+    )
+    if any(marker in lower for marker in session_markers):
+        return "browser identity/session material is protected"
+    if "application support" in lower and ("token" in lower or "session" in lower):
         return "application token/session data is protected"
     return ""
 
