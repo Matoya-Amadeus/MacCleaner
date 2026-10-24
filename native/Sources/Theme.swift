@@ -190,7 +190,10 @@ extension View {
             // 标题要**贴近自己的子项**、远离上一组：上间距 34、下间距 0。
             // 之前上下都留白且接近，两组之间的空隙和"标题→首行"几乎一样，
             // 视觉上分不清标题属于哪一组（用户 2026-10-24 截图）。
-            .listRowInsets(EdgeInsets(top: 34, leading: 12, bottom: 0, trailing: 12))
+            // 标题到自己的子项距离**减半**（用户 2026-10-24：除个 2）。
+            // 负 bottom inset 会把标题行压向首行；-16 太多，第一组标题被顶出可视区，
+            // 收敛到 -8（实测仍比原来近一半，且首组标题可见）。
+            .listRowInsets(EdgeInsets(top: 34, leading: 12, bottom: -8, trailing: 12))
     }
 }
 

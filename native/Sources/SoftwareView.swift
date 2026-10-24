@@ -27,21 +27,35 @@ struct SoftwareView: View {
     @Environment(\.appLanguage) private var language
 
     @State private var tab: Tab = .uninstall
+    /// 页头右侧的「读取于」：三个 tab 各自扫描完成后回填。
+    @State private var headerStamp: Date?
+
+    private static let clock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
 
     var body: some View {
         VStack(spacing: 0) {
-            PageHeader(title: L10n.t("software.title", language), subtitle: L10n.t("software.subtitle", language))
+            PageHeader(title: L10n.t("software.title", language), subtitle: L10n.t("software.subtitle", language)) {
+                // 读取时间跟标题同行右侧（用户 2026-10-24 要求），不再挤在筛选行末。
+                if let headerStamp {
+                    Text("\(L10n.t("common.updated", language)) \(Self.clock.string(from: headerStamp))")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
 
             ChipPicker(options: Tab.allCases.map { ($0, L10n.t($0.titleKey, language)) }, selection: $tab)
                 .padding(.bottom, 10)
 
             switch tab {
             case .uninstall:
-                UninstallListView()
+                UninstallListView(onStamp: { headerStamp = $0 })
             case .updates:
-                UpdatesListView()
+                UpdatesListView(onStamp: { headerStamp = $0 })
             case .orphans:
-                OrphansListView()
+                OrphansListView(onStamp: { headerStamp = $0 })
             }
         }
         .onAppear {
@@ -59,6 +73,7 @@ struct SoftwareView: View {
 // MARK: - 更新
 
 struct UpdatesListView: View {
+    var onStamp: (Date) -> Void = { _ in }
     @Environment(\.appLanguage) private var language
     @State private var hoveringID: String?
     @State private var groups: [Group] = []
@@ -418,6 +433,7 @@ struct UpdatesListView: View {
             }
             knownVersions = versions
             checkedAt = Date()
+            onStamp(Date())
 
             // 核对：点过"在应用内更新"的应用，版本变了吗？
             for (path, oldVersion) in pendingSparkle {
@@ -491,6 +507,7 @@ struct UpdatesListView: View {
 // MARK: - 残留
 
 struct OrphansListView: View {
+    var onStamp: (Date) -> Void = { _ in }
     @Environment(\.appLanguage) private var language
     @State private var hoveringID: String?
     @State private var groups: [Group] = []
@@ -679,6 +696,7 @@ struct OrphansListView: View {
             }
             checked = Set(groups.first(where: { $0.label == "Caches" })?.items.map(\.path) ?? [])
             scannedAt = Date()
+            onStamp(Date())
             error = nil
         } catch {
             self.error = error.localizedDescription

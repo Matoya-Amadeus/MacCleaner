@@ -23,16 +23,29 @@ struct CleanView: View {
     @Environment(\.appLanguage) private var language
 
     @State private var tab: Tab = .recommended
+    /// 扫描时间：页头右侧显示，由 RecommendedView 扫描后回填。
+    @State private var scannedAt: Date?
+
+    private static let clock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
 
     var body: some View {
         VStack(spacing: 0) {
-            PageHeader(title: L10n.t("clean.title", language), subtitle: L10n.t("clean.subtitle", language))
+            PageHeader(title: L10n.t("clean.title", language), subtitle: L10n.t("clean.subtitle", language)) {
+                if let scannedAt {
+                    Text("\(L10n.t("common.updated", language)) \(Self.clock.string(from: scannedAt))")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
 
             ChipPicker(options: Tab.allCases.map { ($0, L10n.t($0.titleKey, language)) }, selection: $tab)
                 .padding(.bottom, 10)
 
             switch tab {
-            case .recommended: RecommendedView()
+            case .recommended: RecommendedView(scannedAt: $scannedAt)
             case .large: LargeFilesView()
             }
         }
@@ -45,11 +58,13 @@ struct RecommendedView: View {
     @Environment(\.appLanguage) private var language
     /// 当前悬停的行 id（行用函数渲染，不能各自持有 @State）。
     @State private var hoveringId: String?
+    /// 与软件页/AI 页一致：搜索框放在筛选行最右（三页头部因此等高）。
+    @State private var search = ""
     @State private var groups: [Group] = []
     @State private var checked: Set<String> = []
     @State private var loading = false
     @State private var scanning = false
-    @State private var scannedAt: Date?
+    @Binding var scannedAt: Date?
     @State private var filter: SelectionFilter = .all
     @State private var category: String?
     @State private var error: String?
@@ -108,11 +123,8 @@ struct RecommendedView: View {
                         if on { checked.formUnion(ids) } else { checked.subtract(ids) }
                     }
                     FilterBar(status: $filter, category: $category, categories: categories)
-                    Spacer()
-                    if let scannedAt {
-                        Text("\(L10n.t("common.updated", language)) \(Self.clock.string(from: scannedAt))")
-                            .font(.caption2).foregroundStyle(.tertiary)
-                    }
+                    Spacer(minLength: 12)
+                    InlineSearchField(text: $search, placeholder: L10n.t("search.rows", language))
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 6)
@@ -127,6 +139,8 @@ struct RecommendedView: View {
                     }
                 }
                 .listStyle(.inset)
+                // 行高默认 28+，组内显得松；压到 24 让"同组更紧"成立。
+                .environment(\.defaultMinListRowHeight, 24)
                 // 系统粗滚动条在深色底上是一条扎眼的浅灰长条（用户 2026-10-24 反馈）。
                 // 隐藏指示器，滚轮/触控板照常滚动。
                 .scrollIndicators(.never)
@@ -337,7 +351,12 @@ struct RecommendedView: View {
     private var filteredGroups: [Group] {
         groups.compactMap { group -> Group? in
             if let category, group.key != category { return nil }
+            let needle = search.trimmingCharacters(in: .whitespaces).lowercased()
             let items = group.items.filter { item in
+                let matchesSearch = needle.isEmpty
+                    || item.name.lowercased().contains(needle)
+                    || item.path.lowercased().contains(needle)
+                guard matchesSearch else { return false }
                 switch filter {
                 case .all: return true
                 case .selected: return checked.contains(item.id)

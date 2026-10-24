@@ -155,3 +155,39 @@ struct SelectAllToggle: View {
         .accessibilityLabel(label)
     }
 }
+
+/// 内联搜索框：与筛选同一行、靠最右。
+///
+/// 之前软件页/AI 页是"独占一整行"，清理页干脆没有——三页头部高度因此不一致，
+/// 列表起始位置也跟着不同（用户 2026-10-24 要求统一）。
+struct InlineSearchField: View {
+    @Binding var text: String
+    let placeholder: String
+    var width: CGFloat = 190
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Theme.cardFill(scheme), in: RoundedRectangle(cornerRadius: 6))
+        .frame(width: width)
+    }
+}

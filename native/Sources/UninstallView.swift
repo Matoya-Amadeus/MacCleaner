@@ -6,6 +6,7 @@ import SwiftUI
 /// 2026-10-23 改版：之前每行右端一个【卸载】按钮，21 行就有 21 个主操作在抢注意力，
 /// 而且要瞄准小按钮。现在整行是勾选框，动作集中在底部一个按钮里。
 struct UninstallListView: View {
+    var onStamp: (Date) -> Void = { _ in }
     @Environment(\.appLanguage) private var language
     /// 当前悬停行（行是函数渲染，状态放在这里）。
     @State private var hoveringID: String?
@@ -152,18 +153,6 @@ struct UninstallListView: View {
 
     private var header: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField(L10n.t("search.apps", language), text: $search)
-                    .textFieldStyle(.plain)
-                if !search.isEmpty {
-                    Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }
-                        .buttonStyle(.plain).foregroundStyle(.tertiary)
-                }
-            }
-            .padding(8)
-            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-
             HStack(spacing: 12) {
                 Toggle(isOn: Binding(
                     get: { allVisibleSelected },
@@ -186,12 +175,10 @@ struct UninstallListView: View {
 
                 FilterBar(status: $filter, category: $category, categories: categories)
 
-                Spacer()
+                Spacer(minLength: 12)
 
-                if let loadedAt {
-                    Text("\(L10n.t("common.updated", language)) \(Self.clock.string(from: loadedAt))")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                }
+                // 搜索框放到筛选行最右（不再独占一行），三页头部因此等高。
+                InlineSearchField(text: $search, placeholder: L10n.t("search.apps", language))
             }
         }
         .padding(.horizontal, 16)
@@ -276,6 +263,7 @@ struct UninstallListView: View {
             let alive = Set(groups.flatMap(\.apps).map(\.id))
             selected.formIntersection(alive)
             loadedAt = Date()
+            onStamp(Date())
             error = nil
         } catch {
             self.error = error.localizedDescription

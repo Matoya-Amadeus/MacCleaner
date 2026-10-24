@@ -46,6 +46,7 @@ struct ToolsView: View {
 // MARK: - 可调用清单
 
 struct ToolCatalogView: View {
+    @Environment(\.appLanguage) private var language
     @State private var mcp: [Entry] = []
     @State private var commands: [Entry] = []
     @State private var example = ""
@@ -85,29 +86,14 @@ struct ToolCatalogView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("搜索工具或命令", text: $search).textFieldStyle(.plain)
-                if !search.isEmpty {
-                    Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }
-                        .buttonStyle(.plain).foregroundStyle(.tertiary)
-                }
-            }
-            .padding(8)
-            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-
             HStack {
                 FilterBar(status: .constant(.all), category: $sectionFilter, categories: sections, showsStatus: false)
-                Spacer()
-                if let loadedAt {
-                    Text("读取于 \(Self.clock.string(from: loadedAt))")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                }
+                Spacer(minLength: 12)
+                // 搜索框放筛选行最右：与软件页、清理页同一套头部高度。
+                InlineSearchField(text: $search, placeholder: L10n.t("search.rows", language))
             }
             .padding(.horizontal, 20)
-            .padding(.top, 6)
+            .padding(.top, 8)
 
             if let error {
                 StatusBanner(level: .error, text: error)

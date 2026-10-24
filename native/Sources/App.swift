@@ -269,7 +269,9 @@ struct RootView: View {
             // 右侧底栏 = Divider(1) + padding 16×2 + callout(≈17) ≈ 50；
             // 左侧原来给 49 又叠加自己的 Divider，视觉上比右侧高一截
             // （2026-10-24 截图：语言栏深色块顶到筛选栏下方）。取 42 对齐。
-            .frame(height: 42)
+            // 49 时左侧块比右侧高（顶出一截），42 时又矮一截；
+            // 左右两块的真实差在 4pt 左右，取 46 让底边与右侧齐平。
+            .frame(height: 46)
             .background(.regularMaterial)
         }
     }
