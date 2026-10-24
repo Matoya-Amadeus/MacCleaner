@@ -249,3 +249,89 @@ def localize_updates_group(label: str, lang: str | None) -> str:
     if resolve(lang) != "en":
         return label
     return _lookup(label, UPDATES_GROUP_LABELS, "en")
+
+# ── 错误信息 ──
+# 设计：**在错误出口做映射**，不去改 29 个 raise 点。
+# 这样文案仍是源码里可读的一行，翻译集中在一处；
+# 未登记的文案原样返回（不会变成空白，也不会吞掉参数）。
+ERROR_MESSAGES: dict[str, str] = {
+    "paths 不能为空": "paths must not be empty",
+    "path 不能为空": "path must not be empty",
+    "ids 不能为空": "ids must not be empty",
+    "item_ids 不能为空": "item_ids must not be empty",
+    "approved_ids 不能为空：空勾选不等于全部":
+        "approved_ids must not be empty: an empty selection is not 'all'",
+    "days_to_keep must be >= 0": "days_to_keep 必须 >= 0",
+    "ttl_seconds must be positive": "ttl_seconds 必须为正数",
+    "required_confirmation_ids must be a subset of candidate_target_ids":
+        "required_confirmation_ids 必须是 candidate_target_ids 的子集",
+    "只允许打开存在的 .app": "only an existing .app can be opened",
+    "路径不存在": "path does not exist",
+    "这个应用没有可卸载的残留项": "this app has nothing to uninstall",
+    "这个构建不支持在 Finder 中显示": "this build cannot reveal items in Finder",
+    "这个构建不支持大文件扫描": "this build cannot scan large files",
+    "这个构建不支持打开应用": "this build cannot open apps",
+    "这个构建不支持打开废纸篓": "this build cannot open the Trash",
+    "这个构建不支持残留扫描": "this build cannot scan leftovers",
+    "这个构建不支持移入废纸篓": "this build cannot move items to the Trash",
+    "这个构建不支持移走系统目录": "this build cannot move system directories",
+    "这个构建不支持系统目录测量": "this build cannot measure system directories",
+}
+
+# 带变量的文案：两种形态，分开写更不容易错。
+#   A. 尾随变量：`profile must be one of: generic, repo-evidence`
+#   B. 中间变量：`/Applications/X.app 缺少 id`
+_FOLLOWED_BY = (
+    ("profile 必须是以下之一：", "profile must be one of: "),
+)
+
+
+# 反向表：英文 → 中文（中文界面下若内核返回英文文案，也要能显示中文）。
+_ERROR_REVERSE: dict[str, str] = {v: k for k, v in ERROR_MESSAGES.items()}
+
+
+def localize_error(message: str, lang: str | None = None) -> str:
+    """把内核错误文案转成目标语言。
+
+    - 精确命中 `ERROR_MESSAGES`：换成另一种语言；
+    - 尾随变量（`profile must be one of: …`）：只换句子，变量原样保留；
+    - 中间变量（`<path> 缺少 id`）：同上；
+    - 都不命中：原样返回（宁可显示原文，也不要显示空白）。
+    """
+    text = (message or "").strip()
+    if not text:
+        return text
+
+    # 双向：英文界面查"中→英"，中文界面查"英→中"（后者由反向表提供）。
+    table = ERROR_MESSAGES if resolve(lang) == "en" else _ERROR_REVERSE
+    swapped = table.get(text)
+    if swapped:
+        return swapped
+
+    # 表里是 (中文, 英文)；英文界面拿中文前缀换英文，中文界面反过来。
+    pairs = _FOLLOWED_BY if resolve(lang) == "en" else [
+        (en, zh) for zh, en in _FOLLOWED_BY
+    ]
+    for prefix, replacement in pairs:
+        if text.startswith(prefix):
+            tail = text[len(prefix):]
+            return f"{replacement}{tail}"
+
+    suffix = " 缺少 id"
+    if text.endswith(suffix):
+        head = text[: -len(suffix)]
+        template = "{head} is missing an id" if resolve(lang) == "en" else "{head} 缺少 id"
+        return template.format(head=head)
+
+    return text
+    swapped = ERROR_MESSAGES.get(text)
+    if swapped:
+        return swapped
+
+    for prefix, zh_tpl, en_tpl in ERROR_PREFIXES:
+        if prefix.startswith(text[:len(prefix)]) or text.startswith(prefix):
+            rest = text[len(prefix):] if text.startswith(prefix) else ""
+            tpl = en_tpl if resolve(lang) == "en" else zh_tpl
+            return tpl.replace("{rest}", rest).strip()
+    return text
+

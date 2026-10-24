@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 
-from .i18n import localize_kind
+from .i18n import localize_error, localize_kind
 import sys
 import threading
 from pathlib import Path
@@ -145,17 +145,23 @@ class CoreService:
             ))
             return messages
 
+        # 错误文案按请求的语言翻译：**只影响返回给界面的 message**，
+        # stderr 日志仍打原文（排查时看的是源码里的那句）。
+        lang = str(args.get("lang") or "zh") if isinstance(args, dict) else "zh"
+
         try:
             data = handler(request_id, args, emit)
         except KeyError as exc:                      # 参数缺失
-            emit(self._error(request_id, "bad_args", f"缺少参数: {exc}"))
+            emit(self._error(request_id, "bad_args",
+                             localize_error(f"缺少参数: {exc}", lang)))
             return messages
         except (TypeError, ValueError) as exc:       # 参数类型/取值不对
-            emit(self._error(request_id, "bad_args", str(exc)))
+            emit(self._error(request_id, "bad_args", localize_error(str(exc), lang)))
             return messages
         except Exception as exc:  # noqa: BLE001 - 任何异常都要变成可读的终态，不能让调用方干等
             print(f"[core] {cmd} failed: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
-            emit(self._error(request_id, "internal_error", f"{type(exc).__name__}: {exc}"))
+            emit(self._error(request_id, "internal_error",
+                             localize_error(f"{type(exc).__name__}: {exc}", lang)))
             return messages
 
         emit({"id": request_id, "ok": True, "data": data, "v": PROTOCOL_VERSION})
