@@ -6,6 +6,8 @@ import SwiftUI
 ///
 /// 沿用旧界面的产品结论：**这一页是展示页，不下钻**；一条整机容量条，其余都是文字数字。
 struct DiskView: View {
+    @Environment(\.appLanguage) private var language
+
     @State private var report: Report?
     @State private var system: SystemBlock?
     @State private var error: String?
@@ -42,7 +44,7 @@ struct DiskView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PageHeader(title: "磁盘", subtitle: "整机容量、目录构成与系统级占用") {
+            PageHeader(title: L10n.t("disk.title", language), subtitle: L10n.t("disk.subtitle", language)) {
                 if let loadedAt {
                     Text("读取于 \(Self.clock.string(from: loadedAt))")
                         .font(.caption2).foregroundStyle(.tertiary)

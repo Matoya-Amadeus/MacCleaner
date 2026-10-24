@@ -7,22 +7,32 @@ struct SoftwareView: View {
     enum Tab: String, CaseIterable, Identifiable {
         case uninstall, updates, orphans
         var id: String { rawValue }
+        var titleKey: String {
+            switch self {
+            case .uninstall: return "tab.uninstall"
+            case .updates: return "tab.updates"
+            case .orphans: return "tab.orphans"
+            }
+        }
+
         var title: String {
             switch self {
-            case .uninstall: return "卸载"
-            case .updates: return "更新"
-            case .orphans: return "残留"
+            case .uninstall: return L10n.t("tab.uninstall", UserDefaults.standard.string(forKey: "appLanguage") ?? "zh")
+            case .updates: return L10n.t("tab.updates", UserDefaults.standard.string(forKey: "appLanguage") ?? "zh")
+            case .orphans: return L10n.t("tab.orphans", UserDefaults.standard.string(forKey: "appLanguage") ?? "zh")
             }
         }
     }
+
+    @Environment(\.appLanguage) private var language
 
     @State private var tab: Tab = .uninstall
 
     var body: some View {
         VStack(spacing: 0) {
-            PageHeader(title: "软件", subtitle: "卸载残留、检查更新、清理孤儿文件")
+            PageHeader(title: L10n.t("software.title", language), subtitle: L10n.t("software.subtitle", language))
 
-            ChipPicker(options: Tab.allCases.map { ($0, $0.title) }, selection: $tab)
+            ChipPicker(options: Tab.allCases.map { ($0, L10n.t($0.titleKey, language)) }, selection: $tab)
                 .padding(.bottom, 10)
 
             switch tab {

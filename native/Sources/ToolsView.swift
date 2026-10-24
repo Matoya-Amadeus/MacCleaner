@@ -9,21 +9,30 @@ struct ToolsView: View {
     enum Tab: String, CaseIterable, Identifiable {
         case tools, skills
         var id: String { rawValue }
+        var titleKey: String {
+            switch self {
+            case .tools: return "tab.catalog"
+            case .skills: return "tab.skills"
+            }
+        }
+
         var title: String {
             switch self {
-            case .tools: return "可调用"
-            case .skills: return "软件 Skill"
+            case .tools: return L10n.t("tab.catalog", UserDefaults.standard.string(forKey: "appLanguage") ?? "zh")
+            case .skills: return L10n.t("tab.skills", UserDefaults.standard.string(forKey: "appLanguage") ?? "zh")
             }
         }
     }
+
+    @Environment(\.appLanguage) private var language
 
     @State private var tab: Tab = .tools
 
     var body: some View {
         VStack(spacing: 0) {
-            PageHeader(title: "AI 能力", subtitle: "agent 可直接调用的工具：MCP 与 stdio 命令")
+            PageHeader(title: L10n.t("ai.title", language), subtitle: L10n.t("ai.subtitle", language))
 
-            ChipPicker(options: Tab.allCases.map { ($0, $0.title) }, selection: $tab)
+            ChipPicker(options: Tab.allCases.map { ($0, L10n.t($0.titleKey, language)) }, selection: $tab)
                 .padding(.bottom, 10)
 
             switch tab {

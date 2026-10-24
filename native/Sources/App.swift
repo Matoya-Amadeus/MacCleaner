@@ -15,14 +15,21 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String {
+    /// 本地化 key（文案在 `L10n.strings`）。
+    var titleKey: String {
         switch self {
-        case .clean: return "清理"
-        case .software: return "软件"
-        case .disk: return "磁盘"
-        case .system: return "系统"
-        case .ai: return "AI"
+        case .clean: return "nav.clean"
+        case .software: return "nav.software"
+        case .disk: return "nav.disk"
+        case .system: return "nav.system"
+        case .ai: return "nav.ai"
         }
+    }
+
+    /// 菜单栏等处没有 View 环境，从 UserDefaults 直接读当前语言。
+    var title: String {
+        let language = UserDefaults.standard.string(forKey: "appLanguage") ?? AppLanguage.zh.rawValue
+        return L10n.t(titleKey, language)
     }
 
     var symbol: String {
@@ -91,6 +98,7 @@ struct RootView: View {
     @StateObject private var permissions = PermissionStore.shared
     @State private var showPermissions = false
     @Environment(\.colorScheme) private var scheme
+    @AppStorage("appLanguage") private var language = AppLanguage.zh.rawValue
 
     var body: some View {
         // 不用 NavigationSplitView：它把两个子视图的 frame 持久化到 UserDefaults
@@ -102,6 +110,7 @@ struct RootView: View {
             Divider()
             detail
         }
+        .environment(\.appLanguage, language)
         .onAppear {
             StatusItemController.shared.sync()
             permissions.refresh()
@@ -154,7 +163,7 @@ struct RootView: View {
                         Image(systemName: item.symbol)
                             .frame(width: 18)
                             .foregroundStyle(selection == item ? Theme.accentText(scheme) : .secondary)
-                        Text(item.title)
+                        L(item.titleKey)
                             .font(.system(size: 13, weight: selection == item ? .semibold : .regular))
                             .foregroundStyle(selection == item ? Theme.accentText(scheme) : .primary)
                         Spacer(minLength: 0)
@@ -178,6 +187,11 @@ struct RootView: View {
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
         .frame(width: 186)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            LanguagePicker()
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
+        }
     }
 
     /// 详情：不套额外容器（历史上套 VStack 会压垮布局）。

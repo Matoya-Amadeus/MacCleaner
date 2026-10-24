@@ -31,6 +31,7 @@ struct FilterBar: View {
     /// AI 页没有勾选概念，只需要分类——那时不显示"状态"这一维。
     var showsStatus: Bool = true
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appLanguage) private var language
 
     /// 有没有在筛选（用于高亮图标）
     private var isFiltering: Bool { status != .all || category != nil }
@@ -52,7 +53,7 @@ struct FilterBar: View {
                     }
                 } label: {
                     chip(
-                        title: status == .all ? "全部状态" : status.title,
+                        title: status == .all ? L10n.t("common.allStatus", language) : status.title,
                         symbol: status.symbol,
                         active: status != .all
                     )
@@ -66,8 +67,8 @@ struct FilterBar: View {
                 Button {
                     category = nil
                 } label: {
-                    if category == nil { Label("全部分类", systemImage: "checkmark") }
-                    else { Text("全部分类") }
+                    if category == nil { Label(L10n.t("common.allCategory", language), systemImage: "checkmark") }
+                    else { Text(L10n.t("common.allCategory", language)) }
                 }
                 Divider()
                 ForEach(categories, id: \.label) { item in
@@ -83,7 +84,7 @@ struct FilterBar: View {
                 }
             } label: {
                 chip(
-                    title: category ?? "全部分类",
+                    title: category ?? L10n.t("common.allCategory", language),
                     symbol: "square.grid.2x2",
                     active: category != nil
                 )
@@ -131,6 +132,7 @@ struct FilterBar: View {
 /// 「全选」勾选框：**统一放在筛选左边**（用户 2026-10-23 要求：先决定整体勾不勾，再看这批是哪几条）。
 /// 只勾"当前可见"的项——筛选成"未选"时点全选，不该把看不见的也勾上。
 struct SelectAllToggle: View {
+    @Environment(\.appLanguage) private var language
     let isOn: Bool
     /// 已选 / 总数：部分选中时（比如 7/8）在标签里显示出来，
     /// 否则空心的勾选框会让人以为"一个都没选"。
@@ -138,10 +140,11 @@ struct SelectAllToggle: View {
     let action: (Bool) -> Void
 
     private var label: String {
+        let base = L10n.t("common.selectAll", language)
         if let count, count.selected > 0, count.selected < count.total {
-            return "全选（\(count.selected)/\(count.total)）"
+            return language == "en" ? "\(base) (\(count.selected)/\(count.total))" : "\(base)（\(count.selected)/\(count.total)）"
         }
-        return "全选"
+        return base
     }
 
     var body: some View {

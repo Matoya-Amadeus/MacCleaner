@@ -5,21 +5,30 @@ struct CleanView: View {
     enum Tab: String, CaseIterable, Identifiable {
         case recommended, large
         var id: String { rawValue }
+        var titleKey: String {
+            switch self {
+            case .recommended: return "tab.recommended"
+            case .large: return "tab.large"
+            }
+        }
+
         var title: String {
             switch self {
-            case .recommended: return "推荐清理"
-            case .large: return "大文件"
+            case .recommended: return L10n.t("tab.recommended", UserDefaults.standard.string(forKey: "appLanguage") ?? "zh")
+            case .large: return L10n.t("tab.large", UserDefaults.standard.string(forKey: "appLanguage") ?? "zh")
             }
         }
     }
+
+    @Environment(\.appLanguage) private var language
 
     @State private var tab: Tab = .recommended
 
     var body: some View {
         VStack(spacing: 0) {
-            PageHeader(title: "清理", subtitle: "缓存、日志与开发工具；只读扫描，删除前会确认")
+            PageHeader(title: L10n.t("clean.title", language), subtitle: L10n.t("clean.subtitle", language))
 
-            ChipPicker(options: Tab.allCases.map { ($0, $0.title) }, selection: $tab)
+            ChipPicker(options: Tab.allCases.map { ($0, L10n.t($0.titleKey, language)) }, selection: $tab)
                 .padding(.bottom, 10)
 
             switch tab {
@@ -33,6 +42,7 @@ struct CleanView: View {
 // MARK: - 推荐清理
 
 struct RecommendedView: View {
+    @Environment(\.appLanguage) private var language
     @State private var groups: [Group] = []
     @State private var checked: Set<String> = []
     @State private var loading = false
@@ -98,7 +108,7 @@ struct RecommendedView: View {
                     FilterBar(status: $filter, category: $category, categories: categories)
                     Spacer()
                     if let scannedAt {
-                        Text("读取于 \(Self.clock.string(from: scannedAt))")
+                        Text("\(L10n.t("common.updated", language)) \(Self.clock.string(from: scannedAt))")
                             .font(.caption2).foregroundStyle(.tertiary)
                     }
                 }
@@ -119,10 +129,12 @@ struct RecommendedView: View {
 
             Divider()
             HStack {
-                Text("已选 \(checked.count) 项 · \(ByteText.format(checkedBytes))")
+                Text(language == "en"
+                     ? "Selected \(checked.count) · \(ByteText.format(checkedBytes))"
+                     : "已选 \(checked.count) 项 · \(ByteText.format(checkedBytes))")
                     .font(.callout.weight(.medium)).monospacedDigit()
                 Spacer()
-                Button("清理 \(checked.count) 项") {
+                Button(language == "en" ? "Clean \(checked.count)" : "清理 \(checked.count) 项") {
                     confirming = true
                 }
                 .keyboardShortcut(.defaultAction)

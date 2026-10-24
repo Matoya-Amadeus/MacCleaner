@@ -2,6 +2,8 @@ import SwiftUI
 
 /// 系统状态：负载 / 内存 / 电池与节流 / 进程。只读。
 struct SystemView: View {
+    @Environment(\.appLanguage) private var language
+
     @State private var model: Model?
     @State private var error: String?
     @State private var sampledAt: Date?
@@ -32,7 +34,7 @@ struct SystemView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PageHeader(title: "系统", subtitle: "负载、内存、电池与进程") {
+            PageHeader(title: L10n.t("system.title", language), subtitle: L10n.t("system.subtitle", language)) {
                 if let sampledAt {
                     Text("采样于 \(Self.clock.string(from: sampledAt))")
                         .font(.caption2).foregroundStyle(.tertiary)
