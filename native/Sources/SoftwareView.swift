@@ -302,6 +302,9 @@ struct UpdatesListView: View {
                     }
                 }
                 .listStyle(.inset)
+                // 让 PageBackground 的绿色渐变透出来（否则 List 自带的不透明背景
+                // 会在筛选栏下方"切断"绿底，软件页因为别的原因没断，看着不一致）。
+                .scrollContentBackground(.hidden)
                 .scrollIndicators(.never)
                 .contentMargins(.top, 6, for: .scrollContent)
                 .contentMargins(.bottom, 14, for: .scrollContent)
@@ -336,7 +339,8 @@ struct UpdatesListView: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(checked.isEmpty || applying)
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .frame(height: 48)
         }
         .task { if groups.isEmpty && sparkle.isEmpty { await load() } }
         .progressOverlay(applying, title: "正在更新…", detail: "在当前这条命令跑完后停下（不打断 brew）",
@@ -630,7 +634,8 @@ struct OrphansListView: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(checked.isEmpty || applying)
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .frame(height: 48)
         }
         .task {
             if groups.isEmpty { await load() }

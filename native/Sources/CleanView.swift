@@ -139,6 +139,9 @@ struct RecommendedView: View {
                     }
                 }
                 .listStyle(.inset)
+                // 让 PageBackground 的绿色渐变透出来（否则 List 自带的不透明背景
+                // 会在筛选栏下方"切断"绿底，软件页因为别的原因没断，看着不一致）。
+                .scrollContentBackground(.hidden)
                 // 行高默认 28+，组内显得松；压到 24 让"同组更紧"成立。
                 .environment(\.defaultMinListRowHeight, 24)
                 // 系统粗滚动条在深色底上是一条扎眼的浅灰长条（用户 2026-10-24 反馈）。
@@ -162,7 +165,8 @@ struct RecommendedView: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(checked.isEmpty)
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .frame(height: 48)
         }
         .task {
             if groups.isEmpty { await scan() }
@@ -571,7 +575,8 @@ struct LargeFilesView: View {
                     .keyboardShortcut(.defaultAction)
                     .disabled(checked.isEmpty)
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .frame(height: 48)
         }
         .task { if items.isEmpty { await load() } }
         .onReceive(NotificationCenter.default.publisher(for: .mcReload)) { _ in

@@ -124,6 +124,9 @@ struct UninstallListView: View {
                     }
                 }
                 .listStyle(.inset)
+                // 让 PageBackground 的绿色渐变透出来（否则 List 自带的不透明背景
+                // 会在筛选栏下方"切断"绿底，软件页因为别的原因没断，看着不一致）。
+                .scrollContentBackground(.hidden)
                 .scrollIndicators(.never)
             }
 
@@ -204,7 +207,8 @@ struct UninstallListView: View {
             .keyboardShortcut(.defaultAction)
             .disabled(selected.isEmpty || preparing)
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+            .frame(height: 48)
     }
 
     private func row(_ app: App) -> some View {
@@ -361,7 +365,8 @@ struct BatchUninstallSheet: View {
                 Spacer()
                 Button("取消") { dismiss() }
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .frame(height: 48)
 
             Divider()
 
@@ -412,7 +417,8 @@ struct BatchUninstallSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(checked.isEmpty || applying)
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .frame(height: 48)
         }
         .frame(width: 680, height: 580)
         // 这一步可能弹两种系统框：控制访达、管理员密码。文案先说清楚，别让人干等。

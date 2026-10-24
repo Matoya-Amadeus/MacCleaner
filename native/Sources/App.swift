@@ -260,18 +260,16 @@ struct RootView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 Divider().opacity(0.4)
-                LanguagePicker(isOpen: $showLanguageMenu)
-                    .padding(.horizontal, 10)
-                    .frame(maxHeight: .infinity)   // 在固定高度里垂直居中
+                HStack(spacing: 0) {
+                    LanguagePicker(isOpen: $showLanguageMenu)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10)
+                // **与右侧完全同构**：内容固定 48pt + Divider 1pt = 49pt。
+                // 之前写在外层的 `.frame(height: 49)` 没生效（实测左 27pt / 右 49pt，
+                // 差 22pt，2026-10-24 用像素测量才确认），必须把高度压在内层内容上。
+                .frame(height: 48)
             }
-            // 与右侧底部条同高：右边是 padding 16 + callout（≈49pt），
-            // 左边原来是内容自适应（≈41pt），两块底边对不齐（2026-10-24 用户截图）。
-            // 右侧底栏 = Divider(1) + padding 16×2 + callout(≈17) ≈ 50；
-            // 左侧原来给 49 又叠加自己的 Divider，视觉上比右侧高一截
-            // （2026-10-24 截图：语言栏深色块顶到筛选栏下方）。取 42 对齐。
-            // 49 时左侧块比右侧高（顶出一截），42 时又矮一截；
-            // 左右两块的真实差在 4pt 左右，取 46 让底边与右侧齐平。
-            .frame(height: 46)
             .background(.regularMaterial)
         }
     }
