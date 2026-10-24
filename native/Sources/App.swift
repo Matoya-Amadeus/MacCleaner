@@ -266,7 +266,10 @@ struct RootView: View {
             }
             // 与右侧底部条同高：右边是 padding 16 + callout（≈49pt），
             // 左边原来是内容自适应（≈41pt），两块底边对不齐（2026-10-24 用户截图）。
-            .frame(height: 49)
+            // 右侧底栏 = Divider(1) + padding 16×2 + callout(≈17) ≈ 50；
+            // 左侧原来给 49 又叠加自己的 Divider，视觉上比右侧高一截
+            // （2026-10-24 截图：语言栏深色块顶到筛选栏下方）。取 42 对齐。
+            .frame(height: 42)
             .background(.regularMaterial)
         }
     }

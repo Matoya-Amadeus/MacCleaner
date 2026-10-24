@@ -71,11 +71,13 @@ struct PageBackground: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
+                // 顶部辉光往下铺得更长一点，页面顶部不至于"一刀切"到纯黑
+                // （2026-10-24 用户要求：绿色背景底再往下拉）。
                 RadialGradient(
-                    colors: [Theme.accent.opacity(0.10), .clear],
-                    center: UnitPoint(x: 0.12, y: -0.05),
+                    colors: [Theme.accent.opacity(0.12), .clear],
+                    center: UnitPoint(x: 0.12, y: 0.02),
                     startRadius: 0,
-                    endRadius: 620
+                    endRadius: 820
                 )
             } else {
                 Color(nsColor: .windowBackgroundColor)
@@ -185,7 +187,10 @@ extension View {
             .listRowBackground(Color.clear)
             // 格式塔·接近性：组**之间**要明显松于组内（原来 14 与行距 42 太接近，
             // 视觉上分不清"换组"），所以上间距 14 → 26。
-            .listRowInsets(EdgeInsets(top: 26, leading: 12, bottom: 4, trailing: 12))
+            // 标题要**贴近自己的子项**、远离上一组：上间距 34、下间距 0。
+            // 之前上下都留白且接近，两组之间的空隙和"标题→首行"几乎一样，
+            // 视觉上分不清标题属于哪一组（用户 2026-10-24 截图）。
+            .listRowInsets(EdgeInsets(top: 34, leading: 12, bottom: 0, trailing: 12))
     }
 }
 
