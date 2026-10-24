@@ -65,6 +65,18 @@ TERMS: dict[str, tuple[str, str]] = {
     "ugroup.python": ("Python 包", "Python packages"),
     "ugroup.rust": ("Rust 工具链", "Rust toolchain"),
 
+    # ── 应用分类（卸载页分组）──
+    "cat.browser": ("浏览器", "Browsers"),
+    "cat.dev": ("开发工具", "Developer tools"),
+    "cat.social": ("社交与通讯", "Social & messaging"),
+    "cat.office": ("效率办公", "Productivity"),
+    "cat.design": ("设计与图像", "Design & graphics"),
+    "cat.media": ("影音", "Media"),
+    "cat.game": ("游戏", "Games"),
+    "cat.read": ("阅读资讯", "News & reading"),
+    "cat.system": ("系统工具", "Utilities"),
+    "cat.other": ("其它", "Other"),
+
     # ── 常见状态/原因 ──
     "reason.up_to_date": ("已是最新", "Up to date"),
     "reason.no_feed": ("没有可用的更新源", "No update feed"),
@@ -74,6 +86,13 @@ TERMS: dict[str, tuple[str, str]] = {
     "reason.store_not_found": ("商店上查不到", "Not found in the store"),
     "reason.no_bundle_id": ("没有 bundle id", "No bundle id"),
     "reason.no_installed_version": ("读不到已装版本", "Installed version unreadable"),
+    "reason.feed_unavailable": (
+        "更新源不可用（拿不到 latest-mac.yml）",
+        "Update feed unavailable (latest-mac.yml missing)",
+    ),
+    "reason.feed_no_url": ("更新源里没有地址", "Feed has no URL"),
+    "reason.feed_unreachable": ("更新源不可达", "Update feed unreachable"),
+    "reason.feed_unsupported": ("更新源类型不支持", "Unsupported feed provider"),
 }
 
 
@@ -126,6 +145,19 @@ KIND_KEYS = {
     "system": "kind.system",
 }
 
+APP_CATEGORY_LABELS = {
+    "浏览器": "cat.browser",
+    "开发工具": "cat.dev",
+    "社交与通讯": "cat.social",
+    "效率办公": "cat.office",
+    "设计与图像": "cat.design",
+    "影音": "cat.media",
+    "游戏": "cat.game",
+    "阅读资讯": "cat.read",
+    "系统工具": "cat.system",
+    "其它": "cat.other",
+}
+
 UPDATES_GROUP_LABELS = {
     "Electron 应用": "ugroup.electron",
     "无法自动检测": "ugroup.undetectable",
@@ -136,6 +168,9 @@ UPDATES_GROUP_LABELS = {
 
 REASON_KEYS = {
     "已是最新": "reason.up_to_date",
+    # 固定长句（含括号但没有变量）走精确匹配，别让前缀规则再拼一次
+    "更新源不可用（拿不到 latest-mac.yml）": "reason.feed_unavailable",
+    "更新源里没有地址": "reason.feed_no_url",
     "没有可用的更新源": "reason.no_feed",
     "商店上查不到": "reason.store_not_found",
     "读不到已装版本": "reason.no_installed_version",
@@ -180,10 +215,34 @@ def localize_kind(kind: str, lang: str | None) -> str:
     return _lookup(kind, KIND_KEYS, "en")
 
 
+# 带括号变量的动态文案：`更新源不可达（HTTPError）` → `Update feed unreachable (HTTPError)`。
+# 保留括号里的原始信息（异常名 / provider 名），它对排查有用。
+DYNAMIC_REASONS = (
+    ("更新源不可达（", "reason.feed_unreachable"),
+    ("更新源类型不支持（", "reason.feed_unsupported"),
+
+)
+
+
 def localize_reason(reason: str, lang: str | None) -> str:
     if resolve(lang) != "en":
         return reason
-    return _lookup(reason, REASON_KEYS, "en")
+    text = reason or ""
+    exact = _lookup(text, REASON_KEYS, "en")
+    if exact != text:
+        return exact
+    for prefix, key in DYNAMIC_REASONS:
+        if text.startswith(prefix) and text.endswith("）"):
+            inner = text[len(prefix):-1]
+            return f"{t(key, 'en')} ({inner})"
+    return text
+
+
+def localize_app_category(label: str, lang: str | None) -> str:
+    """卸载页的分类名（内核分类出来的「浏览器 / 开发工具 / …」）。"""
+    if resolve(lang) != "en":
+        return label
+    return _lookup(label, APP_CATEGORY_LABELS, "en")
 
 
 def localize_updates_group(label: str, lang: str | None) -> str:

@@ -38,6 +38,8 @@ struct UninstallListView: View {
         let id: String
         let path: String
         let kind: String
+        /// 内核按语言给的显示名（`app-bundle` → 应用本体 / Application）。
+        let kindLabel: String
         let bytes: Int64
         let confidence: String
         let requiresAdmin: Bool
@@ -149,7 +151,7 @@ struct UninstallListView: View {
         VStack(spacing: 8) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("搜索应用名或 bundle id", text: $search)
+                TextField(L10n.t("search.apps", language), text: $search)
                     .textFieldStyle(.plain)
                 if !search.isEmpty {
                     Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }
@@ -170,7 +172,11 @@ struct UninstallListView: View {
                         }
                     }
                 )) {
-                    Text(search.isEmpty ? "全选" : "全选（\(visibleApps.count) 个结果）")
+                    Text(search.isEmpty
+                         ? L10n.t("common.selectAll", language)
+                         : (language == "en"
+                            ? "Select all (\(visibleApps.count) results)"
+                            : "全选（\(visibleApps.count) 个结果）"))
                         .font(.callout)
                 }
                 .toggleStyle(.checkbox)
@@ -180,7 +186,7 @@ struct UninstallListView: View {
                 Spacer()
 
                 if let loadedAt {
-                    Text("读取于 \(Self.clock.string(from: loadedAt))")
+                    Text("\(L10n.t("common.updated", language)) \(Self.clock.string(from: loadedAt))")
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
             }
@@ -201,7 +207,9 @@ struct UninstallListView: View {
             Button {
                 Task { await prepare() }
             } label: {
-                Text(selected.isEmpty ? "卸载" : "卸载 \(selected.count) 个")
+                Text(selected.isEmpty
+                          ? L10n.t("action.uninstall", language)
+                          : (language == "en" ? "Uninstall \(selected.count)" : "卸载 \(selected.count) 个"))
             }
             .keyboardShortcut(.defaultAction)
             .disabled(selected.isEmpty || preparing)
@@ -249,7 +257,9 @@ struct UninstallListView: View {
         loading = true
         defer { loading = false }
         do {
-            let data = try await CoreClient.shared.request("apps")
+            let data = try await CoreClient.shared.request(
+                "apps", args: ["lang": .string(language)]
+            )
             groups = (data["groups"]?.arrayValue ?? []).compactMap { group in
                 guard let label = group["label"]?.stringValue else { return nil }
                 let apps = (group["items"]?.arrayValue ?? []).compactMap { item -> App? in
@@ -284,7 +294,7 @@ struct UninstallListView: View {
                 let data = try await CoreClient.shared.request(
                     "uninstall.plan",
                     args: ["path": .string(app.path), "name": .string(app.name),
-                           "bundle_id": .string(app.bundleID)]
+                           "bundle_id": .string(app.bundleID), "lang": .string(language)]
                 )
                 let items = (data["items"]?.arrayValue ?? []).compactMap { item -> PlanItem? in
                     guard let path = item["path"]?.stringValue, let id = item["id"]?.stringValue else { return nil }
@@ -292,6 +302,7 @@ struct UninstallListView: View {
                         id: id,
                         path: path,
                         kind: item["kind"]?.stringValue ?? "",
+                        kindLabel: item["kind_label"]?.stringValue ?? (item["kind"]?.stringValue ?? ""),
                         bytes: item["allocated_bytes"]?.intValue ?? 0,
                         confidence: item["confidence"]?.stringValue ?? "exact",
                         requiresAdmin: item["requires_admin"]?.boolValue ?? false
@@ -448,7 +459,7 @@ struct BatchUninstallSheet: View {
             HStack {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(URL(fileURLWithPath: item.path).lastPathComponent).lineLimit(1)
-                    Text(hint ?? item.kind).font(.caption2).foregroundStyle(.tertiary)
+                    Text(hint ?? item.kindLabel).font(.caption2).foregroundStyle(.tertiary)
                 }
                 Spacer()
                 Text(ByteText.format(item.bytes)).font(.caption).monospacedDigit().foregroundStyle(.secondary)

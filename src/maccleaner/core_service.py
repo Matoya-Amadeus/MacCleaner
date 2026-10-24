@@ -18,6 +18,8 @@
 from __future__ import annotations
 
 import json
+
+from .i18n import localize_kind
 import sys
 import threading
 from pathlib import Path
@@ -246,7 +248,7 @@ class CoreService:
 
     def _apps(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
         """已安装应用 + **已分好的分类组**（规则的唯一来源在内核，界面不复制）。"""
-        return apps_view(self._call("apps", default=[]) or [])
+        return apps_view(self._call("apps", default=[]) or [], lang=str(args.get("lang") or "zh"))
 
     def _scan(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
         """只读扫描。返回内核原始报告；分组/展示留给上层（M1 会把分组也收到内核）。"""
@@ -371,13 +373,21 @@ class CoreService:
         if not path:
             raise ValueError("path 不能为空")
         emit({"id": request_id, "event": "started", "op": "uninstall.plan"})
-        return self._call(
+        plan = self._call(
             "uninstall_plan",
             app_path=path,
             bundle_id=str(args.get("bundle_id") or ""),
             app_name=str(args.get("name") or ""),
             default={},
         ) or {}
+        # `kind` 是英文 slug（caches / app-support / http-storages-cookies…），
+        # 直接显示给用户很生硬。补一个 `kind_label` 供界面优先使用；
+        # 不覆盖 kind 本身——执行层还靠它判断。
+        lang = str(args.get("lang") or "zh")
+        for item in plan.get("items") or []:
+            if isinstance(item, dict):
+                item["kind_label"] = localize_kind(str(item.get("kind") or ""), lang)
+        return plan
 
     def _uninstall_apply(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
         """卸载。**空勾选必须拒绝**：否则等于"把整个应用连同残留全删"。"""

@@ -63,6 +63,8 @@ enum L10n {
 
         // 常用控件
         "common.selectAll": ("全选", "Select all"),
+        "search.apps": ("搜索应用名或 bundle id", "Search name or bundle id"),
+        "search.rows": ("搜索名称或路径", "Search name or path"),
         "common.allStatus": ("全部状态", "All states"),
         "common.allCategory": ("全部分类", "All categories"),
         "common.clearFilter": ("清除筛选（状态与分类一起清）", "Clear filters (state and category)"),

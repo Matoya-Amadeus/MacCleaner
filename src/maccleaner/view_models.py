@@ -11,8 +11,10 @@
 from __future__ import annotations
 
 from .i18n import (
+    localize_app_category,
     localize_groups,
     localize_items,
+    localize_reason,
     localize_updates_group,
 )
 
@@ -143,7 +145,7 @@ def app_category_rank(label: str) -> tuple[int, str]:
         return (len(APP_CATEGORY_ORDER), label)
 
 
-def apps_view(apps: Iterable[dict[str, Any]]) -> dict[str, Any]:
+def apps_view(apps: Iterable[dict[str, Any]], lang: str = "zh") -> dict[str, Any]:
     """已安装应用：按 macOS 官方分类分组（浏览器/开发工具/…），顺序固定。"""
     items = [item for item in apps if isinstance(item, dict)]
     buckets: dict[str, list[dict[str, Any]]] = {}
@@ -152,7 +154,7 @@ def apps_view(apps: Iterable[dict[str, Any]]) -> dict[str, Any]:
         buckets.setdefault(key, []).append(item)
 
     groups = [
-        {"label": key, "count": len(buckets[key]), "items": buckets[key]}
+        {"label": localize_app_category(key, lang), "count": len(buckets[key]), "items": buckets[key]}
         for key in sorted(buckets, key=app_category_rank)
     ]
     return {"apps": items, "groups": groups, "count": len(items)}
@@ -247,6 +249,15 @@ def updates_view(found: dict[str, Any], lang: str = "zh") -> dict[str, Any]:
     electron_updates = [item for item in electron if item.get("update_available")]
     electron_rest = [item for item in electron if not item.get("update_available")]
     undetectable = [item for item in (found.get("undetectable") or []) if isinstance(item, dict)]
+
+    # 失败/跳过原因也要翻：界面直接展示 reason，留中文会让英文界面"半截英文半截中文"。
+    if lang != "zh":
+        for bucket in (sparkle_updates, sparkle_rest, electron_updates,
+                       electron_rest, undetectable):
+            for item in bucket:
+                reason = str(item.get("reason") or "")
+                if reason:
+                    item["reason"] = localize_reason(reason, lang)
 
     return {
         "items": items,
