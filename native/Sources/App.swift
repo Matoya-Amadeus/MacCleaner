@@ -127,7 +127,9 @@ struct RootView: View {
                         .onTapGesture { showLanguageMenu = false }
 
                     LanguageMenu { showLanguageMenu = false }
-                        .padding(.leading, 10)
+                        // 视觉上与语言栏左边缘对齐：语言栏本身有 10pt 外距 + 9pt 内距，
+                        // 菜单若也用 10pt 会显得偏右（2026-10-24 用户截图指正）。
+                        .padding(.leading, 6)
                         .padding(.bottom, 46)
                 }
             }
