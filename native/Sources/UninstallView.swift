@@ -7,6 +7,8 @@ import SwiftUI
 /// 而且要瞄准小按钮。现在整行是勾选框，动作集中在底部一个按钮里。
 struct UninstallListView: View {
     @Environment(\.appLanguage) private var language
+    /// 当前悬停行（行是函数渲染，状态放在这里）。
+    @State private var hoveringID: String?
     @State private var groups: [Category] = []
     @State private var loading = false
     @State private var error: String?
@@ -250,6 +252,7 @@ struct UninstallListView: View {
                 Task { await prepare() }
             }
         }
+        .rowHover(app.path, hoveringID: $hoveringID)
     }
 
     // MARK: - 数据

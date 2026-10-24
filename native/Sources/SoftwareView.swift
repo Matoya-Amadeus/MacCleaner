@@ -60,6 +60,7 @@ struct SoftwareView: View {
 
 struct UpdatesListView: View {
     @Environment(\.appLanguage) private var language
+    @State private var hoveringID: String?
     @State private var groups: [Group] = []
     @State private var sparkle: [Sparkle] = []
     @State private var sparkleRest: [SparkleRest] = []
@@ -213,6 +214,7 @@ struct UpdatesListView: View {
                                                     .toggleStyle(.checkbox)
                                                     // App Store 项只能去商店点更新，勾选等于骗人。
                                                     .disabled(item.id.hasPrefix("mas|"))
+                                                    .rowHover(item.id, hoveringID: $hoveringID)
                                                 }
                                             
 
@@ -490,6 +492,7 @@ struct UpdatesListView: View {
 
 struct OrphansListView: View {
     @Environment(\.appLanguage) private var language
+    @State private var hoveringID: String?
     @State private var groups: [Group] = []
     @State private var checked: Set<String> = []
     @State private var loading = false
@@ -577,6 +580,7 @@ struct OrphansListView: View {
                                                         }
                                                     }
                                                     .toggleStyle(.checkbox)
+                                                    .rowHover(item.id, hoveringID: $hoveringID)
                                                 }
                                             
 

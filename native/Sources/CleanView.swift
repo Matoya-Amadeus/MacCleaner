@@ -301,8 +301,8 @@ struct RecommendedView: View {
         // 排版：把「组名 + 说明」和「条 + 金额 + 百分比」当成**两个块**，
         // 左右并排、垂直居中对齐。之前数据块只跟标题那一行对齐，
         // 说明文字孤零零挂在下面，看着像两块错位的东西（用户 2026-10-24 截图）。
-        return HStack(alignment: .center, spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
+        return HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text("\(group.label) · \(group.items.count)")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.primary)
@@ -311,9 +311,13 @@ struct RecommendedView: View {
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
-            Spacer(minLength: 12)
+            // 固定列宽：标题块宽度一致，右边数据块的起点才会对齐；
+            // 同时**不再用 Spacer 把它推到最右**——中间留 500pt 空白会让
+            // 「组名」和「它的大小」看起来像两件无关的事（用户 2026-10-24 截图）。
+            .frame(width: 260, alignment: .leading)
             HStack(spacing: 6) {
                 MiniBar(ratio: ratio, width: 54, height: 4)
                     .frame(width: 54, height: 4)
@@ -325,6 +329,7 @@ struct RecommendedView: View {
                     .foregroundStyle(.tertiary)
             }
             .fixedSize()
+            Spacer(minLength: 0)
         }
         .padding(.top, 2)
     }

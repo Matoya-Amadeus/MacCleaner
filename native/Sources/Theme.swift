@@ -188,3 +188,31 @@ extension View {
             .listRowInsets(EdgeInsets(top: 26, leading: 12, bottom: 4, trailing: 12))
     }
 }
+
+/// 列表行的统一样式：**组内不画分隔线**（同组是一整块），用悬停高亮补回边界感。
+///
+/// 为什么做成 modifier：清理 / 卸载 / 更新 / 残留 / AI 五个列表都要这一套，
+/// 各写一遍必然漂移（2026-10-24 只有清理页做了，用户一眼看出不一致）。
+struct RowHoverModifier: ViewModifier {
+    let rowID: String
+    @Binding var hoveringID: String?
+
+    func body(content: Content) -> some View {
+        content
+            .listRowSeparator(.hidden)
+            .listRowBackground(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(hoveringID == rowID ? Color.white.opacity(0.045) : Color.clear)
+                    .padding(.horizontal, 6)
+            )
+            .onHover { inside in
+                hoveringID = inside ? rowID : nil
+            }
+    }
+}
+
+extension View {
+    func rowHover(_ id: String, hoveringID: Binding<String?>) -> some View {
+        modifier(RowHoverModifier(rowID: id, hoveringID: hoveringID))
+    }
+}
