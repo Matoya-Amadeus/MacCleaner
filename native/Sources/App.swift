@@ -99,6 +99,8 @@ struct RootView: View {
     @State private var showPermissions = false
     @Environment(\.colorScheme) private var scheme
     @AppStorage("appLanguage") private var language = AppLanguage.zh.rawValue
+    /// 语言菜单：浮层由本视图渲染在最顶层（`popover` 在侧栏 inset 里不渲染，见 LanguagePicker 注释）。
+    @State private var showLanguageMenu = false
 
     var body: some View {
         // 不用 NavigationSplitView：它把两个子视图的 frame 持久化到 UserDefaults
@@ -115,6 +117,21 @@ struct RootView: View {
             detail
         }
         .environment(\.appLanguage, language)
+        // 语言菜单浮层：画在**窗口顶层**，因此不会被侧栏裁掉，也能盖住右侧列表。
+        // 底层那层近乎透明的 Color 用来接"点外部关闭"。
+        .overlay(alignment: .bottomLeading) {
+            if showLanguageMenu {
+                ZStack(alignment: .bottomLeading) {
+                    Color.black.opacity(0.001)
+                        .contentShape(Rectangle())
+                        .onTapGesture { showLanguageMenu = false }
+
+                    LanguageMenu { showLanguageMenu = false }
+                        .padding(.leading, 10)
+                        .padding(.bottom, 46)
+                }
+            }
+        }
         .onAppear {
             StatusItemController.shared.sync()
             permissions.refresh()
@@ -195,7 +212,7 @@ struct RootView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 Divider().opacity(0.4)
-                LanguagePicker()
+                LanguagePicker(isOpen: $showLanguageMenu)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
             }
