@@ -74,6 +74,18 @@ Four surfaces share one set of protection rules (protected paths stay blocked; n
   accepts `plan_digest`; a mismatch between the approved plan and the plan being applied is refused before
   anything is touched.
 
+## If the MCP tools are missing from this session
+
+MCP tool lists are loaded **when the client session starts**; a server cannot inject itself into a
+running session. So when `audit_storage` and friends are absent from your tool list, do this:
+
+1. `maccleaner-core mcp --print-config claude` (or `codex`) — show the exact snippet, no files touched;
+2. With the user's consent: `maccleaner-core mcp --install-config auto --yes`
+   (backs up the client config, idempotent, only adds `mac-cleaner`);
+3. Tell the user to **restart the session** — the tools appear on the next start;
+4. In the current session, fall back to the CLI (`maccleaner audit` / `plan` / `clean`) or the
+   stdio protocol. The behaviour and safety rules are identical.
+
 ## Read-only inspection (beyond cleanup)
 
 These are stdio commands (one JSON line per request via `maccleaner-core serve --stdio`); they never mutate:

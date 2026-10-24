@@ -71,6 +71,11 @@ def build_parser() -> argparse.ArgumentParser:
     # 界面上列了 7 个 MCP 工具却没说怎么启动——这是真缺口（2026-10-23 补）。
     mcp = sub.add_parser("mcp", help="Run the MCP server over stdio (for AI agents)")
     add_common(mcp)
+    mcp.add_argument("--print-config", choices=["claude", "codex"], default=None,
+                     help="print the client config snippet and exit (no files touched)")
+    mcp.add_argument("--install-config", choices=["claude", "codex", "auto"], default=None,
+                     help="write this server into the client config (needs --yes)")
+    mcp.add_argument("--yes", action="store_true", help="confirm writing client config")
 
     updates = sub.add_parser("updates", help="List third-party updates (brew/mas); --apply to install")
     add_common(updates)
@@ -126,6 +131,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     ctx = _context_from_args(args)
     manager = StorageManager(ctx)
+
+    if args.command == "mcp" and (getattr(args, "print_config", None) or getattr(args, "install_config", None)):
+        import json as _json
+
+        from . import mcp_config
+
+        if args.install_config:
+            if not args.yes:
+                print("Refusing to edit client config without --yes; use --print-config to preview.")
+                return 2
+            result = mcp_config.install(args.install_config)
+        else:
+            result = {"snippet": mcp_config.print_config(args.print_config)}
+        print(_json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
 
     if args.command == "mcp":
         from .mcp_server import main as mcp_main

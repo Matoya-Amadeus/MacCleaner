@@ -66,7 +66,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", action="store_true", help="打印版本与协议版本")
     parser.add_argument("--list-commands", action="store_true", help="列出命令")
     sub = parser.add_subparsers(dest="command")
-    sub.add_parser("mcp", help="以 stdio 起 MCP 服务（给 agent 直接调用）")
+    mcp = sub.add_parser("mcp", help="以 stdio 起 MCP 服务（给 agent 直接调用）")
+    # 给 agent 用：它可以执行这条命令把自己接进客户端配置，但**当前会话看不到新工具**
+    # （MCP 工具列表在会话启动时拉取），必须提示用户重启会话。
+    mcp.add_argument("--print-config", choices=["claude", "codex"], default=None,
+                     help="只打印要加的配置片段，不写文件（默认行为）")
+    mcp.add_argument("--install-config", choices=["claude", "codex", "auto"], default=None,
+                     help="把本服务写进客户端配置（需要加 --yes 才真写）")
+    mcp.add_argument("--yes", action="store_true", help="确认修改客户端配置文件")
     serve = sub.add_parser("serve", help="起服务")
     serve.add_argument("--stdio", action="store_true", help="用标准输入输出通信（唯一支持的传输）")
     args = parser.parse_args(argv)
@@ -77,6 +84,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.list_commands:
         print(json.dumps(COMMAND_HELP, ensure_ascii=False, indent=2))
         return 0
+    if args.command == "mcp" and (args.print_config or args.install_config):
+        from . import mcp_config
+
+        if args.install_config:
+            if not args.yes:
+                print("要修改客户端配置需要加 --yes；只查看请用 --print-config")
+                return 2
+            result = mcp_config.install(args.install_config)
+        else:
+            result = {"snippet": mcp_config.print_config(args.print_config)}
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
     if args.command == "mcp":
         # 安装包自带这条路径：以前只能 `pipx install "maccleaner[mcp]"`，用户装不上就用不了。
         from .mcp_server import main as mcp_main
