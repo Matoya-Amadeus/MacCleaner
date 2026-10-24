@@ -20,15 +20,17 @@ struct LanguagePicker: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        // 三件挨在一起、整体居中：之前 Spacer 把箭头推到最右，视觉上"散开"
+        // （2026-10-24 用户指出要紧凑并居中）。
+        HStack(spacing: 5) {
             Image(systemName: "globe")
                 .font(.system(size: 12, weight: .medium))
             Text(endonym).font(.system(size: 12))
-            Spacer(minLength: 0)
             Image(systemName: "chevron.up.chevron.down")
                 .font(.system(size: 8, weight: .semibold))
                 .foregroundStyle(.quaternary)
         }
+        .frame(maxWidth: .infinity, alignment: .center)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
