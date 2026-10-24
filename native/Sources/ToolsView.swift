@@ -186,6 +186,9 @@ struct ToolCatalogView: View {
                 }
             }
             .listStyle(.inset)
+            // 让 PageBackground 的绿色渐变透出（这里缩进是 12 空格，上一轮按 16 空格替换，
+            // 所以 AI 页一直没改到 —— 2026-10-24 像素测量：绿底只到 y=364，另两页到 1396）。
+            .scrollContentBackground(.hidden)
             .scrollIndicators(.never)
             .id("tool-catalog")   // 数据载入后不要跳到中间（行内 selectable 文本会把焦点带走）
         }
@@ -313,6 +316,9 @@ struct SkillCatalogView: View {
                 }
             }
             .listStyle(.inset)
+            // 让 PageBackground 的绿色渐变透出（这里缩进是 12 空格，上一轮按 16 空格替换，
+            // 所以 AI 页一直没改到 —— 2026-10-24 像素测量：绿底只到 y=364，另两页到 1396）。
+            .scrollContentBackground(.hidden)
             .scrollIndicators(.never)
         }
         .task { if skills.isEmpty { await load() } }
