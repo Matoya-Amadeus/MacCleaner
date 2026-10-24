@@ -183,6 +183,8 @@ extension View {
         self
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 14, leading: 12, bottom: 4, trailing: 12))
+            // 格式塔·接近性：组**之间**要明显松于组内（原来 14 与行距 42 太接近，
+            // 视觉上分不清"换组"），所以上间距 14 → 26。
+            .listRowInsets(EdgeInsets(top: 26, leading: 12, bottom: 4, trailing: 12))
     }
 }

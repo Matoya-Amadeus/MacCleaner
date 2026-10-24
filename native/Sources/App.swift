@@ -44,6 +44,32 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 }
 
 enum MainWindow {
+    /// 把窗口内所有 `NSScrollView` 的滚动条改成 overlay 悬浮样式。
+    ///
+    /// 为什么要这么做：系统设置成"始终显示滚动条"时，SwiftUI `List` 会画一条贯穿全高的
+    /// **浅灰粗条**，在深色界面上非常扎眼（用户 2026-10-24 截图）。
+    /// SwiftUI 没有暴露这个开关，`NSScroller.preferredScrollerStyle` 又是只读的，
+    /// 只能找到底层的 `NSScrollView` 逐个设置（仅影响本进程）。
+    static func makeScrollersOverlay() {
+        // 扫**所有**窗口（List 可能在子窗口/弹出层里），不只主窗口。
+        for window in NSApp.windows {
+            guard let root = window.contentView else { continue }
+            walkScrollers(root)
+        }
+    }
+
+    private static func walkScrollers(_ root: NSView) {
+        func walk(_ view: NSView) {
+            if let scroll = view as? NSScrollView {
+                scroll.scrollerStyle = .overlay
+                scroll.hasVerticalScroller = true
+                scroll.verticalScroller?.knobStyle = .dark
+            }
+            view.subviews.forEach(walk)
+        }
+        walk(root)
+    }
+
     static func show() {
         NSApp.activate(ignoringOtherApps: true)
         for window in NSApp.windows where window.canBecomeMain {
@@ -135,6 +161,19 @@ struct RootView: View {
             }
         }
         .onAppear {
+            // SwiftUI 的 `.preferredColorScheme(.dark)` 只管 SwiftUI 自己绘制的部分；
+            // **NSScroller / 原生控件仍跟随系统外观**——系统是浅色时，深色界面上会出现
+            // 一条浅灰粗滚动条（2026-10-24 用户截图）。设 NSApp 外观后原生部件一起变深。
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+            // 系统设为"始终显示滚动条"时，深色界面上会出现一条贯穿全高的浅灰粗条。
+            // `NSScroller.preferredScrollerStyle` 是**只读**，只能逐个 NSScrollView 设置，
+            // 所以要等视图树建好再走一遍（见 hideLegacyScrollers）。
+            // List 是懒加载，滚动视图可能晚于 onAppear 创建，所以分几次扫。
+            for delay in [0.4, 1.2, 3.0] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    MainWindow.makeScrollersOverlay()
+                }
+            }
             StatusItemController.shared.sync()
             permissions.refresh()
             // 授权统一收到启动时的一次弹窗里（用户要求）：不授权也照常能用，

@@ -153,17 +153,23 @@ struct CoreGrid: View {
 struct MiniBar: View {
     let ratio: Double
     var tint: Color = Theme.accent
+    /// 给定时用固定宽度：横贯整行会像"加载进度"，视觉权重压过内容
+    /// （2026-10-24 用户反馈"这个条太丑"）。
+    var width: CGFloat? = nil
+    var height: CGFloat = 3
 
     private var clamped: Double { min(max(ratio, 0), 1) }
 
     var body: some View {
         GeometryReader { proxy in
+            let barWidth = width ?? proxy.size.width
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.secondary.opacity(0.10))
                 Capsule()
                     .fill(tint.opacity(0.55))
-                    .frame(width: max(proxy.size.width * clamped, clamped > 0 ? 2 : 0))
+                    .frame(width: max(barWidth * clamped, clamped > 0 ? 2 : 0))
             }
+            .frame(width: barWidth, alignment: .leading)
         }
         .frame(height: 3)
         .accessibilityHidden(true)   // 行本身已有整句标签，条是纯视觉

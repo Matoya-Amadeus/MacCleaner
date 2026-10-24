@@ -285,6 +285,7 @@ struct UpdatesListView: View {
                     }
                 }
                 .listStyle(.inset)
+                .scrollIndicators(.never)
                 .contentMargins(.top, 6, for: .scrollContent)
                 .contentMargins(.bottom, 14, for: .scrollContent)
             }
@@ -582,6 +583,7 @@ struct OrphansListView: View {
                     }
                 }
                 .listStyle(.inset)
+                .scrollIndicators(.never)
                 .contentMargins(.top, 6, for: .scrollContent)
                 .contentMargins(.bottom, 14, for: .scrollContent)
             }

@@ -125,6 +125,9 @@ struct RecommendedView: View {
                     }
                 }
                 .listStyle(.inset)
+                // 系统粗滚动条在深色底上是一条扎眼的浅灰长条（用户 2026-10-24 反馈）。
+                // 隐藏指示器，滚轮/触控板照常滚动。
+                .scrollIndicators(.never)
                 // 顶部留一点，表头不至于顶着筛选栏；底部留一点，最后一行不被底栏压住。
                 .contentMargins(.top, 6, for: .scrollContent)
                 .contentMargins(.bottom, 14, for: .scrollContent)
@@ -236,7 +239,8 @@ struct RecommendedView: View {
             }
         }
         .toggleStyle(.checkbox)
-        .padding(.vertical, 2)
+        // 格式塔·接近性：组**内**要明显紧于组间，所以行内竖向留白收到 1。
+        .padding(.vertical, 1)
         // 与卸载行同一套右键：目标是一条目录时，"看一眼再决定"比盲勾更常见。
         .contextMenu {
             Button("在 Finder 中显示") { Task { await reveal(item.path) } }
@@ -289,9 +293,10 @@ struct RecommendedView: View {
                 Text("\(Int((ratio * 100).rounded()))%")
                     .font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
             }
-            MiniBar(ratio: ratio)
-                .padding(.top, 2)
-                .padding(.trailing, 4)
+            // 固定 96pt：只作为"这组占多大"的轻提示，不再横贯整行抢视线。
+            MiniBar(ratio: ratio, width: 96, height: 3)
+                .frame(height: 3)
+                .padding(.top, 1)
             if !group.hint.isEmpty {
                 Text(group.hint).font(.caption2).foregroundStyle(.tertiary)
             }
