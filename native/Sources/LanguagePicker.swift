@@ -43,7 +43,14 @@ struct LanguagePicker: View {
                 showMenu = true
             }
         }
-        .onTapGesture { showMenu.toggle() }
+        // 只"开"不"toggle"：hover 已经把菜单打开了，再 toggle 会把它关掉——
+        // 表现为"点语言没反应/切不回中文"（2026-10-24 验收抓到）。
+        // 关闭交给 popover 自己（选中条目或点外部）。
+        // 延迟一点再开：popover 若在 mouseDown 当帧打开，紧接着的 mouseUp 会被
+        // 判定为"点在菜单外"，于是打开即关闭（2026-10-24 验收：点语言没反应）。
+        .onTapGesture {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { showMenu = true }
+        }
         .popover(isPresented: $showMenu, arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(AppLanguage.allCases) { item in
