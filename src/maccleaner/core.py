@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import glob
 import hashlib
 import json
@@ -601,6 +602,33 @@ def _find_matching_children(root: Path, needles: Sequence[str]) -> list[Path]:
     return matches
 
 
+def _denied_reason(exc: OSError) -> str:
+    """把文件系统异常翻成"用户能照做"的一句话。
+
+    背景（2026-11-03 用户截图）：`~/Library/Caches/com.apple.Safari` 这类 Apple 应用的
+    数据目录受 TCC 保护，没有「完全磁盘访问权限」时 rename/readdir 都返回 **EPERM**。
+    原始信息 `[Errno 1] Operation not permitted` 看不出该做什么，这里直说缺哪个权限。
+    """
+    if exc.errno in (errno.EPERM, errno.EACCES):
+        return "permission denied (needs full disk access)"
+    return f"{type(exc).__name__}: {exc.strerror or exc}"
+
+
+def _access_blocker(path: Path) -> str | None:
+    """目录能不能读？能返回 None，不能返回原因。
+
+    为什么要在动手前探一次：`shutil.move` 的 rename 被 TCC 拒绝后会**兜底走 copytree**，
+    于是先复制整棵树、再在中途撞上 EPERM——既慢又留下半份副本（用户看到的就是
+    "清理了好久，然后报错"）。
+    """
+    try:
+        with os.scandir(path) as entries:
+            next(entries, None)
+    except OSError as exc:
+        return _denied_reason(exc)
+    return None
+
+
 def _cleanup_tree(
     roots: Sequence[Path],
     *,
@@ -609,12 +637,24 @@ def _cleanup_tree(
     dry_run: bool,
     trash: bool,
     move_whole_paths: bool,
-) -> tuple[int, list[str]]:
+) -> tuple[int, list[str], list[tuple[str, str]]]:
+    """清理若干 root。
+
+    返回 `(reclaimed, changed, blocked)`；`blocked` 是 `(path, reason)` 列表。
+    **单个 root 权限不足只记录、不抛出**：否则一个 Safari 缓存目录就能把整批
+    清理变成 `internal_error`，前面已经移走的也不会出现在报告里。
+    """
     reclaimed = 0
     changed: list[str] = []
+    blocked: list[tuple[str, str]] = []
 
     def record(path: Path) -> None:
         changed.append(str(path))
+
+    def block(path: Path, reason: str) -> None:
+        # 只留前 20 条：一个目录上千个 EPERM 时，报告没必要被刷满。
+        if len(blocked) < 20:
+            blocked.append((str(path), reason))
 
     for root in roots:
         if not root.exists():
@@ -626,24 +666,38 @@ def _cleanup_tree(
             except FileNotFoundError:
                 continue
             if file_older_than(stat_result, cutoff_ts):
-                if not dry_run and not trash:
-                    reclaimed += _accounted_size(stat_result)
-                record(root)
                 if not dry_run:
-                    if trash:
-                        move_to_trash(root, home)
-                    else:
-                        remove_path(root)
+                    try:
+                        if trash:
+                            move_to_trash(root, home)
+                        else:
+                            remove_path(root)
+                    except OSError as exc:
+                        block(root, _denied_reason(exc))
+                        continue
+                    if not trash:
+                        reclaimed += _accounted_size(stat_result)
+                record(root)
+            continue
+
+        # 目录：先确认读得动，再决定"整棵搬走"还是"逐文件搬"。
+        reason = _access_blocker(root)
+        if reason is not None:
+            block(root, reason)
             continue
 
         if trash and move_whole_paths:
             # High-risk approved paths are safest when moved as a whole unit.
-            tree = list(walk_files(root))
-            if tree or root.exists():
-                record(root)
-                if not dry_run:
+            # 这里不再 `list(walk_files(root))` 预遍历——rename 一个目录是 O(1)，
+            # 而全树遍历几十万文件要几十秒（用户 2026-11-03 反馈的"清理好久"）。
+            record(root)
+            if not dry_run:
+                try:
                     move_to_trash(root, home)
-                continue
+                except OSError as exc:
+                    changed.pop()
+                    block(root, _denied_reason(exc))
+            continue
 
         for dirpath, dirnames, filenames in os.walk(root, topdown=False):
             current_dir = Path(dirpath)
@@ -653,32 +707,42 @@ def _cleanup_tree(
                     stat_result = candidate.stat()
                 except FileNotFoundError:
                     continue
+                except OSError as exc:
+                    block(candidate, _denied_reason(exc))
+                    continue
                 if not file_older_than(stat_result, cutoff_ts):
                     continue
-                if not dry_run and not trash:
-                    reclaimed += _accounted_size(stat_result)
-                record(candidate)
                 if not dry_run:
-                    if trash:
-                        move_to_trash(candidate, home)
-                    else:
-                        remove_path(candidate)
+                    try:
+                        if trash:
+                            move_to_trash(candidate, home)
+                        else:
+                            remove_path(candidate)
+                    except FileNotFoundError:
+                        continue
+                    except OSError as exc:
+                        block(candidate, _denied_reason(exc))
+                        continue
+                    if not trash:
+                        reclaimed += _accounted_size(stat_result)
+                record(candidate)
             if current_dir == root:
                 continue
             try:
                 if not any(current_dir.iterdir()):
-                    record(current_dir)
                     if not dry_run:
                         if trash:
                             move_to_trash(current_dir, home)
                         else:
                             remove_path(current_dir)
+                    record(current_dir)
             except FileNotFoundError:
                 continue
-            except PermissionError:
+            except OSError as exc:
+                block(current_dir, _denied_reason(exc))
                 continue
 
-    return reclaimed, changed
+    return reclaimed, changed, blocked
 
 
 def _trace_needles(target_path: Path, keyword: str) -> tuple[str, ...]:
@@ -2177,9 +2241,15 @@ class StorageManager:
             return 0, output or f"command failed ({proc.returncode})"
         return 0, output
 
-    def _execute_filesystem_target(self, target: CleanupTarget) -> tuple[int, list[str]]:
+    def _execute_filesystem_target(
+        self, target: CleanupTarget
+    ) -> tuple[int, list[str], list[tuple[str, str]]]:
         cutoff_ts = time.time() - _effective_cutoff_seconds(target, days_to_keep=self.context.days_to_keep)
-        trash = target.kind == "trash_tree" or (
+        # "清空废纸篓"不能也走 move 到废纸篓：那会把 ~/.Trash 里的东西搬进 ~/.Trash 自己，
+        # 每个文件 rename 一次（本机 29k 项 / 5.4 GB，慢得像卡死），而且磁盘一点不释放。
+        # 只有把内容真正删掉才是这个目标的本意（2026-11-03 排查"清理好久"时发现）。
+        is_trash_dir = any(path == self.context.home / ".Trash" for path in target.paths)
+        trash = (target.kind == "trash_tree" and not is_trash_dir) or (
             self.context.prefer_trash and target.kind == "purge_tree"
         )
         move_whole_paths = bool(target.metadata.get("move_whole_paths"))
@@ -2286,7 +2356,7 @@ class StorageManager:
                     if proc.returncode != 0:
                         item.reason = f"flutter clean failed ({proc.returncode})"
                         item.status = "failed"
-                reclaimed, changed = self._execute_filesystem_target(
+                reclaimed, changed, blocked = self._execute_filesystem_target(
                     CleanupTarget(
                         target_id=target.target_id,
                         name=target.name,
@@ -2309,7 +2379,7 @@ class StorageManager:
                     item.reason = "flutter project cleaned" if should_apply else "dry-run"
                 continue
 
-            reclaimed, changed = self._execute_filesystem_target(target)
+            reclaimed, changed, blocked = self._execute_filesystem_target(target)
             item.actual_bytes = reclaimed
             actual_reclaimed += reclaimed
             if should_apply and changed:
@@ -2317,9 +2387,20 @@ class StorageManager:
             if not should_apply:
                 item.status = "planned"
                 item.reason = "dry-run"
+            elif blocked and not changed:
+                # 一个都没动成功（典型：TCC 拒绝整个目录）→ 这是"跳过"，不是"已清理"。
+                # 状态给 skipped 而不是 failed：权限没给不属于内核出错，界面按
+                # 「跳过 + 原因」展示才说得通（以前这里恒为 cleaned，还顺手把异常抛成 internal_error）。
+                item.status = "skipped"
+                path, reason = blocked[0]
+                item.reason = f"{reason}: {path}"
+            elif blocked:
+                item.status = "cleaned"
+                path, reason = blocked[0]
+                item.reason = f"cleaned; {len(blocked)} path(s) skipped ({reason}: {path})"
             else:
-                item.status = "cleaned" if reclaimed > 0 or target.paths else "cleaned"
-                item.reason = "cleaned"
+                item.status = "cleaned"
+                item.reason = "cleaned" if changed else "nothing to clean"
 
         self.cache.invalidate(changed_targets)
         return plan_items, actual_reclaimed

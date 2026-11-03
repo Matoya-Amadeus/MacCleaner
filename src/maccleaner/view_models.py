@@ -64,6 +64,30 @@ def _first_path(item: dict[str, Any]) -> str:
     return str(paths[0]) if paths else ""
 
 
+def _needs_full_disk_access(paths: Iterable[str]) -> bool:
+    """这些路径里有没有「不授权就读不动」的（macOS 的 TCC 保护位置）。
+
+    为什么要单独标出来：`~/Library/Caches/com.apple.Safari` 这类 Apple 应用数据
+    在没授权时 `readdir` 直接返回 **EPERM**，界面却只会显示 0 B——用户看不出
+    "这项为什么清不掉"。标一个 `needs_full_disk_access`，界面才能当场提示授权
+    （2026-11-03 用户反馈：不该让人自己去系统设置里翻）。
+
+    探测是只读的一次 readdir，TCC 拒绝时**不会**弹系统框。
+    """
+    from .core import _access_blocker
+
+    for raw in paths:
+        try:
+            path = Path(str(raw)).expanduser()
+            if not path.is_dir():
+                continue
+        except OSError:
+            continue
+        if _access_blocker(path) is not None:
+            return True
+    return False
+
+
 def review_candidates(report: dict[str, Any]) -> list[dict[str, Any]]:
     """内核报告 → 审阅候选（只保留**有体量**的条目，避免一屏 0 字节噪声）。"""
     candidates: list[dict[str, Any]] = []
@@ -71,6 +95,7 @@ def review_candidates(report: dict[str, Any]) -> list[dict[str, Any]]:
         estimated = int(item.get("estimated_bytes") or 0)
         if estimated <= 0:
             continue
+        paths = [str(value) for value in (item.get("paths") or [])]
         candidates.append(
             {
                 "path": _first_path(item),
@@ -83,6 +108,7 @@ def review_candidates(report: dict[str, Any]) -> list[dict[str, Any]]:
                 "requires_confirmation": bool(item.get("requires_confirmation")),
                 "status": str(item.get("status") or ""),
                 "target_id": str(item.get("target_id") or ""),
+                "needs_full_disk_access": _needs_full_disk_access(paths or [_first_path(item)]),
             }
         )
     return candidates

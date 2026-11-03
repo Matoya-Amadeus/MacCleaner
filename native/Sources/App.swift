@@ -204,9 +204,25 @@ struct RootView: View {
         .sheet(isPresented: $showPermissions) {
             PermissionSheet(store: permissions) { showPermissions = false }
         }
-        // 去系统设置授权后回到 App：TCC 的变更对**已运行进程**不生效，系统要求重启。
-        // 用户不该被要求手动关开——这里自动重启一次（只一次，标记即刻清掉，避免循环）。
+        // 回到前台只做一件事：**对比授权前后值**。
+        //
+        // 踩过的坑（2026-11-03 用户反馈"我没关 App，只是切出去，切回来又重新扫描了"）：
+        // 以前是"点过【去授权】就标记重启"，于是切出去看一眼、什么都没勾再切回来，
+        // 整个 App 也会重启一次——勾选状态和扫描结果全丢。
+        // 现在只有 `false → true` 真的拿到权限才动作，而且只重启 core 子进程：
+        // TCC 判定跟着进程走，界面不需要重启，也就不会闪一下再重扫。
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            let hadFullDiskAccess = permissions.hasFullDiskAccess
+            permissions.refresh()
+            if !hadFullDiskAccess, permissions.hasFullDiskAccess {
+                Task {
+                    await CoreClient.shared.restart()
+                    // 权限变了，之前读不到的目录现在能读了：刷新当前页才算准。
+                    NotificationCenter.default.post(name: .mcReload, object: nil)
+                }
+                return
+            }
+            // 其它授权（如卸载需要的「App 管理」）没有探针，只能沿用"授权后重启"的老办法。
             if UserDefaults.standard.bool(forKey: "needsRestartAfterPermission") {
                 UserDefaults.standard.set(false, forKey: "needsRestartAfterPermission")
                 AppRelaunch.once()

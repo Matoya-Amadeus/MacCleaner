@@ -31,16 +31,31 @@ final class PermissionStore: ObservableObject {
         hasFullDiskAccess || !grantedFolders.isEmpty
     }
 
+    /// 探针必须读一个**只有 FDA 才能读**的位置：没授权时返回的是 EPERM 而不是 EACCES。
+    ///
+    /// 以前读 `~/Library/Application Support/com.apple.TCC/TCC.db`——macOS 14 起用户级
+    /// TCC 数据库已经不存在了，于是 `probe()` 恒为 false：界面永远认为没权限、
+    /// 清理时也不会跳过 Apple 应用的数据目录，最后撞上 TCC 变成一条报错
+    /// （2026-11-03 排查用户 `com.apple.Safari` 清理失败时发现）。
     static func probe() -> Bool {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let db = home.appendingPathComponent("Library/Application Support/com.apple.TCC/TCC.db")
-        guard let handle = try? FileHandle(forReadingFrom: db) else { return false }
-        defer { try? handle.close() }
-        _ = try? handle.read(upToCount: 1)
-        return true
+        // 任一可读即可证明有 FDA；都不存在时只能保守地当作"没有"。
+        for relative in ["Library/Safari", "Library/Mail", "Library/Messages",
+                         "Library/Application Support/com.apple.TCC"] {
+            let url = home.appendingPathComponent(relative)
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            if canRead(url.path) { return true }
+        }
+        return false
     }
 
     static func canRead(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else { return false }
+        if isDirectory.boolValue {
+            // 目录不能交给 FileHandle（open 目录再 read 会失败），列一次就够。
+            return (try? FileManager.default.contentsOfDirectory(atPath: path)) != nil
+        }
         guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else { return false }
         defer { try? handle.close() }
         _ = try? handle.read(upToCount: 1)
@@ -75,16 +90,37 @@ final class PermissionStore: ObservableObject {
         }
     }
 
+    /// 复查授权状态。
+    ///
+    /// **值没变就不要赋值**：`@Published` 每次赋值都会通知整棵视图树重算，
+    /// 而本方法挂在 `didBecomeActive` 上（每次切回 App 都跑）。之前无条件赋值，
+    /// 于是"切出去看一眼再切回来"也会触发一轮刷新（用户 2026-11-03 反馈）。
     func refresh() {
-        hasFullDiskAccess = Self.probe()
-        grantedFolders = grantedFolders.filter { Self.canRead($0) }
-        UserDefaults.standard.set(Array(grantedFolders), forKey: Self.grantedKey)
+        let fullDisk = Self.probe()
+        if fullDisk != hasFullDiskAccess { hasFullDiskAccess = fullDisk }
+
+        let alive = grantedFolders.filter { Self.canRead($0) }
+        if alive != grantedFolders {
+            grantedFolders = alive
+            UserDefaults.standard.set(Array(alive), forKey: Self.grantedKey)
+        }
     }
 
     func openSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    /// 打开「完全磁盘访问权限」面板。
+    ///
+    /// **不在这里标记重启**：以前一打开设置就写 `needsRestartAfterPermission`，
+    /// 用户只是切出去看一眼、什么都没勾就切回来，App 也会整个重启一次
+    /// （勾选状态与扫描结果全丢，表现成"莫名其妙又在扫描"，2026-11-03 反馈）。
+    /// 现在由 `App.swift` 的 `didBecomeActive` 对比授权前后值：真的拿到权限才动作，
+    /// 而且只重启 core 子进程，不重启界面。
+    func openFullDiskAccessSettings() {
+        openSettings()
     }
 }
 
@@ -100,6 +136,27 @@ struct PermissionSheet: View {
             HStack(spacing: 8) {
                 Image(systemName: "lock.shield").foregroundStyle(.orange)
                 Text("授权读取几个文件夹").font(.headline)
+            }
+
+            // 完全磁盘访问：清理 Safari / 邮件 / 信息这类 Apple 应用数据的前提。
+            // 放在最上面，因为它是"清理点了没反应"最常见的原因（2026-11-03 用户反馈）。
+            if !store.hasFullDiskAccess {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "externaldrive.badge.exclamationmark")
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("清理 Safari 等 Apple 应用缓存需要「完全磁盘访问权限」")
+                            .font(.callout.weight(.medium))
+                        Text("没有它，这些目录会被跳过——macOS 不允许任何 App 读取。授权后 App 会自动重启。")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 6)
+                    Button("打开设置") { store.openFullDiskAccessSettings() }
+                        .controlSize(.small)
+                }
+                .padding(10)
+                .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
             }
 
             Text("「下载 / 桌面 / 文稿」属于 macOS 的受保护目录。系统本来会为**每个**文件夹各弹一次框——那样要点三次。")
@@ -135,7 +192,7 @@ struct PermissionSheet: View {
             }
 
             HStack {
-                Button("打开系统设置（完整权限）") { store.openSettings() }
+                Button("打开系统设置（完整权限）") { store.openFullDiskAccessSettings() }
                     .controlSize(.small)
                 Spacer()
                 Button("以后再说", action: onClose).keyboardShortcut(.cancelAction)

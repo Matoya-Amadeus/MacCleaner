@@ -73,6 +73,8 @@ struct RecommendedView: View {
     @StateObject private var timer = ElapsedTimer()
     @State private var busy = false
     @State private var completion: CleanCompletion?
+    /// 授权状态用 @ObservedObject 订阅：用户在系统设置里勾上之后，这一页要立刻不再提示。
+    @ObservedObject private var permissions = PermissionStore.shared
 
     struct Item: Identifiable {
         let id: String          // target_id
@@ -81,6 +83,8 @@ struct RecommendedView: View {
         let bytes: Int64
         let risk: String
         let recoverable: Bool
+        /// 落在 macOS 的 TCC 保护位置（Safari 等 Apple 应用数据）：没授权就只能跳过。
+        var needsFullDiskAccess: Bool = false
     }
 
     struct Group: Identifiable {
@@ -97,6 +101,13 @@ struct RecommendedView: View {
 
     private var riskyChecked: Bool {
         groups.flatMap(\.items).contains { checked.contains($0.id) && $0.risk != "low" }
+    }
+
+    /// 勾选里有多少项**因为没授权就清不掉**。确认面板据此当场给授权入口，
+    /// 而不是等清理跑完再报一条看不懂的错误。
+    private var checkedNeedingPermission: Int {
+        guard !permissions.hasFullDiskAccess else { return 0 }
+        return groups.flatMap(\.items).filter { checked.contains($0.id) && $0.needsFullDiskAccess }.count
     }
 
     var body: some View {
@@ -193,7 +204,13 @@ struct RecommendedView: View {
                 count: checked.count,
                 bytes: checkedBytes,
                 hasRisk: riskyChecked,
+                needsPermissionCount: checkedNeedingPermission,
                 onConfirm: { Task { await performClean() } },
+                onOpenSettings: {
+                    // 面板挡着系统设置，先收起来；授权后回来自动重启（didBecomeActive）。
+                    confirming = false
+                    permissions.openFullDiskAccessSettings()
+                },
                 onCancel: { confirming = false }
             )
         }
@@ -250,6 +267,14 @@ struct RecommendedView: View {
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background(Color.orange.opacity(0.16), in: Capsule())
                                 .foregroundStyle(.orange)
+                        }
+                        // 没授权就清不掉的项，先在行上标出来：用户不会在点了清理之后
+                        // 才发现"Safari 缓存怎么没动"（2026-11-03 用户反馈）。
+                        if item.needsFullDiskAccess && !permissions.hasFullDiskAccess {
+                            Text("需要权限").font(.caption2)
+                                .padding(.horizontal, 5).padding(.vertical, 1)
+                                .background(Color.secondary.opacity(0.14), in: Capsule())
+                                .foregroundStyle(.secondary)
                         }
                     }
                     Text(displayPath(item.path)).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
@@ -397,7 +422,8 @@ struct RecommendedView: View {
                         path: raw["path"]?.stringValue ?? "",
                         bytes: raw["allocated_bytes"]?.intValue ?? 0,
                         risk: raw["risk"]?.stringValue ?? "low",
-                        recoverable: raw["recoverable"]?.boolValue ?? true
+                        recoverable: raw["recoverable"]?.boolValue ?? true,
+                        needsFullDiskAccess: raw["needs_full_disk_access"]?.boolValue ?? false
                     )
                 }
                 return items.isEmpty ? nil : Group(key: key, label: label, hint: group["hint"]?.stringValue ?? "", items: items)
@@ -467,7 +493,10 @@ struct ConfirmCleanSheet: View {
     let count: Int
     let bytes: Int64
     let hasRisk: Bool
+    /// 勾选里因为缺「完全磁盘访问权限」而清不掉的数量（在确认这一步就说清楚）。
+    var needsPermissionCount: Int = 0
     let onConfirm: () -> Void
+    var onOpenSettings: () -> Void = {}
     let onCancel: () -> Void
 
     @State private var riskAcknowledged = false
@@ -479,6 +508,23 @@ struct ConfirmCleanSheet: View {
                 .font(.callout)
             Text("移入废纸篓后可以恢复；清空废纸篓才会真正释放空间。")
                 .font(.caption).foregroundStyle(.secondary)
+
+            if needsPermissionCount > 0 {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "lock.shield").foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("其中 \(needsPermissionCount) 项需要「完全磁盘访问权限」")
+                            .font(.callout.weight(.medium))
+                        Text("没有授权时它们会被跳过（Safari / 邮件 / 信息这类 Apple 应用数据）。授权后 App 会自动重启，再清一次即可。")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 6)
+                    Button("去授权", action: onOpenSettings).controlSize(.small)
+                }
+                .padding(10)
+                .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+            }
 
             if hasRisk {
                 Toggle("包含需要你确认的项目（Downloads / 安装包 / 容器等）", isOn: $riskAcknowledged)

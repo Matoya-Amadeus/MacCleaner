@@ -1,12 +1,22 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import copy_metadata
+
+datas = []
+hiddenimports = ['mcp', 'mcp.server.fastmcp', 'maccleaner.mcp_server']
+datas += collect_data_files('mcp')
+datas += copy_metadata('mcp')
+hiddenimports += collect_submodules('mcp.server')
+hiddenimports += collect_submodules('mcp.shared')
 
 
 a = Analysis(
     ['scripts/core_entry.py'],
     pathex=['src'],
     binaries=[],
-    datas=[],
-    hiddenimports=[],
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

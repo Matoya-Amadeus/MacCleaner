@@ -54,6 +54,26 @@ struct CompletionSheet: View {
                 }
             }
 
+            // 跳过原因里唯一"用户自己能修"的一种：缺完全磁盘访问。
+            // 否则这条会被读成"工具有 bug"，用户还得自己去翻系统设置（2026-11-03 反馈）。
+            if permissionSkipped > 0 {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "lock.shield").foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("有 \(permissionSkipped) 项需要「完全磁盘访问权限」")
+                            .font(.callout.weight(.medium))
+                        Text("Safari / 邮件 / 信息这类 Apple 应用数据被 macOS 保护着，没授权就只能跳过。授权后 App 会自动重启。")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 6)
+                    Button("去授权") { PermissionStore.shared.openFullDiskAccessSettings() }
+                        .controlSize(.small)
+                }
+                .padding(10)
+                .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+            }
+
             if let error {
                 Text(error).font(.caption).foregroundStyle(.red)
             }
@@ -79,6 +99,15 @@ struct CompletionSheet: View {
         }
         .padding(22)
         .frame(width: 520)
+    }
+
+    /// 有多少项是被 TCC 挡下的（内核给的原因形如
+    /// `permission denied (needs full disk access): ~/Library/Caches/com.apple.Safari`）。
+    private var permissionSkipped: Int {
+        completion.skipped.filter { item in
+            let reason = item.reason.lowercased()
+            return reason.contains("full disk access") || reason.contains("not permitted")
+        }.count
     }
 
     private func stat(_ title: String, _ value: String, _ footnote: String) -> some View {

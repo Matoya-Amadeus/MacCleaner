@@ -86,6 +86,20 @@ actor CoreClient {
         started = false
     }
 
+    /// 重启内核子进程（**不**重启界面）。
+    ///
+    /// 用途：用户刚在系统设置里授予「完全磁盘访问权限」。TCC 的判定跟着**进程**走，
+    /// 老进程会一直拿到 EPERM，换一个新进程就生效了——界面和勾选状态不必跟着重启。
+    /// 下一次 `request` 会自动 `startIfNeeded()` 起新进程。
+    func restart() {
+        // 先把在飞的请求结束掉，否则界面上的转圈永远不会停。
+        failAll(CoreFailure(code: "core_restart", message: "内核已重启"))
+        process?.terminate()
+        process = nil
+        input = nil
+        started = false
+    }
+
     // MARK: - 请求
 
     /// 发一个命令，等终态。慢命令会先推 `started` 事件，界面据此显示进度。
