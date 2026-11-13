@@ -186,6 +186,31 @@ class UninstallAndUpdatesServiceTests(unittest.TestCase):
             self.assertIn("plan_hash", result)
             self.assertTrue(app.is_dir(), "只读：计划生成不得移动任何东西")
 
+    def test_system_diagnostics_is_read_only_and_plan_free(self) -> None:
+        """新工具直连内核纯函数：不构造清理计划，也不碰 apply()。"""
+        from unittest.mock import patch
+
+        from maccleaner.mcp_service import StorageService
+
+        fake = {"processes": [{"cpu_instant": 12.5}], "limitations": []}
+        with patch("maccleaner.deps.system_detail_report", return_value=fake) as spy, \
+                patch.object(StorageService, "apply", side_effect=AssertionError("must not apply")):
+            result = StorageService().system_diagnostics()
+        self.assertTrue(spy.called)
+        self.assertEqual(result, fake)
+
+    def test_system_diagnostics_forwards_include_btm_only_when_asked(self) -> None:
+        from unittest.mock import patch
+
+        from maccleaner.mcp_service import StorageService
+
+        with patch("maccleaner.deps.system_detail_report", return_value={}) as spy:
+            StorageService().system_diagnostics()
+            self.assertFalse(spy.call_args.kwargs.get("include_btm", False),
+                             "默认不许碰会卡死的 BTM 守护进程")
+            StorageService().system_diagnostics(include_btm=True)
+            self.assertEqual(spy.call_args.kwargs, {"include_btm": True})
+
     def test_updates_check_delegates_to_the_module(self) -> None:
         from unittest.mock import patch
 

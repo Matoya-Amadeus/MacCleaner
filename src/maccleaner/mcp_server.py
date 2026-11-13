@@ -100,6 +100,11 @@ def build_mcp_server(service: StorageService | None = None):  # noqa: ANN201
         return storage.uninstall_plan(app_path=app_path, bundle_id=bundle_id, app_name=app_name)
 
     @mcp.tool()
+    def system_diagnostics(include_btm: bool = False) -> dict[str, object]:
+        """Read-only performance diagnostics: instant CPU, memory pressure, startup items, disk health, displays and indexing. Never mutates or tunes anything. Set include_btm=True only when the BTM daemon is responsive; default uses stable launchctl/plist sources."""
+        return storage.system_diagnostics(include_btm=include_btm)
+
+    @mcp.tool()
     def updates_check() -> dict[str, object]:
         """List third-party updates (Homebrew + App Store). macOS system updates are out of scope."""
         return storage.updates_check()

@@ -6,6 +6,9 @@ extension Notification.Name {
     static let mcReload = Notification.Name("mc.reload")
     /// ⌘1–4：切换侧栏入口（菜单项发，RootView 收）。
     static let mcSelectSection = Notification.Name("mc.selectSection")
+    /// 慢诊断命令的 `started` 事件：CoreClient 在后台线程收到后发通知，
+    /// 界面用 `.onReceive` 更新进度，避免在 `@Sendable` 闭包里捕获 View。
+    static let mcDiagnosticProgress = Notification.Name("mc.diagnosticProgress")
 }
 
 /// 侧边栏 4 个入口（2026-10-22 合并，原 8 个）：

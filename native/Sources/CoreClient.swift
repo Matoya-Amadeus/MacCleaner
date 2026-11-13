@@ -19,6 +19,10 @@ enum CoreEvent: Sendable {
 actor CoreClient {
     static let shared = CoreClient()
 
+    /// 界面支持的协议版本（与 `core_service.PROTOCOL_VERSION` 对齐）。
+    /// 契约要求「界面按 v 做分支」：终态版本不匹配时必须明确报错，不能按旧结构硬解。
+    static let supportedProtocolVersion: Int64 = 1
+
     private var process: Process?
     private var input: FileHandle?
     private var pending: [String: CheckedContinuation<JSONValue, Error>] = [:]
@@ -166,6 +170,12 @@ actor CoreClient {
         handlers.removeValue(forKey: id)
 
         if object["ok"]?.boolValue == true {
+            if let version = object["v"]?.intValue, version != Self.supportedProtocolVersion {
+                continuation.resume(throwing: CoreFailure(
+                    code: "protocol_mismatch",
+                    message: "内核协议 v\(version)，界面只支持 v\(Self.supportedProtocolVersion)"))
+                return
+            }
             continuation.resume(returning: object["data"] ?? .null)
         } else {
             let code = object["error"]?["code"]?.stringValue ?? "error"

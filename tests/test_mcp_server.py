@@ -72,6 +72,7 @@ class McpTransportTests(unittest.TestCase):
                 "uninstall_plan",
                 "updates_check",
                 "updates_apply",
+                "system_diagnostics",
             },
         )
 
@@ -102,6 +103,7 @@ class McpTransportTests(unittest.TestCase):
                     "uninstall_plan",
                     "updates_check",
                     "updates_apply",
+                    "system_diagnostics",
                 },
             )
             apply_tool = next(tool for tool in tools if tool.name == "apply_storage_plan")

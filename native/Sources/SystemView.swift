@@ -5,13 +5,25 @@ struct SystemView: View {
     @Environment(\.appLanguage) private var language
 
     @State private var model: Model?
+    @State private var detail: Detail?
     @State private var error: String?
+    @State private var detailError: String?
     @State private var sampledAt: Date?
+    @State private var detailStage: String?
+    @State private var processLimit: Int = 6
 
     struct Process: Identifiable {
         let id = UUID()
         let name: String
         let cpu: Double
+        let rss: Int64
+    }
+
+    struct InstantProcess: Identifiable {
+        let id = UUID()
+        let name: String
+        let cpuInstant: Double
+        let cpuLifetime: Double?
         let rss: Int64
     }
 
@@ -23,6 +35,37 @@ struct SystemView: View {
         let battery: Battery?
         let processes: [Process]
         let throttled: Bool
+    }
+
+    /// `system.detail` 的只读诊断数据；旧 `system` 的累计均值语义不在此复用。
+    struct Detail {
+        let sampledAt: String
+        let intervalMs: Int
+        let cpuIdle: Double?
+        let cpuCount: Int
+        let processes: [InstantProcess]
+        let memoryFreePercent: Int?
+        let swapUsed: Int64
+        let compressorPages: Int64
+        let pageins: Int64
+        let smartStatus: String
+        let diskFree: Int64
+        let snapshots: [String]
+        let hardware: String
+        let osVersion: String
+        let displays: [String]
+        let enabledItems: Int
+        let startupAvailable: Bool
+        let launchctlItems: Int
+        let runAtLoad: Int
+        let periodic: Int
+        let bootToPowerd: Int?
+        let bootTime: String
+        let indexingVolumes: [String]
+        let filevault: String
+        let thermalLimits: String
+        let batteryCapacity: String
+        let limitations: [String]
     }
 
     struct Battery {
@@ -46,12 +89,20 @@ struct SystemView: View {
                 if let error {
                     StatusBanner(level: .error, text: error)
                 }
+                if let detailError {
+                    StatusBanner(level: .warn, text: detailError)
+                }
                 if let model {
                     statsGrid(model)
                     batteryBlock(model)
                     processList(model)
                 } else if error == nil {
                     ProgressView("读取系统状态…").padding(.top, 60)
+                }
+                if let detail {
+                    diagnosticsBlock(detail)
+                } else if detailError == nil && model != nil {
+                    ProgressView(detailStage ?? "采样瞬时 CPU 与开机项…").padding(.top, 20)
                 }
             }
             .scrollIndicators(.never)
@@ -64,6 +115,11 @@ struct SystemView: View {
         .task { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .mcReload)) { _ in
             Task { await load() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .mcDiagnosticProgress)) { note in
+            if let op = note.userInfo?["op"] as? String {
+                detailStage = "正在采样 \(op)…"
+            }
         }
     }
 
@@ -203,12 +259,106 @@ struct SystemView: View {
     }
 
     @ViewBuilder
+    private func diagnosticsBlock(_ detail: Detail) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("性能诊断").font(.headline)
+                Text("只读 · \(detail.intervalMs) ms 瞬时采样 · \(detail.sampledAt)")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Text("下方「瞬时 CPU」是 top 二次采样值；上面「累计平均 CPU」是 ps %cpu 自进程启动以来的衰减均值，两者口径不同，不能混用。")
+                .font(.caption2).foregroundStyle(.tertiary)
+
+            HStack(alignment: .top, spacing: 14) {
+                statCard(title: "CPU 空闲（瞬时）",
+                         value: detail.cpuIdle.map { String(format: "%.0f%%", $0) } ?? "—",
+                         footnote: "\(detail.cpuCount) 核" )
+                statCard(title: "内存压力",
+                         value: detail.memoryFreePercent.map { "空闲 \($0)%" } ?? "—",
+                         footnote: "swap \(ByteText.format(detail.swapUsed)) · 压缩 \(detail.compressorPages) 页 · pageins \(detail.pageins)")
+                statCard(title: "磁盘健康",
+                         value: detail.smartStatus,
+                         footnote: "可用 \(ByteText.format(detail.diskFree)) · 本地快照 \(detail.snapshots.count) 个")
+            }
+            HStack(alignment: .top, spacing: 14) {
+                statCard(title: "机型与系统",
+                         value: detail.hardware,
+                         footnote: detail.osVersion)
+                statCard(title: "开机与后台项",
+                         value: detail.bootToPowerd.map { "\($0) s 到 powerd" } ?? "—",
+                         footnote: (detail.startupAvailable
+                            ? "BTM 已启用 \(detail.enabledItems)"
+                            : "BTM 未测到")
+                            + " · launchctl \(detail.launchctlItems) · RunAtLoad \(detail.runAtLoad) · 周期 \(detail.periodic)")
+                statCard(title: "显示器 / 索引",
+                         value: "\(detail.displays.count) 块屏",
+                         footnote: "索引卷 \(detail.indexingVolumes.count) · FileVault \(detail.filevault)")
+            }
+            if !detail.thermalLimits.isEmpty || !detail.batteryCapacity.isEmpty {
+                Text([detail.thermalLimits, detail.batteryCapacity].filter { !$0.isEmpty }.joined(separator: "　·　"))
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+            if !detail.processes.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("瞬时 CPU 占用最高的进程").font(.headline)
+                    let peak = max(detail.processes.map(\.cpuInstant).max() ?? 100, 100)
+                    ForEach(Array(detail.processes.prefix(8))) { item in
+                        HStack {
+                            Image(systemName: "bolt.horizontal").foregroundStyle(.secondary).frame(width: 20)
+                            Text(item.name).lineLimit(1)
+                            Spacer(minLength: 12)
+                            if let lifetime = item.cpuLifetime {
+                                Text(String(format: "累计 %.1f%%", lifetime))
+                                    .font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
+                            }
+                            Text(String(format: "%.1f%%", item.cpuInstant))
+                                .font(.caption).monospacedDigit()
+                                .frame(width: 56, alignment: .trailing)
+                            MiniBar(ratio: item.cpuInstant / peak, tint: Theme.accent)
+                                .frame(width: 60)
+                        }
+                        .padding(.vertical, 3)
+                        Divider().opacity(0.4)
+                    }
+                }
+            }
+            if !detail.displays.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("显示器").font(.subheadline)
+                    ForEach(detail.displays, id: \.self) { line in
+                        Text(line).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if !detail.limitations.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("测不到的项目（明说）").font(.subheadline)
+                    ForEach(detail.limitations, id: \.self) { line in
+                        Text("· \(line)").font(.caption2).foregroundStyle(.tertiary)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
     private func processList(_ model: Model) -> some View {
         if !model.processes.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("占用最高的进程").font(.headline)
-                    Text("按 CPU 排序 · \(model.processes.count) 个").font(.caption).foregroundStyle(.secondary)
+                    Text("累计平均 CPU（ps %cpu）").font(.headline)
+                    Text("前 \(model.processes.count) 个 · 非瞬时值").font(.caption).foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Picker("显示数量", selection: $processLimit) {
+                        Text("6 个").tag(6)
+                        Text("12 个").tag(12)
+                        Text("20 个").tag(20)
+                    }
+                    .labelsHidden()
+                    .frame(width: 96)
+                    .onChange(of: processLimit) { _ in
+                        Task { await loadSystem() }
+                    }
                 }
                 let peak = max(model.processes.map(\.cpu).max() ?? 100, 100)
                 VStack(spacing: 0) {
@@ -240,8 +390,15 @@ struct SystemView: View {
     // MARK: - 数据
 
     private func load() async {
+        await loadSystem()
+        await loadDetail()
+    }
+
+    /// 快快照单独拆出来：改「显示几个进程」时只重取这一条，不重跑 3 秒诊断采样。
+    private func loadSystem() async {
         do {
-            let data = try await CoreClient.shared.request("system")
+            let data = try await CoreClient.shared.request(
+                "system", args: ["limit": .int(processLimit)])
             let power = data["power"]
             let battery: Battery? = {
                 guard let power, let percent = power["percent"]?.intValue else { return nil }
@@ -272,5 +429,91 @@ struct SystemView: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    /// 诊断是慢命令（>0.3s，内核先发 started 事件）；单独请求，失败不影响上方快快照。
+    private func loadDetail() async {
+        do {
+            let data = try await CoreClient.shared.request("system.detail") { event in
+                if case .started(let op) = event {
+                    NotificationCenter.default.post(name: .mcDiagnosticProgress,
+                                                    object: nil, userInfo: ["op": op])
+                }
+            }
+            detail = Self.parseDetail(data)
+            detailError = nil
+            detailStage = nil
+        } catch {
+            detailError = "性能诊断采样失败：\(error.localizedDescription)"
+            detailStage = nil
+        }
+    }
+
+    private static func parseDetail(_ data: JSONValue) -> Detail {
+        let memory = data["memory"]
+        let disk = data["disk"]
+        let hardware = data["hardware"]
+        let startup = data["startup"]
+        let thermal = data["thermal"]
+        let power = data["power"]
+        let chip = hardware?["chip"]?.stringValue ?? hardware?["model_name"]?.stringValue ?? "—"
+        let cores = hardware?["cores"]?.stringValue ?? ""
+        let ram = hardware?["memory"]?.stringValue ?? ""
+        let hardwareLine = [chip, cores.isEmpty ? nil : "\(cores) 核", ram]
+            .compactMap { $0 }.joined(separator: " · ")
+        let version = hardware?["os_version"]?.stringValue ?? ""
+        let build = hardware?["os_build"]?.stringValue ?? ""
+        let osLine = [version.isEmpty ? nil : "macOS \(version)", build.isEmpty ? nil : "(\(build))"]
+            .compactMap { $0 }.joined(separator: " ")
+        let limits = [thermal?["speed_limit"]?.intValue.map { "速度上限 \($0)%" },
+                      thermal?["scheduler_limit"]?.intValue.map { "调度上限 \($0)%" }]
+            .compactMap { $0 }.joined(separator: " · ")
+        let capacity = [power?["design_mah"]?.intValue.map { "设计 \($0) mAh" },
+                        power?["full_mah"]?.intValue.map { "满充 \($0) mAh" }]
+            .compactMap { $0 }.joined(separator: " · ")
+        let displays = (data["displays"]?.arrayValue ?? []).map { item -> String in
+            let resolution = item["resolution"]?.stringValue ?? "—"
+            let looks = item["looks_like"]?.stringValue
+            let main = item["main"]?.stringValue == "Yes" ? " · 主屏" : ""
+            return [resolution, looks].compactMap { $0 }.joined(separator: " · ") + main
+        }
+        let processes: [InstantProcess] = (data["processes"]?.arrayValue ?? []).compactMap { item in
+            guard let name = item["name"]?.stringValue else { return nil }
+            return InstantProcess(
+                name: name,
+                cpuInstant: item["cpu_instant"]?.doubleValue ?? 0,
+                cpuLifetime: item["cpu_lifetime"]?.doubleValue,
+                rss: item["rss"]?.intValue ?? 0
+            )
+        }
+        return Detail(
+            sampledAt: data["sampled_at"]?.stringValue ?? "",
+            intervalMs: Int(data["sample_interval_ms"]?.intValue ?? 0),
+            cpuIdle: data["cpu_idle_percent"]?.doubleValue,
+            cpuCount: Int(data["cpu_count"]?.intValue ?? 0),
+            processes: processes,
+            memoryFreePercent: memory?["free_percentage"]?.intValue.map(Int.init),
+            swapUsed: memory?["swap_used_bytes"]?.intValue ?? 0,
+            compressorPages: memory?["compressor_pages"]?.intValue ?? 0,
+            pageins: memory?["pageins"]?.intValue ?? 0,
+            smartStatus: disk?["smart_status"]?.stringValue ?? "—",
+            diskFree: disk?["free"]?.intValue ?? 0,
+            snapshots: (disk?["snapshots"]?.arrayValue ?? []).compactMap { $0.stringValue },
+            hardware: hardwareLine,
+            osVersion: osLine,
+            displays: displays,
+            enabledItems: Int(startup?["enabled_count"]?.intValue ?? 0),
+            startupAvailable: startup?["available"]?.boolValue ?? false,
+            launchctlItems: Int(startup?["launchctl"]?["count"]?.intValue ?? 0),
+            runAtLoad: (startup?["run_at_load"]?.arrayValue ?? []).count,
+            periodic: (startup?["periodic"]?.arrayValue ?? []).count,
+            bootToPowerd: startup?["boot_to_powerd_seconds"]?.intValue.map(Int.init),
+            bootTime: startup?["boot_time"]?.stringValue ?? "",
+            indexingVolumes: (data["indexing"]?["volumes"]?.arrayValue ?? []).compactMap { $0["volume"]?.stringValue },
+            filevault: data["filevault"]?.stringValue ?? "—",
+            thermalLimits: limits,
+            batteryCapacity: capacity,
+            limitations: (data["limitations"]?.arrayValue ?? []).compactMap { $0.stringValue }
+        )
     }
 }

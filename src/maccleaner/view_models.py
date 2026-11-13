@@ -469,6 +469,7 @@ MCP_TOOLS: tuple[tuple[str, str], ...] = (
     ("trace_storage", "只读追查某个目录/缓存属于哪个目标"),
     ("uninstall_plan", "列出某应用的残留（只读，不删除）"),
     ("updates_check", "列出第三方可升级项（Homebrew + App Store）"),
+    ("system_diagnostics", "只读性能诊断（瞬时 CPU/内存压力/开机项/磁盘健康）"),
     ("updates_apply", "按包名升级（空 = 全部）"),
     ("apply_storage_plan", "按 plan_id + 精确 target id 执行清理"),
 )

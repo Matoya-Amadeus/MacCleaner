@@ -831,9 +831,11 @@ def orphans_clean(
     return {"moved": moved, "failed": failed, "count": len(moved), "bytes": total_bytes}
 
 
-def system_report() -> dict[str, Any]:
-    """系统快照：负载 / 内存 / 磁盘 / CPU 核数 / 占用最高的进程（只读）。
+def system_report(limit: int = 6) -> dict[str, Any]:
+    """系统快照：负载 / 内存 / 磁盘 / CPU 核数 / 累计平均 CPU 前 N 个进程（只读）。
 
+    `limit` 只控制 `processes[]` 的条数（默认 6，保持旧行为），不改任何字段语义；
+    界面与 `system` 命令的 `limit` 参数可把它调到 1–20。
     电池与节流用 `pmset` / `ioreg`（**免 sudo**，实测 0.04s）；
     **风扇转速不做**：那是 SMC 私有接口，第三方工具读它要额外权限，值也不稳定。
     """
@@ -852,7 +854,7 @@ def system_report() -> dict[str, Any]:
             ["/bin/ps", "-A", "-o", "%cpu=,rss=,comm=", "-r"],
             capture_output=True, text=True, timeout=6,
         ).stdout
-        for line in out.splitlines()[:6]:
+        for line in out.splitlines()[:max(1, min(int(limit), 20))]:
             parts = line.split(None, 2)
             if len(parts) == 3 and parts[0].replace(".", "", 1).isdigit():
                 processes.append(
@@ -943,6 +945,438 @@ def parse_thermal(text: str) -> dict[str, Any]:
     }
 
 
+# ---- 只读性能诊断（system.detail） ----
+# 与 `system` 严格分开：那边 `processes[].cpu` 是 `ps %cpu` 的累计/衰减均值，
+# 这里是 `top -l 2 -s 1` 第二次采样的瞬时值。按 docs/core-protocol.md 的兼容策略，
+# 改语义必须新增命令，绝不重定义旧字段。
+DIAGNOSTIC_TIMEOUT = 6.0
+
+
+def _diagnostic_run(argv: list[str], timeout: float = DIAGNOSTIC_TIMEOUT) -> str:
+    """跑一条只读命令；失败/超时一律返回空串，诊断本身不能把界面卡住。"""
+    try:
+        return subprocess.run(argv, capture_output=True, text=True, timeout=timeout).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def parse_top_instant(text: str, limit: int = 20) -> list[dict[str, Any]]:
+    """取 `top -l 2 -s 1 -stats pid,cpu,command` 的**最后一个**采样块。
+
+    第一块是自开机以来的累计值（会随时间衰减），不是瞬时值，必须丢掉。
+    """
+    chunks = re.split(r"(?m)^CPU usage:", text or "")
+    if len(chunks) < 2:
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in chunks[-1].splitlines():
+        parts = line.split(None, 2)
+        if len(parts) != 3 or not parts[0].isdigit():
+            continue
+        try:
+            cpu = float(parts[1].rstrip("+-"))
+        except ValueError:
+            continue
+        rows.append({"pid": int(parts[0]), "cpu_instant": cpu,
+                     "name": parts[2].strip()[:60]})
+    rows.sort(key=lambda item: item["cpu_instant"], reverse=True)
+    return rows[:limit]
+
+
+def parse_ps_lifetime(text: str) -> dict[int, dict[str, Any]]:
+    """`ps -A -o pid=,%cpu=,rss=,comm=` → pid 索引的累计均值与常驻内存。"""
+    out: dict[int, dict[str, Any]] = {}
+    for line in (text or "").splitlines():
+        parts = line.split(None, 3)
+        if len(parts) != 4 or not parts[0].isdigit():
+            continue
+        try:
+            out[int(parts[0])] = {
+                "cpu_lifetime": float(parts[1]),
+                "rss": int(parts[2]) * 1024,
+                "name": parts[3].rsplit("/", 1)[-1][:60],
+            }
+        except ValueError:
+            continue
+    return out
+
+
+VM_STAT_KEYS = {
+    "Pages free": "free_bytes",
+    "Pages active": "active_bytes",
+    "Pages inactive": "inactive_bytes",
+    "Pages speculative": "speculative_bytes",
+    "Pages wired down": "wired_bytes",
+    "Pages purgeable": "purgeable_bytes",
+    "Pages stored in compressor": "compressor_pages",
+    "Pageins": "pageins",
+    "Pageouts": "pageouts",
+    "Swapins": "swapins",
+    "Swapouts": "swapouts",
+}
+
+
+def parse_vm_stat(text: str) -> dict[str, Any]:
+    """`vm_stat` 全量明细；页为单位的值乘 page_size 换成字节。"""
+    page = 4096
+    match = re.search(r"page size of\s+(\d+)\s+bytes", text or "")
+    if match:
+        page = int(match.group(1))
+    raw: dict[str, int] = {}
+    for line in (text or "").splitlines():
+        if ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        number = value.strip().rstrip(".").replace(".", "").replace(",", "")
+        if number.isdigit():
+            raw[key.strip().strip('"')] = int(number)
+    out: dict[str, Any] = {"page_size": page}
+    for label, name in VM_STAT_KEYS.items():
+        value = raw.get(label, 0)
+        out[name] = value * page if name.endswith("_bytes") else value
+    return out
+
+
+SWAP_UNITS = {"K": 1024, "M": 1024 ** 2, "G": 1024 ** 3, "T": 1024 ** 4}
+
+
+def parse_swapusage(text: str) -> dict[str, Any]:
+    """`sysctl vm.swapusage` 的 total/used/free → 字节。"""
+    out: dict[str, Any] = {}
+    for name in ("total", "used", "free"):
+        match = re.search(rf"{name}\s*=\s*([\d.]+)\s*([KMGT]?)", text or "")
+        if match:
+            out[f"swap_{name}_bytes"] = int(float(match.group(1)) * SWAP_UNITS.get(match.group(2), 1))
+    return out
+
+
+def parse_memory_pressure(text: str) -> dict[str, Any]:
+    match = re.search(r"free percentage:\s*(\d+)\s*%", text or "")
+    return {"free_percentage": int(match.group(1)) if match else None}
+
+
+def parse_diskutil_info(text: str) -> dict[str, Any]:
+    """只取健康与容量，不取序列号/卷名以外的标识信息。"""
+    out: dict[str, Any] = {"smart_status": None, "solid_state": None,
+                           "container_total_bytes": None, "container_free_bytes": None}
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        for label, key in (("SMART Status", "smart_status"), ("Solid State", "solid_state")):
+            if stripped.startswith(label + ":"):
+                out[key] = stripped.split(":", 1)[1].strip() or None
+        for label, key in (("Container Total Space", "container_total_bytes"),
+                           ("Container Free Space", "container_free_bytes")):
+            if stripped.startswith(label + ":"):
+                match = re.search(r"\((\d+) Bytes\)", stripped)
+                if match:
+                    out[key] = int(match.group(1))
+    return out
+
+
+def parse_hardware(text: str, os_version: str = "", os_build: str = "") -> dict[str, Any]:
+    """`system_profiler SPHardwareDataType`；刻意不读序列号与硬件 UUID。"""
+    def grab(label: str) -> str:
+        match = re.search(rf"^\s*{re.escape(label)}:\s*(.+)$", text or "", re.M)
+        return match.group(1).strip() if match else ""
+
+    cores = grab("Total Number of Cores")
+    return {
+        "model_name": grab("Model Name"),
+        "model_identifier": grab("Model Identifier"),
+        "chip": grab("Chip"),
+        "cores": cores,
+        "memory": grab("Memory"),
+        "os_version": os_version.strip(),
+        "os_build": os_build.strip(),
+    }
+
+
+def parse_displays(text: str) -> list[dict[str, Any]]:
+    """`system_profiler SPDisplaysDataType` → 每块屏一条；第二块屏没有 Display Type。"""
+    displays: list[dict[str, Any]] = []
+    current: dict[str, Any] = {}
+
+    def flush() -> None:
+        if current:
+            displays.append(dict(current))
+            current.clear()
+
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Display Type:"):
+            if current.get("resolution"):
+                flush()
+            current["type"] = stripped.split(":", 1)[1].strip()
+        elif stripped.startswith("Resolution:"):
+            if current.get("resolution"):
+                flush()
+            current["resolution"] = stripped.split(":", 1)[1].strip()
+        elif stripped.startswith("UI Looks like:"):
+            current["looks_like"] = stripped.split(":", 1)[1].strip()
+        elif stripped.startswith("Main Display:"):
+            current["main"] = stripped.split(":", 1)[1].strip()
+        elif stripped.startswith("Mirror:"):
+            current["mirror"] = stripped.split(":", 1)[1].strip()
+    flush()
+    return displays
+
+
+def parse_btm(text: str, limit: int = 60) -> dict[str, Any]:
+    """`sfltool dumpbtm` → 已启用的后台项名字与数量。"""
+    enabled: list[str] = []
+    disallowed: list[str] = []
+    name = ""
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Name:"):
+            name = stripped.split(":", 1)[1].strip()
+        elif stripped.startswith("Disposition:") and name:
+            if "[enabled" in stripped:
+                (disallowed if "disallowed" in stripped else enabled).append(name)
+            name = ""
+    return {"available": bool(text and text.strip()),
+            "enabled_count": len(enabled) + len(disallowed),
+            "enabled_names": enabled[:limit], "disallowed_names": disallowed[:limit]}
+
+
+def parse_boot_timeline(boot_text: str, powerd_text: str) -> dict[str, Any]:
+    """内核启动时刻 → powerd 起来，给开机慢一个可复现的间接量化。"""
+    from datetime import datetime
+
+    out: dict[str, Any] = {"boot_epoch": None, "boot_time": "",
+                           "powerd_started": "", "boot_to_powerd_seconds": None}
+    match = re.search(r"sec\s*=\s*(\d+)", boot_text or "")
+    epoch = int(match.group(1)) if match else None
+    time_match = re.search(r"\}\s+(.+)$", boot_text or "", re.M)
+    if epoch is not None:
+        out["boot_epoch"] = epoch
+        out["boot_time"] = (time_match.group(1).strip() if time_match
+                            else datetime.fromtimestamp(epoch).isoformat(timespec="seconds"))
+    starts = re.findall(
+        r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [+-]\d{4}).*?powerd process is started",
+        powerd_text or "", re.M,
+    )
+    if epoch is not None and starts:
+        out["powerd_started"] = starts[-1]
+        try:
+            powerd_epoch = datetime.strptime(starts[-1], "%Y-%m-%d %H:%M:%S %z").timestamp()
+            out["boot_to_powerd_seconds"] = round(powerd_epoch - epoch)
+        except ValueError:
+            pass
+    return out
+
+
+def parse_launchctl_list(text: str, limit: int = 60) -> dict[str, Any]:
+    """`launchctl list` → 第三方 label（`com.apple.*` 与临时 application.* 不算后台项）。"""
+    labels: list[str] = []
+    for line in (text or "").splitlines()[1:]:
+        parts = line.split(None, 2)
+        if len(parts) != 3:
+            continue
+        label = parts[2].strip()
+        if label.startswith(("com.apple.", "application.")):
+            continue
+        labels.append(label)
+    return {"available": bool(text and text.strip()),
+            "count": len(labels), "labels": labels[:limit]}
+
+
+def parse_mdutil_sa(text: str) -> dict[str, Any]:
+    """`mdutil -sa` → 每个卷的索引状态。"""
+    volumes: list[dict[str, str]] = []
+    current = ""
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("/"):
+            current = stripped.rstrip(":")
+        elif current:
+            volumes.append({"volume": current, "status": stripped})
+            current = ""
+    return {"volumes": volumes}
+
+
+def parse_snapshots(text: str, limit: int = 20) -> list[str]:
+    return [line.strip() for line in (text or "").splitlines()
+            if line.strip().startswith("com.apple.")][:limit]
+
+
+def _startup_plists() -> dict[str, Any]:
+    """只读列出 LaunchAgents/LaunchDaemons 的 RunAtLoad 与周期任务。"""
+    roots = (
+        ("user_agents", Path.home() / "Library" / "LaunchAgents"),
+        ("local_agents", Path("/Library/LaunchAgents")),
+        ("local_daemons", Path("/Library/LaunchDaemons")),
+    )
+    result: dict[str, Any] = {"labels": [], "run_at_load": [], "periodic": []}
+    for _scope, root in roots:
+        try:
+            paths = sorted(root.glob("*.plist"))
+        except OSError:
+            continue
+        for path in paths:
+            label = path.stem
+            result["labels"].append(label)
+            try:
+                with path.open("rb") as handle:
+                    data = plistlib.load(handle)
+            except (OSError, ValueError, TypeError, plistlib.InvalidFileException):
+                continue
+            if data.get("RunAtLoad") is True:
+                result["run_at_load"].append(label)
+            interval = data.get("StartInterval")
+            if isinstance(interval, (int, float)) and interval > 0:
+                result["periodic"].append({"label": label, "interval_seconds": int(interval)})
+    return result
+
+
+DIAGNOSTIC_LIMITATIONS = [
+    "按电源键到桌面可用的耗时无法自动测量：unified log 里没有可过滤的 loginwindow 事件，需要人工秒表；boot_to_powerd_seconds 只是间接量。",
+    "输入延迟本身没有直接采样，WindowServer 的瞬时 CPU 只是间接信号。",
+    "BTM 里的 QuickLook / mdimporter 扩展是索引与缩略图插件，不是开机自启项，不能据此判断开机慢。",
+    "瞬时 CPU 是约 1 秒窗口的采样，不能代表长期趋势；进程名可能被 top 截断。",
+    "不读取浏览器会话、凭据、进程命令行参数，也不做性能优化或状态修改。",
+]
+
+
+DIAGNOSTIC_COMMANDS: dict[str, tuple[list[str], float]] = {
+    "top": (["/usr/bin/top", "-l", "2", "-s", "1", "-o", "cpu", "-n", "20",
+             "-stats", "pid,cpu,command"], 12.0),
+    "ps": (["/bin/ps", "-A", "-o", "pid=,%cpu=,rss=,comm="], 8.0),
+    "vm_stat": (["/usr/bin/vm_stat"], 8.0),
+    "swap": (["/usr/sbin/sysctl", "vm.swapusage"], 8.0),
+    "pressure": (["/usr/bin/memory_pressure"], 8.0),
+    "therm": (["/usr/bin/pmset", "-g", "therm"], 8.0),
+    "batt": (["/usr/bin/pmset", "-g", "batt"], 8.0),
+    "ioreg": (["/usr/sbin/ioreg", "-rn", "AppleSmartBattery"], 8.0),
+    "hardware": (["/usr/sbin/system_profiler", "SPHardwareDataType"], 12.0),
+    "version": (["/usr/bin/sw_vers", "-productVersion"], 8.0),
+    "build": (["/usr/bin/sw_vers", "-buildVersion"], 8.0),
+    "displays": (["/usr/sbin/system_profiler", "SPDisplaysDataType"], 12.0),
+    "diskutil": (["/usr/sbin/diskutil", "info", "/"], 8.0),
+    "snapshots": (["/usr/bin/tmutil", "listlocalsnapshots", "/"], 8.0),
+    "boottime": (["/usr/sbin/sysctl", "-n", "kern.boottime"], 8.0),
+    "powerd": (["/usr/bin/pmset", "-g", "log"], 15.0),
+    # sfltool 依赖后台任务管理守护进程：实测会整段卡死（连 shell 直接调用都超时），
+    # 因此只给短超时并显式标「未测到」，绝不让一次诊断等 15s 或静默显示 0。
+    "btm": (["/usr/bin/sfltool", "dumpbtm"], 3.0),
+    # launchctl 不依赖那个守护进程，是后台项的稳定兜底来源。
+    "launchctl": (["/bin/launchctl", "list"], 5.0),
+    "indexing": (["/usr/bin/mdutil", "-sa"], 8.0),
+    "filevault": (["/usr/bin/fdesetup", "status"], 8.0),
+}
+
+
+def collect_diagnostic_text(include_btm: bool = False) -> dict[str, str]:
+    """采集只读命令：串行 12.8s → 默认跳过 BTM 后约 3s。
+
+    `top` 必须**独占**它的 1 秒采样窗口：若与其他命令并发，诊断自身的 CPU
+    会混进 `cpu_instant`，界面又会把数字看错。`top -s 0` 实测并不比 `-s 1` 快，
+    所以这约 2.5s 是正确性成本，不再压缩。
+
+    `sfltool`（BTM 后台项）依赖的守护进程实测会整段卡死，单跑就吃掉 3–15s。
+    因此**默认不采集**，改由稳定的 `launchctl list` + LaunchAgents plist 兜底；
+    只有显式 `include_btm=true` 才去查，且带 3s 硬超时。
+    每条命令都有独立硬超时；单条失败只返回空串，由上层标成「未测到」。
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    top_argv, top_timeout = DIAGNOSTIC_COMMANDS["top"]
+    result: dict[str, str] = {"top": _diagnostic_run(top_argv, top_timeout)}
+
+    skipped = ("top", "btm") if not include_btm else ("top",)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = {
+            key: pool.submit(_diagnostic_run, argv, timeout)
+            for key, (argv, timeout) in DIAGNOSTIC_COMMANDS.items()
+            if key not in skipped
+        }
+        for key, future in futures.items():
+            result[key] = future.result()
+    if not include_btm:
+        result["btm"] = ""
+    return result
+
+
+def system_detail_report(include_btm: bool = False) -> dict[str, Any]:
+    """只读性能诊断快照（stdio `system.detail` / MCP `system_diagnostics`）。
+
+    全部外部命令都带硬超时；单项失败只让对应字段为空，不影响其余字段。
+    `include_btm=True` 才会去查可能卡死后台任务管理守护进程的 BTM 清单。
+    """
+    import shutil as _shutil
+    from datetime import datetime
+
+    text = collect_diagnostic_text(include_btm=include_btm)
+    top_text = text["top"]
+    processes = parse_top_instant(top_text, limit=20)
+    lifetime = parse_ps_lifetime(text["ps"])
+    for item in processes:
+        extra = lifetime.get(item["pid"], {})
+        item["cpu_lifetime"] = extra.get("cpu_lifetime")
+        item["rss"] = extra.get("rss", 0)
+        if extra.get("name"):
+            item["name"] = extra["name"]
+    idle = re.findall(r"CPU usage:.*?([\d.]+)%\s*idle", top_text)
+
+    load1 = load5 = load15 = 0.0
+    try:
+        load1, load5, load15 = os.getloadavg()
+    except OSError:
+        pass
+
+    memory = {**parse_vm_stat(text["vm_stat"]),
+              **parse_swapusage(text["swap"]),
+              **parse_memory_pressure(text["pressure"])}
+    thermal = parse_thermal(text["therm"])
+    power = {**parse_pmset_batt(text["batt"]), **parse_battery_ioreg(text["ioreg"])}
+
+    hardware = parse_hardware(text["hardware"], text["version"], text["build"])
+    displays = parse_displays(text["displays"])
+
+    usage = _shutil.disk_usage("/")
+    disk = {
+        "total": int(usage.total), "used": int(usage.used), "free": int(usage.free),
+        "percent": round(usage.used / usage.total * 100, 1) if usage.total else 0.0,
+        **parse_diskutil_info(text["diskutil"]),
+        "snapshots": parse_snapshots(text["snapshots"]),
+    }
+
+    startup = {**parse_boot_timeline(text["boottime"], text["powerd"]),
+               **parse_btm(text["btm"]),
+               "launchctl": parse_launchctl_list(text["launchctl"]),
+               **_startup_plists()}
+    indexing = parse_mdutil_sa(text["indexing"])
+    filevault = "On" if "is On" in text["filevault"] else "Off"
+
+    limitations = list(DIAGNOSTIC_LIMITATIONS)
+    if not startup.get("available"):
+        reason = ("sfltool 超时或后台任务管理守护进程无响应" if include_btm
+                  else "默认跳过 sfltool（守护进程实测会整段卡死），可传 include_btm=true 显式采集")
+        limitations.insert(0, f"BTM 后台项清单未采集：{reason}；"
+                              "enabled_count 的 0 不代表真的没有后台项。请改用 "
+                              "startup.launchctl 与 run_at_load / periodic 这三个稳定来源。")
+
+    return {
+        "sampled_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "sample_interval_ms": 1000,
+        "load": [round(load1, 2), round(load5, 2), round(load15, 2)],
+        "cpu_count": os.cpu_count() or 0,
+        "cpu_idle_percent": float(idle[-1]) if idle else None,
+        "processes": processes,
+        "process_metric_note": "cpu_instant = top 二次采样瞬时值；cpu_lifetime = ps %cpu 累计/衰减均值",
+        "memory": memory,
+        "thermal": thermal,
+        "power": power,
+        "hardware": hardware,
+        "displays": displays,
+        "disk": disk,
+        "startup": startup,
+        "indexing": indexing,
+        "filevault": filevault,
+        "limitations": limitations,
+    }
 
 
 # ---- 大文件视图 ----
@@ -2019,6 +2453,8 @@ class SessionDeps:
     disk: Callable[[], dict[str, Any]] = lambda: {}
     # 磁盘钻取：传目录路径，返回下一级条目。
     system: Callable[[], dict[str, Any]] = lambda: {}
+    # 只读性能诊断（瞬时 CPU / 内存压力 / 开机项 / 磁盘健康）；默认空，测试可整体替换。
+    system_detail: Callable[[], dict[str, Any]] = lambda: {}
     # 清理历史（读回执文件）。
     history: Callable[[], dict[str, Any]] = lambda: {}
     apps: Callable[[], list[dict[str, Any]]] = lambda: []
@@ -2255,7 +2691,8 @@ def build_deps(
         apps=lambda: list_applications(home=home_path),
         skills=list_skills,
         disk=lambda: disk_report(home=home_path),
-        system=system_report,
+        system=lambda **kwargs: system_report(**kwargs),
+        system_detail=lambda **kwargs: system_detail_report(**kwargs),
         uninstall_plan=uninstall_plan,
         uninstall_apply=uninstall_apply,
         updates_check=updates_check,

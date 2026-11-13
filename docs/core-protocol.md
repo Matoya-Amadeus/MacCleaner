@@ -42,7 +42,8 @@
 | `ping` | — | `{pong:true,v}` | 连通性 |
 | `disk.summary` | — | `{total,used,free,percent}` | **毫秒级**，只做 statfs，不读受保护目录 |
 | `disk` | — | `{total,used,free,percent,sections[],system{}}` | 会对各目录跑 `du`；**需要「完全磁盘访问权限」**，否则体积全 0 |
-| `system` | — | `{load[],cpu_count,memory_*,processes[],power{},thermal{}}` | 只读 |
+| `system` | 可选 `limit`（1–20，默认 6） | `{load[],cpu_count,memory_*,disk_total,disk_used,processes[],power{},thermal{}}` | 只读、快；`processes[].cpu` 是 **`ps %cpu` 累计/衰减均值**，不是瞬时值；`limit` 只改条数，不改字段语义 |
+| `system.detail` | 可选 `include_btm` | `{sampled_at,sample_interval_ms,cpu_idle_percent,processes[],memory{},thermal{},power{},hardware{},displays[],disk{},startup{},indexing{},filevault,limitations[]}` | **只读诊断**，默认约 3s，先发 `started`；`processes[]` 按 `cpu_instant`（`top` 二次采样瞬时值）降序，同时保留 `cpu_lifetime` 便于对照；默认不查 BTM（`sfltool` 守护进程会卡死），`include_btm=true` 才查且带 3s 硬超时；`startup.available=false` 时 `enabled_count` 的 0 **不代表**没有后台项 |
 | `skills` | — | `{skills[]}` | 每项 `{name,description,path,root}` |
 | `apps` | — | `{apps[],groups[],count}` | 每项 `{name,bundle_id,path,category,...}`；`groups` 按 macOS 官方分类排好序 |
 | `scan` | — | `{report{}}` | 内核原始审计报告（调试用） |
@@ -59,6 +60,8 @@
 | `orphans.scan` | — | 残留报告 | |
 | `orphans.apply` | `paths[]` | 结果 | 传**路径**（内核 `orphans_clean(home, paths)`）；空数组拒绝 |
 | `files.trash` | `paths[]` | `{moved[],failed[]}` | 大文件页用；空数组拒绝 |
+| `files.reveal` | `path` | `{revealed}` | 在 Finder 中显示；路径必须存在 |
+| `trash.open` | — | `{opened}` | 打开废纸篓（完成页用） |
 | `app.open` | `path` | `{opened}` | 只接受**存在且以 `.app` 结尾**的路径（Sparkle 应用内更新） |
 | `system.measure` | — | 系统级目录体积 | **弹一次管理员授权，只读** |
 | `system.trash` | `paths[]` | `{moved[],failed[]}` | 需授权；只接受白名单子项 |
@@ -87,6 +90,7 @@
 - `v` 字段每行都带；**破坏性变更必须升 `PROTOCOL_VERSION`**，界面按 `v` 做分支。
 - `data` 里只增字段、不删字段；需要改语义时新增命令（如 `uninstall.plan2`）而不是改旧命令。
 - 命令名用点号分层（`uninstall.plan`），便于按前缀批量处理。
+- `system.detail` 是这条规则的实例：瞬时 CPU 与累计均值是**两种语义**，所以新增命令与新字段（`cpu_instant`），而不是把旧 `cpu` 悄悄换掉。
 
 ## 6. 实测（本机，2026-10-22）
 

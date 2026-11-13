@@ -73,7 +73,9 @@ Four surfaces share one set of protection rules (protected paths stay blocked; n
   no port, no token, and nothing listening on the network.
 - **MCP** — `uninstall_plan`, `updates_check`, `updates_apply` join the existing tools. `apply_storage_plan`
   accepts `plan_digest`; a mismatch between the approved plan and the plan being applied is refused before
-  anything is touched.
+  anything is touched. `system_diagnostics` is a **read-only** diagnostics tool (no plan_id, no writes):
+  it reports instant CPU, memory pressure, startup items, disk health, displays and indexing. It never
+  tunes, disables or deletes anything.
 
 ## If the MCP tools are missing from this session
 
@@ -92,7 +94,15 @@ running session. So when `audit_storage` and friends are absent from your tool l
 These are stdio commands (one JSON line per request via `maccleaner-core serve --stdio`); they never mutate:
 
 - `disk.summary` — volume capacity only (statfs, no directory walks).
-- `system` — load, memory, battery health/cycles, top processes by CPU/RSS.
+- `system` — load, memory, battery health/cycles, and the top 6 processes by **lifetime-average**
+  `ps %cpu` (this is a decaying average since process start, **not** instantaneous CPU).
+- `system.detail` — read-only performance diagnostics: `cpu_instant` from a second `top` sample,
+  `cpu_lifetime` for comparison, memory/swap/compressor detail, startup and periodic items, boot timeline,
+  disk SMART and snapshots, hardware/OS, displays, indexing, plus explicit `limitations[]` naming what
+  could not be measured. Takes ~3-6s and emits a `started` event first. Optional `include_btm=true`
+  queries the BTM daemon (which can hang; default uses stable `launchctl` + LaunchAgents plists).
+  `system` accepts optional `limit` (1-20, default 6) to control how many lifetime-average processes
+  are listed.
 - `large.list` — files above a size threshold under the scan root.
 - `review.payload` — the cleanup candidates (`target_id`, bytes, risk) used by `plan`.
 - `tools.list` — the canonical catalogue of MCP tools + stdio commands (single source of truth for agents).

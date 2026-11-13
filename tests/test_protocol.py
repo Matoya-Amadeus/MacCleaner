@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import time
 import unittest
 
 from maccleaner.core_service import PROTOCOL_VERSION, CoreService, serve_stdio
@@ -76,6 +78,34 @@ class EnvelopeTests(unittest.TestCase):
     def test_blank_lines_are_ignored(self) -> None:
         self.assertEqual(list(_service().serve_lines(["", "   "])), [])
 
+    def test_stdio_eof_waits_for_slow_command_terminal_message(self) -> None:
+        """stdin 关闭后，慢命令的**终态**必须写完再退出。
+
+        回归：原来 `thread.join(timeout=5)` 会把还在跑的 daemon 线程一起带走，
+        调用方只收到 started 事件，没有结果（system.detail 实测 12.8s 必现）。
+        """
+        import threading
+
+        from maccleaner.core_service import SHUTDOWN_WAIT_SECONDS
+
+        released = threading.Event()
+
+        def slow_detail() -> dict:
+            released.set()
+            time.sleep(0.3)
+            return {"processes": [{"cpu_instant": 12.5}]}
+
+        deps = _deps(system_detail=slow_detail)
+        stdin = io.StringIO('{"id":"slow","cmd":"system.detail"}\n')
+        stdout = io.StringIO()
+        serve_stdio(deps, stdin=stdin, stdout=stdout)
+        self.assertTrue(released.wait(timeout=1), "慢命令必须真的执行过")
+        messages = [json.loads(line) for line in stdout.getvalue().splitlines() if line.strip()]
+        self.assertEqual([item.get("event") for item in messages], ["started", None])
+        self.assertTrue(messages[-1]["ok"])
+        self.assertEqual(messages[-1]["data"]["processes"][0]["cpu_instant"], 12.5)
+        self.assertGreater(SHUTDOWN_WAIT_SECONDS, 5.0, "等待上限必须覆盖慢的只读诊断命令")
+
 
     def test_disk_summary_is_fast_and_permission_free(self) -> None:
         """`disk.summary` 只做 statfs：不读受保护目录，也不跑 du。
@@ -101,6 +131,54 @@ class EventTests(unittest.TestCase):
         messages = _service().dispatch({"id": "1", "cmd": "disk"})
         self.assertEqual(len(messages), 1, "只读快命令不该有多余事件")
         self.assertIn("total", messages[0]["data"])
+
+    def test_system_stays_fast_and_lifetime_based(self) -> None:
+        """旧 `system` 不许被诊断命令带慢，也不许悄悄换成瞬时口径。"""
+        messages = _service().dispatch({"id": "1", "cmd": "system"})
+        self.assertEqual(len(messages), 1)
+        self.assertIn("load", messages[0]["data"])
+
+    def test_system_limit_only_changes_process_count(self) -> None:
+        """`limit` 只改条数：不改字段语义，也不发事件。"""
+        captured: dict[str, object] = {}
+
+        def fake_system(**kwargs: object) -> dict[str, object]:
+            captured.update(kwargs)
+            return {"load": [1.0, 1.0, 1.0], "processes": []}
+
+        messages = _service(system=fake_system).dispatch(
+            {"id": "1", "cmd": "system", "args": {"limit": 12}})
+        self.assertEqual(captured, {"limit": 12})
+        self.assertEqual(len(messages), 1)
+        self.assertTrue(messages[0]["ok"])
+
+    def test_system_detail_emits_started_and_returns_new_fields(self) -> None:
+        messages = _service(system_detail=lambda: {
+            "sample_interval_ms": 1000,
+            "processes": [{"pid": 1, "name": "demo", "cpu_instant": 42.0,
+                           "cpu_lifetime": 9.0, "rss": 1024}],
+        }).dispatch({"id": "1", "cmd": "system.detail"})
+        self.assertEqual(len(messages), 2, "一个 started 事件 + 一个终态")
+        self.assertEqual(messages[0]["event"], "started")
+        self.assertEqual(messages[0]["op"], "system.detail")
+        self.assertTrue(messages[-1]["ok"])
+        data = messages[-1]["data"]
+        self.assertEqual(data["sample_interval_ms"], 1000)
+        self.assertEqual(data["processes"][0]["cpu_instant"], 42.0)
+
+    def test_system_detail_btm_is_opt_in(self) -> None:
+        """默认不碰会卡死的后台任务管理守护进程；显式请求才传 include_btm。"""
+        captured: dict[str, object] = {}
+
+        def fake_detail(**kwargs: object) -> dict[str, object]:
+            captured.update(kwargs)
+            return {"processes": []}
+
+        service = _service(system_detail=fake_detail)
+        service.dispatch({"id": "1", "cmd": "system.detail"})
+        self.assertEqual(captured, {}, "默认调用不许带 include_btm")
+        service.dispatch({"id": "2", "cmd": "system.detail", "args": {"include_btm": True}})
+        self.assertEqual(captured, {"include_btm": True})
 
     def test_disk_merges_cached_system_sizes(self) -> None:
         data = _final(_service().dispatch({"id": "1", "cmd": "disk"}))["data"]

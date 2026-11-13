@@ -195,15 +195,31 @@ class SkillListingTests(unittest.TestCase):
             self.assertTrue(all("allocated_bytes" not in item for item in apps), "默认不返回体积，页面显示 —")
 
     def test_explicit_with_sizes_still_works(self) -> None:
+        """体积必须回填到 du 报的那条路径上。
+
+        以前这条会扫真实 /Applications 的 43 个 App，`du -sk` 在机器忙时撞 20s
+        超时、一个体积都拿不到，导致全量跑偶发失败（2026-10-23 记过一次）。
+        现在把 du 换成确定性的假输出：不依赖真机负载，但仍断言真实的回填逻辑。
+        """
+        from unittest.mock import patch
+
         with tempfile.TemporaryDirectory(prefix="deps-sized-") as tmp:
             home = Path(tmp) / "home"
             (home / "Applications").mkdir(parents=True)
-            _fake_app(home / "Applications")
-            apps = list_applications(home=home, with_sizes=True)
-            # 注意：它也会扫真实的 /Applications，`du` 在机器忙时会超时、那一项就没有体积。
-            # 所以断言"至少有一项带体积"，而不是拍死第一项（否则全量跑时偶发失败，2026-10-23 遇到）。
-            sized = [item for item in apps if "allocated_bytes" in item]
-            self.assertTrue(sized, f"没有一个应用拿到体积（共 {len(apps)} 个）")
+            fake = _fake_app(home / "Applications")
+            fake_output = f"42\t{fake}\n"
+
+            class FakeCompleted:
+                stdout = fake_output
+                stderr = ""
+                returncode = 0
+
+            with patch("maccleaner.deps.subprocess.run", return_value=FakeCompleted()):
+                apps = list_applications(home=home, with_sizes=True)
+            by_path = {item["path"]: item for item in apps}
+            self.assertIn(str(fake), by_path)
+            self.assertEqual(by_path[str(fake)]["allocated_bytes"], 42 * 1024)
+            self.assertTrue(all("allocated_bytes" in item for item in apps))
 
 
 class ScanCacheTests(unittest.TestCase):
@@ -350,6 +366,136 @@ class DiskAndSystemTests(unittest.TestCase):
         self.assertGreater(report["cpu_count"], 0)
         self.assertGreaterEqual(report["memory_used"], 0)
         self.assertLessEqual(report["memory_used"], report["memory_total"] or report["memory_used"] + 1)
+
+    def test_system_report_process_cpu_stays_lifetime_average(self) -> None:
+        """兼容策略：旧 `cpu` 语义不许改，瞬时值只能出现在新命令的新字段里。"""
+        from maccleaner.deps import system_report
+
+        for item in system_report()["processes"]:
+            self.assertIn("cpu", item)
+            self.assertNotIn("cpu_instant", item)
+
+
+class SystemDetailParsersTests(unittest.TestCase):
+    """性能诊断的纯解析层：用固定文本，不依赖真机状态。"""
+
+    def test_top_instant_uses_last_sample_and_sorts_desc(self) -> None:
+        from maccleaner.deps import parse_top_instant
+
+        text = (
+            "CPU usage: 10% user, 5% sys, 85% idle\n"
+            "PID    %CPU COMMAND\n"
+            "427    20.0 WindowServer\n"
+            "CPU usage: 30% user, 10% sys, 60% idle\n"
+            "PID    %CPU COMMAND\n"
+            "1702   51.3 Demo Renderer\n"
+            "427    35.3 WindowServer\n"
+        )
+        rows = parse_top_instant(text)
+        self.assertEqual([item["cpu_instant"] for item in rows], [51.3, 35.3])
+        self.assertEqual(rows[0]["name"], "Demo Renderer")
+        self.assertNotIn("cpu_lifetime", rows[0], "解析层不混入旧口径")
+        self.assertEqual(parse_top_instant("no samples here"), [])
+
+    def test_ps_lifetime_and_vm_stat(self) -> None:
+        from maccleaner.deps import parse_ps_lifetime, parse_vm_stat
+
+        ps = "  427  20.6  100000 /System/Library/WindowServer\n 1702 34.9 200000 /Applications/Demo.app/Demo\n"
+        lifetime = parse_ps_lifetime(ps)
+        self.assertEqual(lifetime[427]["cpu_lifetime"], 20.6)
+        self.assertEqual(lifetime[427]["rss"], 100000 * 1024)
+        self.assertEqual(lifetime[1702]["name"], "Demo")
+
+        vm = parse_vm_stat(
+            "Mach Virtual Memory Statistics: (page size of 16384 bytes)\n"
+            "Pages free:                                  1,000,000.\n"
+            "Pages active:                                    10.\n"
+            '\"Translation faults\":                       9,000,000.\n'
+            "Pages stored in compressor:                        0.\n"
+        )
+        self.assertEqual(vm["page_size"], 16384)
+        self.assertEqual(vm["free_bytes"], 1000000 * 16384)
+        self.assertEqual(vm["compressor_pages"], 0)
+
+    def test_swap_pressure_diskutil_and_snapshots(self) -> None:
+        from maccleaner.deps import (
+            parse_diskutil_info, parse_memory_pressure, parse_snapshots, parse_swapusage,
+        )
+
+        self.assertEqual(parse_swapusage("vm.swapusage: total = 64.00M  used = 0.00M  free = 64.00M"),
+                         {"swap_total_bytes": 64 * 1024 ** 2, "swap_used_bytes": 0,
+                          "swap_free_bytes": 64 * 1024 ** 2})
+        self.assertEqual(parse_memory_pressure("System-wide memory free percentage: 95%")["free_percentage"], 95)
+        info = parse_diskutil_info(
+            "   SMART Status:              Verified\n"
+            "   Solid State:               Yes\n"
+            "   Container Free Space:      1.5 TB (1500000000000 Bytes) (exactly 1)\n"
+        )
+        self.assertEqual(info["smart_status"], "Verified")
+        self.assertEqual(info["container_free_bytes"], 1500000000000)
+        self.assertEqual(parse_snapshots("Snapshots for volume group containing disk /:\n"
+                                         "com.apple.os.update-ABC\n"), ["com.apple.os.update-ABC"])
+
+    def test_hardware_displays_btm_boot_and_index(self) -> None:
+        from maccleaner.deps import (
+            parse_boot_timeline, parse_btm, parse_displays, parse_hardware, parse_mdutil_sa,
+        )
+
+        hardware = parse_hardware(
+            "Hardware:\n      Model Name: Example Mac\n      Chip: Example Silicon\n"
+            "      Total Number of Cores: 10 (8 Performance and 2 Efficiency)\n"
+            "      Memory: 32 GB\n      Serial Number: MUST-NOT-BE-READ\n",
+            "14.0\n", "EXAMPLEBUILD\n",
+        )
+        self.assertEqual(hardware["chip"], "Example Silicon")
+        self.assertEqual(hardware["os_version"], "14.0")
+        self.assertNotIn("MUST-NOT-BE-READ", str(hardware), "不许读序列号")
+
+        displays = parse_displays(
+            "        Color LCD:\n          Display Type: Built-in Liquid Retina XDR Display\n"
+            "          Resolution: 2560 x 1600 Retina\n          Main Display: Yes\n"
+            "        External:\n          Resolution: 1920 x 1080 (1080p FHD)\n"
+            "          UI Looks like: 1920 x 1080 @ 60.00Hz\n"
+        )
+        self.assertEqual(len(displays), 2)
+        self.assertEqual(displays[1]["looks_like"], "1920 x 1080 @ 60.00Hz")
+
+        btm = parse_btm("  #1:\n                 Name: Demo Helper\n"
+                        "                 Disposition: [enabled, allowed, notified] (0xb)\n"
+                        "  #2:\n                 Name: Demo Updater\n"
+                        "                 Disposition: [enabled, disallowed, notified] (0x9)\n"
+                        "  #3:\n                 Name: Disabled\n"
+                        "                 Disposition: [disabled, allowed, notified] (0x2)\n")
+        self.assertEqual(btm["enabled_count"], 2)
+        self.assertEqual(btm["enabled_names"], ["Demo Helper"])
+        self.assertEqual(btm["disallowed_names"], ["Demo Updater"])
+        self.assertTrue(btm["available"])
+        self.assertFalse(parse_btm("")["available"], "空输出必须标成未测到，不能静默当作 0 个")
+
+        boot = parse_boot_timeline(
+            "{ sec = 1700000000, usec = 100000 } Wed Nov 15 06:13:20 2023",
+            "2023-11-15 06:14:43 +0800 Start   powerd process is started\n",
+        )
+        self.assertEqual(boot["boot_epoch"], 1700000000)
+        self.assertEqual(boot["boot_to_powerd_seconds"], 83)
+
+        index = parse_mdutil_sa("/:\n\tIndexing enabled.\n/System/Volumes/Data:\n\tIndexing enabled.\n")
+        self.assertEqual(len(index["volumes"]), 2)
+
+        from maccleaner.deps import parse_launchctl_list
+
+        launch = parse_launchctl_list(
+            "PID\tStatus\tLabel\n"
+            "1284\t0\tcom.apple.Finder\n"
+            "-\t0\tcom.example.helper\n"
+            "805\t0\tcom.example.tablet\n"
+            "1172\t0\tapplication.com.example.native.1\n"
+        )
+        self.assertEqual(launch["count"], 2)
+        self.assertEqual(launch["labels"], ["com.example.helper", "com.example.tablet"])
+        self.assertTrue(launch["available"])
+        self.assertFalse(parse_launchctl_list("")["available"])
+
 
 class HistoryReportTests(unittest.TestCase):
     """清理历史直接读回执文件（2026-10-19），不另造状态源。"""

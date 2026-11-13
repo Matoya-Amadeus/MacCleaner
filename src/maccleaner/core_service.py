@@ -39,6 +39,11 @@ from .view_models import (
 
 PROTOCOL_VERSION = 1
 
+# stdin 读到 EOF 后，要等在途命令把**终态**写完再退出。
+# 原来固定 `thread.join(timeout=5)`，对 >5s 的只读诊断命令会把 daemon 线程
+# 一起带走：调用方只收到 started 事件，永远等不到结果（实测 12.8s 时必现）。
+SHUTDOWN_WAIT_SECONDS = 60.0
+
 # 错误码：界面按 code 做分支，message 只给人看（可能变）。
 ERROR_CODES = {
     "bad_json": "这一行不是合法 JSON",
@@ -196,6 +201,7 @@ class CoreService:
             "trash.open": self._trash_open,
             "tools.list": self._tools_list,
             "system": self._system,
+            "system.detail": self._system_detail,
             "skills": self._skills,
             "apps": self._apps,
             "scan": self._scan,
@@ -247,7 +253,17 @@ class CoreService:
         return report
 
     def _system(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
-        return self._call("system", default={}) or {}
+        # 不传 limit 时保持原来的零参调用（旧客户端/假 deps 都不受影响）。
+        if args.get("limit") is None:
+            return self._call("system", default={}) or {}
+        return self._call("system", limit=args["limit"], default={}) or {}
+
+    def _system_detail(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
+        """只读性能诊断：要两次 top 采样（>0.3s），按约束先发 started。"""
+        emit({"id": request_id, "event": "started", "op": "system.detail"})
+        if args.get("include_btm"):
+            return self._call("system_detail", include_btm=True, default={}) or {}
+        return self._call("system_detail", default={}) or {}
 
     def _skills(self, request_id: str, args: dict[str, Any], emit: Callable[..., None]) -> dict[str, Any]:
         return {"skills": self._call("skills", default=[]) or []}
@@ -532,12 +548,19 @@ def serve_stdio(deps: Any, stdin=None, stdout=None, home: str | None = None) -> 
     service._emit = write  # noqa: SLF001 - 同一个实例，避免再复制状态
     jobs: "queue.Queue[dict[str, Any] | None]" = queue.Queue()
 
+    done: "queue.Queue[bool]" = queue.Queue()
+
     def worker() -> None:
         while True:
             request = jobs.get()
             if request is None:
+                done.put(True)
                 return
-            service.dispatch(request)
+            try:
+                service.dispatch(request)
+            except Exception as exc:  # noqa: BLE001 - 一条命令炸了不能拖死整个会话
+                print(f"[core] worker failed: {type(exc).__name__}: {exc}",
+                      file=sys.stderr, flush=True)
 
     thread = threading.Thread(target=worker, daemon=True)
     thread.start()
@@ -559,5 +582,10 @@ def serve_stdio(deps: Any, stdin=None, stdout=None, home: str | None = None) -> 
             jobs.put(request)
     finally:
         jobs.put(None)
+        try:
+            done.get(timeout=SHUTDOWN_WAIT_SECONDS)
+        except queue.Empty:
+            print("[core] shutdown wait timed out; in-flight result may be lost",
+                  file=sys.stderr, flush=True)
         thread.join(timeout=5)
     return 0

@@ -34,6 +34,15 @@ Use this stdio command in an MCP client configuration:
   explicitly out of scope.
 - `updates_apply`: upgrades the named packages (empty = all). Each group reports its own exit code, so one
   failing group does not hide the others.
+- `system_diagnostics`: **read-only** performance diagnostics (instant CPU, memory pressure, startup items,
+  disk health, displays, indexing). Requires no `plan_id`, does not construct a cleanup plan, and never
+  mutates anything. Use it to triage "this Mac feels slow" questions; it does not tune or disable anything.
+  BTM (the background task management daemon) is **not queried by default** because it can hang for
+  10+ seconds; stable `launchctl` + LaunchAgents/LaunchDaemons plists are used instead. Pass
+  `include_btm=true` only when you explicitly need that list (it still has a 3s hard timeout).
+  When the daemon is skipped or unresponsive, `startup.available` is `false` — treat
+  `enabled_count: 0` as "not measured", not as "zero startup items", and fall back to
+  `startup.launchctl` / `run_at_load` / `periodic`.
 
 ## Calling tools
 

@@ -301,6 +301,15 @@ class StorageService:
         selected = None if ids is None else [str(item) for item in ids]
         return apply_plan(plan, home=home, selected_ids=selected, dry_run=dry_run)
 
+    def system_diagnostics(self, include_btm: bool = False) -> dict[str, object]:
+        """只读性能诊断：直接调内核纯函数，不构造 StorageManager、不需要 plan_id、不写文件。
+
+        `include_btm=True` 才去查可能卡死的后台任务管理守护进程（默认用 launchctl 兜底）。
+        """
+        from .deps import system_detail_report
+
+        return system_detail_report(include_btm=include_btm)
+
     def updates_check(self) -> dict[str, object]:
         """第三方软件更新（只读）：Homebrew + App Store，不含 macOS 系统更新。"""
         from .updates import discover_updates
