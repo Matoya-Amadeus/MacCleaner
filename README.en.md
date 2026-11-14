@@ -57,7 +57,7 @@ Open `/Applications/MacCleaner.app`, or run `maccleaner ui`. Five entries in the
 - **Clean**: recommended cleanup (caches / logs / dev tools / containers / your files) + large files
 - **Apps**: uninstall (single or batch), updates (grouped by source), orphan leftovers
 - **Disk**: capacity, folder breakdown, system-level folders (read-only, one admin prompt)
-- **System**: load, memory, battery and throttling, lifetime-average CPU (explicitly labelled, not instantaneous; 6/12/20 rows selectable), plus a read-only diagnostics block: instant CPU, memory pressure and swap, disk SMART and snapshots, hardware/OS, displays, startup items, indexing, and an explicit list of what could not be measured
+- **System**: graphical groups for compute/load, memory/disk, power, startup items, this Mac, and processes; the process group switches between instant CPU and lifetime-average `ps %cpu` with 6/12/20 rows. Only measured values are shown; unmeasured items stay out of the UI (the data layer still exposes them to agents)
 - **AI**: the catalogue agents can call — 8 MCP tools + stdio commands, and how to wire them up
 
 `⌘1`–`⌘5` switch sections, `⌘R` reloads the page; right-click a row to reveal it in Finder,

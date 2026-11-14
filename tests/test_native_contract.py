@@ -63,6 +63,28 @@ class NativeContractTests(unittest.TestCase):
         missing = sorted(keys - payload)
         self.assertEqual(missing, [], f"Swift 读了内核没有的字段：{missing}")
 
+    def test_unmeasured_items_are_never_rendered(self) -> None:
+        """系统页不画「测不到的项目」，也不写「—」占位。
+
+        数据层 `limitations[]` 仍保留给 agent（MCP/stdio），
+        但界面按用户要求只显示真的测到的值，测不到的整块省略。
+        """
+        text = swift("SystemView.swift")
+        self.assertNotIn("测不到的项目", text)
+        self.assertNotIn("BTM 未测到", text)
+        self.assertNotIn('?? "—"', text)
+        self.assertNotIn('"limitations"', text, "界面不该再解析/渲染 limitations")
+        self.assertIn("SystemSectionHeader", text, "相关内容要按格式塔分组")
+
+    def test_both_cpu_metrics_share_one_section(self) -> None:
+        """两种 CPU 口径必须挨在一起，用分段器切换，不许拆成两个长列表。"""
+        text = swift("SystemView.swift")
+        self.assertIn("processMetric", text)
+        self.assertIn("processSection", text)
+        self.assertIn("累计平均 CPU（ps %cpu）", text)
+        self.assertIn("SystemProcessRow", text)
+        self.assertNotIn("瞬时 CPU 占用最高的进程", text)
+
     def test_ci_compiles_swift_sources(self) -> None:
         ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         self.assertIn("runs-on: macos-latest", ci)
